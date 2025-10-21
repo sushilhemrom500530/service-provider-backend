@@ -9,9 +9,7 @@ import { Request, Response } from 'express';
 const getAllSkiPassFromDB = catchAsync(async (req: Request, res: Response) => {
   const result = {name:"sushil", id:"20259"} 
 
-
-
-  
+ 
   sendResponse(res, {
     code: StatusCodes.OK,
     message: 'Ski pass fetched successfully.',

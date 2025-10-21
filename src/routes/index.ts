@@ -5,6 +5,9 @@ import { ChatRoutes } from '../modules/chat/chat.routes';
 import { MessageRoutes } from '../modules/message/message.routes'; 
 import { PaymentRoutes } from '../modules/payment/payment.routes';
 import { SkiPassRoutes } from './../modules/skiPass/skipass.routes';
+import { AboutUsRoutes } from './../modules/settings/about-us/about.routes';
+import { PrivacyPolicyRoutes } from './../modules/settings/privacy-policy/privacyPolicy.routes';
+import { TermsAndServiceRoutes } from './../modules/settings/terms-service/termsService.routes';
  
 const router = express.Router();
 
@@ -18,8 +21,16 @@ const apiRoutes = [
     route: SkiPassRoutes,
   },
   {
-    path: '/users',
-    route: UserRoutes,
+    path: '/settings/about-us',
+    route: AboutUsRoutes,
+  },
+  {
+    path: '/settings/privacy-policy',
+    route: PrivacyPolicyRoutes,
+  },
+  {
+    path: '/settings/terms-service',
+    route: TermsAndServiceRoutes,
   },
   // {
   //   path: '/chats',
