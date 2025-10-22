@@ -4,6 +4,9 @@ import { UserController } from './user.controller';
 import fileUploadHandler from '../../shared/fileUploadHandler';
 import { USER_UPLOADS_FOLDER } from './user.constant';
 import convertHeicToPngMiddleware from '../../shared/convertHeicToPngMiddleware';
+import validateRequest from './../../shared/validateRequest';
+import { UserValidation } from './user.validation';
+
 const uploads = fileUploadHandler(USER_UPLOADS_FOLDER);
 
 const router = Router();
@@ -29,11 +32,11 @@ router.get(
   UserController.getUserById
 );
 
-// router.patch(
-//   '/:id/status',
-//    auth('Admin', 'Provider', 'User'),
-//   UserController.updateUserStatus
-// );
+router.patch(
+  '/:id/status',
+  auth('Admin', 'Provider', 'User'),
+  UserController.updateUserStatus
+);
 
 router.get(
   '/profile/me',
@@ -46,38 +49,14 @@ router.patch(
   auth('Admin', 'Provider', 'User'),
   uploads.single('file'),
   convertHeicToPngMiddleware(USER_UPLOADS_FOLDER),
-
-  (req: Request, res: Response, next: NextFunction) => {
-    try {
-      // ✅ Parse the JSON data field safely
-      const parsedData = req.body?.data ? JSON.parse(req.body.data) : {};
-      req.body = { ...parsedData };
-
-      return UserController.updateMyProfile(req, res, next);
-    } catch (error) {
-      next(error);
-    }
-  }
+  validateRequest(UserValidation.updateMyProfileSchema),
+  UserController.updateMyProfile
 );
 
-// router.patch(
-//   '/update-profile',
-//   auth('User', 'Admin', 'Provider'),
-//   convertHeicToPngMiddleware(USER_UPLOADS_FOLDER),
-//   uploads.single('file'),
-//    (req: Request, res: Response, next: NextFunction) => {
-//     req.body = JSON.parse(req.body.data);
-//     return UserController.updateMyProfile(req, res, next);
-//   }
-// );
-
-//   convertHeicToPngMiddleware(USER_UPLOADS_FOLDER),
-//   UserController.updateMyProfile
-
-// router.delete(
-//   '/profile/delete',
-//   auth('Common'),
-//   UserController.deleteMyProfile
-// );
+router.delete(
+  '/delete/:id',
+  auth('Admin', 'Provider', 'User'),
+  UserController.deleteMyProfile
+);
 
 export const UserRoutes = router;
