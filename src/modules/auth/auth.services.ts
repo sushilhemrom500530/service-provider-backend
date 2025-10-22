@@ -86,82 +86,7 @@ const updateUserProfile = async (email: string, updates: Partial<IUser>) => {
   return updatedUser;
 };
 
-// const registerUser = async (userData: any) => {
-
-//   const existingUser = await User.findOne({ email: userData?.email });
-//   if (existingUser) {
-//     throw new AppError(StatusCodes.BAD_REQUEST, 'User already exists.');
-//   }
-
-//   const user = await User.create(userData);
-
-//   // Send verification OTP after user creation
-//   try {
-//     await OtpService.createVerificationEmailOtp(user.email);
-//   } catch (error) {
-//     throw new AppError(
-//       StatusCodes.INTERNAL_SERVER_ERROR,
-//       'Failed to send OTP.'
-//     );
-//   }
-
-//   const tokens = await TokenService.accessAndRefreshToken(user);
-
-//   return {
-//     tokens,
-//     user
-//   };
-// };
-
-const createUser = async (userData: IRegisterData) => {
-  const existingUser = await User.findOne({ email: userData.email });
-  if (existingUser) {
-    throw new AppError(StatusCodes.BAD_REQUEST, 'User already exists.');
-  }
-  const newUserData: Partial<IUser> = {
-    email: userData?.email,
-    password: userData?.password,
-    authMethods: [AuthMethod.Email],
-    primaryAuthMethod: AuthMethod.Email,
-    profile: {
-      fullName: userData?.fullName,
-      phoneNumber: userData?.phoneNumber,
-      dateOfBirth: new Date(userData?.dateOfBirth),
-    },
-  };
-
-  const user = await User.create(newUserData);
-
-  // Send verification OTP after user creation
-  // try {
-  //   await OtpService.createVerificationEmailOtp(user.email);
-  // } catch (error) {
-  //   throw new AppError(
-  //     StatusCodes.INTERNAL_SERVER_ERROR,
-  //     'Failed to send OTP.'
-  //   );
-  // }
-
-  const formatedUserData = {
-    _id: user?.id,
-    email: user?.email,
-    role: user?.role,
-    status: user?.status,
-    authMethods: user?.authMethods,
-    primaryAuthMethod: user?.primaryAuthMethod,
-    profile: user?.profile,
-    metadata: {
-      createdAt: user?.metadata?.createdAt,
-      updatedAt: user?.metadata?.updatedAt,
-    },
-  };
-
-  const tokens = await TokenService.accessAndRefreshToken(user);
-  return {
-    tokens,
-    user: formatedUserData,
-  };
-};
+  
 
 const verifyOtp = async (payload: IVerifyOtpData) => {
   const user = await User.findOne({ email: payload.email });
@@ -365,8 +290,7 @@ const refreshAuth = async (refreshToken: string) => {
 
 export const AuthService = {
   registerUser,
-  updateUserProfile,
-  createUser,
+  updateUserProfile, 
   verifyOtp,
   resetPassword,
   forgotPassword,

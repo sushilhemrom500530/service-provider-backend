@@ -206,6 +206,35 @@ const login = z.object({
   }),
 });
 
+const sendOTP = z.object({
+  body: z.object({ 
+    email: z
+      .string({
+        required_error: 'Email is required',
+        invalid_type_error: 'Email must be a string',
+      })
+      .email('Invalid email format')
+      .toLowerCase(),
+  }),
+});
+
+const changePassword = z.object({
+  body: z.object({ 
+    currentPassword: z
+     .string({
+        required_error: 'Password is required',
+        invalid_type_error: 'Password must be a string',
+      })
+      .min(8, 'Password must be at least 8 characters long'),
+      newPassword: z
+      .string({
+        required_error: 'New password is required',
+        invalid_type_error: 'New password must be a string',
+      })
+      .min(8, 'Password must be at least 8 characters long'),
+  }),
+});
+
 const verifyOTP = z.object({
   body: z.object({
     otp: z
@@ -279,8 +308,10 @@ export const authValidations = {
   registerProviderSchema,
   login,
   verifyOTP,
+  sendOTP,
   forgotPassword,
   resetPassword,
   refreshToken,
+  changePassword,
   logout,
 };
