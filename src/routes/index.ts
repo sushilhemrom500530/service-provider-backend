@@ -32,6 +32,10 @@ const apiRoutes = [
     path: '/settings/terms-service',
     route: TermsAndServiceRoutes,
   },
+  {
+    path: '/users',
+    route: UserRoutes,
+  },
   // {
   //   path: '/chats',
   //   route: ChatRoutes,

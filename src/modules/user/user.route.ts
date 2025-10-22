@@ -7,40 +7,48 @@ import convertHeicToPngMiddleware from '../../shared/convertHeicToPngMiddleware'
 const uploads = fileUploadHandler(USER_UPLOADS_FOLDER);
 
 const router = Router();
- 
+
 // //get user activity graph chart
 // router.get(
 //   '/activity-graph-chart',
-//   auth('Admin', 'Super_Admin'),
+//    auth('Admin', 'Provider', 'User'),
 //   UserController.userActivityGraphChart
 // );
- 
+
 // router.get(
 //   '/dashboard/overview',
-//   auth('Admin', 'Super_Admin'),
+//    auth('Admin', 'Provider', 'User'),
 //   UserController.getDashboardOverview
 // );
- 
+
 router.get('/all', UserController.getAllUsers);
- 
-// router.get('/:id', auth('Admin', 'Super_Admin'), UserController.getUserById);
- 
+
+router.get(
+  '/:id',
+  auth('Admin', 'Provider', 'User'),
+  UserController.getUserById
+);
+
 // router.patch(
 //   '/:id/status',
-//   auth('Admin', 'Super_Admin'),
+//    auth('Admin', 'Provider', 'User'),
 //   UserController.updateUserStatus
 // );
- 
-// router.get('/profile/me', auth('Common'), UserController.getMyProfile);
- 
+
+router.get(
+  '/profile/me',
+  auth('Admin', 'Provider', 'User'),
+  UserController.getMyProfile
+);
+
 router.patch(
   '/update-profile',
-  auth('User', 'Admin', 'Provider'), 
+  auth('Admin', 'Provider', 'User'),
   uploads.single('file'),
   convertHeicToPngMiddleware(USER_UPLOADS_FOLDER),
 
   (req: Request, res: Response, next: NextFunction) => {
-    try { 
+    try {
       // ✅ Parse the JSON data field safely
       const parsedData = req.body?.data ? JSON.parse(req.body.data) : {};
       req.body = { ...parsedData };
@@ -52,7 +60,6 @@ router.patch(
   }
 );
 
- 
 // router.patch(
 //   '/update-profile',
 //   auth('User', 'Admin', 'Provider'),
@@ -64,18 +71,13 @@ router.patch(
 //   }
 // );
 
-
- //   convertHeicToPngMiddleware(USER_UPLOADS_FOLDER),
+//   convertHeicToPngMiddleware(USER_UPLOADS_FOLDER),
 //   UserController.updateMyProfile
-
-
 
 // router.delete(
 //   '/profile/delete',
 //   auth('Common'),
 //   UserController.deleteMyProfile
 // );
-
-
 
 export const UserRoutes = router;
