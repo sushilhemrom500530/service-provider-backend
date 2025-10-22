@@ -8,7 +8,9 @@ import { JwtPayload } from 'jsonwebtoken';
 
 const getAllAboutFromDB = catchAsync(async (req: Request, res: Response) => {
   
-  const result = await AboutUsService.getAllAboutFromDB();
+  const user = req.user as JwtPayload;
+  
+  const result = await AboutUsService.getAllAboutFromDB(user);
  
   sendResponse(res, {
     code: StatusCodes.OK,

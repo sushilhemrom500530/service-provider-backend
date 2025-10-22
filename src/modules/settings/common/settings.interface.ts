@@ -1,5 +1,5 @@
 import { Document } from "mongoose";
-export interface IAbout extends Document {
+export interface ISettings extends Document {
   content: string;  
   assignee?: string;
   createdAt?: Date;

@@ -1,27 +1,38 @@
 import { Types } from 'mongoose';
-import { StatusCodes } from 'http-status-codes';
-import { IAbout } from './about.interface';
+import { StatusCodes } from 'http-status-codes'; 
 import { About } from './about.model';
 import { JwtPayload } from 'jsonwebtoken';
 import { User } from './../../user/user.model';
 import AppError from './../../../errors/AppErro';
-import { decode } from 'html-entities';
+// import { decode } from 'html-entities';
+import { ISettings } from './../common/settings.interface';
 
-const getAllAboutFromDB = async () => {
+const getAllAboutFromDB = async (user: JwtPayload) => {
+
+  const existsUser = await User.findOne({
+    email: user?.email,
+    role: user?.role,
+  });
+
+  if (!existsUser) throw new AppError(StatusCodes.NOT_FOUND, "User not found.");
+
   const result =  await About.find({});
+
   return result;
 };
 
  
 
-const addAboutIntoDB = async (payload: IAbout, user: JwtPayload) => {
+const addAboutIntoDB = async (payload: ISettings, user: JwtPayload) => {
+
+  if(!payload?.content) throw new AppError(StatusCodes.BAD_REQUEST, 'Missing required fields');
 
   const existsAbout = await About.findOne({});
   if (existsAbout) {
     throw new AppError(StatusCodes.BAD_REQUEST, 'About already exists.');
   }
 
-  const rawContent = decode(payload.content);
+  // const rawContent = decode(payload.content);
 
   const isUserExists = await User.findOne({
     email: user?.email,
@@ -33,7 +44,7 @@ const addAboutIntoDB = async (payload: IAbout, user: JwtPayload) => {
   }
 
   const result = await About.create({
-    content: rawContent,
+    content: payload?.content,
     assignee: isUserExists.role || user?.role,
   });
 
@@ -42,9 +53,11 @@ const addAboutIntoDB = async (payload: IAbout, user: JwtPayload) => {
 
 const updateAboutFromDB = async (
   id: string,
-  payload: Partial<IAbout>,
+  payload: Partial<ISettings>,
   user: JwtPayload
 ) => {
+  
+  if(!payload?.content) throw new AppError(StatusCodes.BAD_REQUEST, 'Missing required fields');
   
   const isUserExists = await User.findOne({
     email: user?.email,
@@ -62,13 +75,13 @@ const updateAboutFromDB = async (
 //     payload.content = decode(payload.content);
 //   }
  
-  const updatedAbout = await About.findByIdAndUpdate(
+  const result = await About.findByIdAndUpdate(
     id,
     { ...payload },
     { new: true, runValidators: true }  
   );
 
-  return updatedAbout;
+  return result;
 };
 
  
