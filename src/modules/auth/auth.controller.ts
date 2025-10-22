@@ -29,6 +29,7 @@ const validateUserStatus = (user: IUser) => {
 
 
 const register = catchAsync(async (req: Request, res: Response) => {
+
   const result = await AuthService.registerUser(req.body);
 
   sendResponse(res, {

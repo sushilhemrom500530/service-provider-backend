@@ -1,5 +1,5 @@
 import { Router } from 'express';
-import { authValidations, registerProviderSchema } from './auth.validations';
+import { authValidations } from './auth.validations';
 import validateRequest from '../../shared/validateRequest';
 import { AuthController } from './auth.controller';
 import auth from './../../middlewares/auth';
@@ -8,8 +8,8 @@ const router = Router();
 
 
 router.post(
-  '/register',  
-    // validateRequest(authValidations.registerProviderSchema), 
+  '/register',   
+    validateRequest(authValidations.registerProviderSchema),  
   AuthController.register
 );
 

@@ -1,7 +1,38 @@
 import { z } from 'zod';
 
+const registerProviderSchema = z.object({
+  body: z.object({
+    email: z
+      .string({
+        required_error: 'Email is required',
+        invalid_type_error: 'Email must be a string',
+      })
+      .email('Invalid email format')
+      .toLowerCase(),
+    password: z
+      .string({
+        required_error: 'Password is required',
+        invalid_type_error: 'Password must be a string',
+      })
+      .min(8, 'Password must be at least 8 characters long'),
 
-export const registerProviderSchema = z.object({
+    providerType: z.enum(
+      ['Ski_Pass', 'Ski_Hire', 'Transport', 'Restaurant_Booking', 'Massage'],
+      {
+        required_error: 'Provider Type is required',
+        invalid_type_error:
+          'Provider Type must be one of Ski_Pass, Ski_Hire, Transport, Restaurant_Booking, or Massage',
+      }
+    ),
+    role: z
+      .enum(['User', 'Provider', 'Admin'], {
+        required_error: 'Role is required',
+        invalid_type_error: 'Role must be one of: User, Provider, or Admin',
+      }) 
+  }),
+});
+
+export const updateUserSchema = z.object({
   fullName: z.string({
     required_error: 'Full name is required',
     invalid_type_error: 'Full name must be a string',
@@ -22,7 +53,7 @@ export const registerProviderSchema = z.object({
   phoneNumber: z.string({
     required_error: 'Phone number is required',
     invalid_type_error: 'Phone number must be a string',
-  }),
+  }), 
   service: z.object({
     serviceType: z.string({
       required_error: 'Service type is required',
@@ -43,13 +74,12 @@ export const registerProviderSchema = z.object({
   }),
   isDeleted: z.boolean().optional().default(false),
   role: z
-    .enum(['user', 'provider', 'admin'], {
+    .enum(['User', 'Provider', 'Admin'], {
       required_error: 'Role is required',
-      invalid_type_error: 'Role must be one of: user, provider, or admin',
+      invalid_type_error: 'Role must be one of: User, Provider, or Admin',
     })
-    .default('provider'),
+    .default('Provider'),
 });
-
 export const registerUserSchema = z.object({
   body: z.object({
     fullName: z.string({
@@ -244,80 +274,13 @@ const logout = z.object({
   }),
 });
 
-const socialAuth = z.object({
-  body: z.object({
-    provider: z.enum(['google', 'twitter', 'facebook'], {
-      required_error: 'Provider is required',
-      invalid_type_error: 'Provider must be google, twitter, or facebook',
-    }),
-    userData: z.object({
-      id: z.string({
-        required_error: 'User ID is required',
-        invalid_type_error: 'User ID must be a string',
-      }).min(1, 'User ID cannot be empty'),
-      email: z
-        .string({
-          required_error: 'Email is required',
-          invalid_type_error: 'Email must be a string',
-        })
-        .email('Invalid email format')
-        .toLowerCase(),
-      name: z.string().optional(),
-      displayName: z.string().optional(),
-      username: z.string().optional(),
-    }, {
-      required_error: 'User data is required',
-      invalid_type_error: 'User data must be an object',
-    }),
-  }),
-});
-
-const linkSocialAccount = z.object({
-  body: z.object({
-    provider: z.enum(['google', 'twitter', 'facebook'], {
-      required_error: 'Provider is required',
-      invalid_type_error: 'Provider must be google, twitter, or facebook',
-    }),
-    userData: z.object({
-      id: z.string({
-        required_error: 'User ID is required',
-        invalid_type_error: 'User ID must be a string',
-      }).min(1, 'User ID cannot be empty'),
-      email: z
-        .string({
-          required_error: 'Email is required',
-          invalid_type_error: 'Email must be a string',
-        })
-        .email('Invalid email format')
-        .toLowerCase(),
-      name: z.string().optional(),
-      displayName: z.string().optional(),
-      username: z.string().optional(),
-    }, {
-      required_error: 'User data is required',
-      invalid_type_error: 'User data must be an object',
-    }),
-  }),
-});
-
-const unlinkSocialAccount = z.object({
-  params: z.object({
-    provider: z.enum(['google', 'twitter', 'facebook'], {
-      required_error: 'Provider is required',
-      invalid_type_error: 'Provider must be google, twitter, or facebook',
-    }),
-  }),
-});
-
 export const authValidations = {
   // register,
+  registerProviderSchema,
   login,
   verifyOTP,
   forgotPassword,
   resetPassword,
   refreshToken,
   logout,
-  socialAuth,
-  linkSocialAccount,
-  unlinkSocialAccount,
 };
