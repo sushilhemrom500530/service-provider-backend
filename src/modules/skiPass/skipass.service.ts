@@ -154,7 +154,21 @@ const deleteSkiPassIntoDB = async (id: string, user: JwtPayload) => {
   if (!isExistsUser) {
     throw new AppError(StatusCodes.NOT_FOUND, 'User not found.');
   }
-  const result = await SkiPass.deleteById(id);
+
+ 
+  const skiPass = await SkiPass.findById(id);
+  if (!skiPass) {
+    throw new AppError(StatusCodes.NOT_FOUND, "Ski pass not found.");
+  }
+ 
+  if (skiPass.ownerId.toString() !== isExistsUser._id.toString()) {
+    throw new AppError(
+      StatusCodes.FORBIDDEN,
+      "You are not authorized to delete this ski pass."
+    );
+  }
+
+  const result = await SkiPass.findByIdAndDelete(id);
   return result;
 };
 
