@@ -11,14 +11,14 @@ import convertHeicToPngMiddleware from './../../shared/convertHeicToPngMiddlewar
 
 const router = Router();
 
-// get all ski pass
+// get all
 router.get(
   '/all',
   auth('User','Admin', 'Provider'), 
   SkiPassController.getAllSkiPassFromDB
 );
 
-// get single ski pass 
+// get single 
 router.get(
   '/:id',
   auth('User','Admin', 'Provider'),
@@ -26,7 +26,7 @@ router.get(
 );
 
 
-// create ski pass 
+// create 
 router.post(
   '/create',
   auth('Admin', 'Provider'),
@@ -34,6 +34,15 @@ router.post(
   convertHeicToPngMiddleware(USER_UPLOADS_FOLDER),
    validateRequest(SkipassValidations.createSkiPassSchema),
   SkiPassController.addSkiPassIntoDB
+);
+
+
+// review 
+router.post(
+  '/review/:id',
+  auth('User',),  
+   validateRequest(SkipassValidations.reviewSkiPassSchema),
+  SkiPassController.reviewSkiPass
 );
 
 
@@ -48,7 +57,7 @@ router.patch(
 // delete
 router.delete(
   '/delete/:id',
-  auth('User', 'Admin', 'Provider'),
+  auth('Provider'),
   SkiPassController.deleteSkiPassIntoDB
 );
  

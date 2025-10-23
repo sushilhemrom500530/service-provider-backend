@@ -28,6 +28,11 @@ const validateUserStatus = (user: IUser) => {
 };
 
 const registerUser = async (userData: Partial<IUser>) => {
+
+  if(userData?.role === "Provider" && !userData?.providerType){
+    throw new AppError(StatusCodes.BAD_REQUEST, 'Provider type is required.');
+  }
+
   const existingUser = await User.findOne({ email: userData?.email });
   if (existingUser) {
     throw new AppError(StatusCodes.BAD_REQUEST, 'User already exists.');
@@ -49,6 +54,16 @@ const registerUser = async (userData: Partial<IUser>) => {
     }
   }
   const newUser = await User.create(userData);
+
+  const resResult = {
+    _id: newUser?._id, 
+    email: newUser?.email,
+    role: newUser?.role,
+    status: newUser?.status,
+    isDeleted: newUser?.isDeleted,
+    createdAt: newUser?.createdAt,
+    updatedAt: newUser?.updatedAt,
+  }; 
 
   // console.log("creating user info is :", newUser);
 

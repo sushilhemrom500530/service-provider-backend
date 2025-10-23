@@ -23,7 +23,7 @@ const registerProviderSchema = z.object({
         invalid_type_error:
           'Provider Type must be one of Ski_Pass, Ski_Hire, Transport, Restaurant_Booking, or Massage',
       }
-    ),
+    ).optional(),
     role: z
       .enum(['User', 'Provider', 'Admin'], {
         required_error: 'Role is required',

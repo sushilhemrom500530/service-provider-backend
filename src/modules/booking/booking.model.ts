@@ -1,90 +1,63 @@
-import mongoose, { Schema, Model } from "mongoose";
-import { ISkiPass, IReview } from "./skiPass.interface";
+import { Schema, model } from 'mongoose';
+import { IBooking } from './booking.interface';
 
-const reviewSchema = new Schema<IReview>(
+// Booking item schema (optional array of items)
+const bookingItemSchema = new Schema(
   {
-    userId: {
-      type: Schema.Types.ObjectId,
-      ref: "User",
-      required: true,
-    },
-    rating: {
-      type: Number,
-      required: true,
-      min: 1,
-      max: 5,
-    },
-    comment: {
-      type: String,
-      required: true,
-      trim: true,
-    },
-    createdAt: {
-      type: Date,
-      default: Date.now,
-    },
+    productId: { type: Schema.Types.ObjectId, required: true },
+    quantity: { type: Number, required: true },
   },
   { _id: false }
 );
 
-const skiPassSchema = new Schema<ISkiPass>(
+const bookingSchema = new Schema<IBooking>(
   {
-    title: {
-      type: String,
-      required: true,
-      trim: true,
-    },
-    description: {
-      type: String,
-      required: true,
-      trim: true,
-    },
-    thumbnail: {
-      type: String,
-      required: true,
-      trim: true,
-    },
-    ownerId: {
+    userId: { type: Schema.Types.ObjectId, ref: 'User', required: true },
+
+    // This field references different product models dynamically
+    productId: {
       type: Schema.Types.ObjectId,
-      ref: "User",
-      required: true,
+      required: false,
+      refPath: 'productModel', // tells Mongoose which model to use
     },
-    skiPassType: {
-      type: String,
-      required: true, 
-    },
-    duration: {
+
+    // Dynamic ref name stored here
+    productModel: {
       type: String,
       required: true,
+      enum: ['SkiPass', 'SkiHire', 'Transport', 'Restaurant', 'Massage'],
     },
-    time: {
+
+    category: {
       type: String,
       required: true,
+      enum: [
+        'Ski_Pass',
+        'Ski_Hire',
+        'Transport',
+        'Restaurant_Booking',
+        'Massage',
+      ],
     },
-    date: {
+
+    personCount: { type: Number },
+    date: { type: Date },
+    time: { type: String },
+
+    startDateAndTime: { type: Date },
+    endDateAndTime: { type: Date },
+
+    items: [bookingItemSchema],
+    orderType: { type: String },
+    itemCount: { type: Number },
+    duration: { type: String },
+    bookingAgentText: { type: String },
+
+    bookingStatus: {
       type: String,
+      enum: ['Active', 'Pending', 'Complete', 'Cancel', 'Delete'],
+      default: 'Active',
       required: true,
-    },
-    serviceArea: {
-      type: String,
-      required: true,
-      trim: true,
-    },
-    amount: {
-      type: Number,
-      required: true,
-      min: 0,
-    },
-    // optional fields for later updates
-    averageRating: {
-      type: Number,
-      default: 0,
-      min: 0,
-      max: 5,
-    },
-    reviews: {
-      type: [reviewSchema],
-      default: [],
     },
   },
   {
@@ -92,14 +65,4 @@ const skiPassSchema = new Schema<ISkiPass>(
   }
 );
 
- 
-skiPassSchema.pre("save", function (next) {
-  if (this.reviews && this.reviews.length > 0) {
-    const total = this.reviews.reduce((sum, r) => sum + r.rating, 0);
-    this.averageRating = parseFloat((total / this.reviews.length).toFixed(1));
-  }
-  next();
-});
-
-export const SkiPass: Model<ISkiPass> =
-  mongoose.models.SkiPass || mongoose.model<ISkiPass>("SkiPass", skiPassSchema);
+export const Booking = model<IBooking>('Booking', bookingSchema);
