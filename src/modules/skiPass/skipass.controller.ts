@@ -4,6 +4,7 @@ import sendResponse from '../../shared/sendResponse';
 import { Request, Response } from 'express';
 import { SkiPassService } from './skipass.service';
 import { JwtPayload } from 'jsonwebtoken';
+import { IReview } from './skipass.interface';
 
 
 const getAllSkiPassFromDB = catchAsync(async (req: Request, res: Response) => {
@@ -40,6 +41,19 @@ const addSkiPassIntoDB = catchAsync(async (req: Request, res: Response) => {
   });
 });
 
+
+const reviewSkiPass = catchAsync(async (req: Request, res: Response) => {
+  const user = req.user as JwtPayload;
+  const id = req.params.id;
+  const reviewData = req.body;
+  const result = await SkiPassService.reviewSkiPass(id as string, user, reviewData as IReview)
+  sendResponse(res, {
+    code: StatusCodes.OK,
+    message: 'Review successfully',
+    data: result,
+  });
+});
+
 const updateSkiPassIntoDB = catchAsync(async (req: Request, res: Response) => {
   const result = await SkiPassService.updateSkiPassIntoDB(req)
   sendResponse(res, {
@@ -66,6 +80,7 @@ export const SkiPassController = {
   getAllSkiPassFromDB,
   getSingleSkipPassFromDB,
   addSkiPassIntoDB,
+  reviewSkiPass,
   updateSkiPassIntoDB,
   deleteSkiPassIntoDB
 };

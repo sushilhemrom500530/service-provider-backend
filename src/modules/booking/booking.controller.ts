@@ -60,7 +60,7 @@ const addBookingIntoDB = catchAsync(async (req: Request, res: Response) => {
 const updateBookingStatus = catchAsync(async (req: Request, res: Response) => {
   const id = req.params.id;
   const user = req.user as JwtPayload;
-  const {bookingStatus} = req.body;
+  const { bookingStatus } = req.body;
   const result = await BookingService.updateBookingIntoDB(
     user,
     bookingStatus as BookingStatus,
@@ -74,7 +74,9 @@ const updateBookingStatus = catchAsync(async (req: Request, res: Response) => {
 });
 
 const deleteBookingIntoDB = catchAsync(async (req: Request, res: Response) => {
-  const result = await BookingService.deleteBookingIntoDB(req);
+  const id = req.params.id;
+  const user = req.user as JwtPayload;
+  const result = await BookingService.deleteBookingIntoDB(id as string, user);
   sendResponse(res, {
     code: StatusCodes.OK,
     message: 'Booking deleted successfully',

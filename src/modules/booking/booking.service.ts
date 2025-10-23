@@ -140,18 +140,17 @@ export const addBookingIntoDB = async (user: JwtPayload, payload: IBooking) => {
   return result;
 };
 
-
 export const updateBookingIntoDB = async (
   user: JwtPayload,
   payload: BookingStatus, // this is a string like "Delete"
   bookingId: string
-) => { 
+) => {
   // Check user
   const isExistsUser = await User.findOne({ email: user?.email });
   if (!isExistsUser) {
     throw new AppError(StatusCodes.NOT_FOUND, 'User not found.');
   }
- 
+
   const existsBooking = await Booking.findById(bookingId).populate({
     path: 'productId',
     select: 'ownerId',
@@ -169,10 +168,10 @@ export const updateBookingIntoDB = async (
       'You are not the owner of this product. Cannot update booking status.'
     );
   }
- 
+
   const result = await Booking.findByIdAndUpdate(
-    bookingId,  
-    { $set: { bookingStatus: payload } },  
+    bookingId,
+    { $set: { bookingStatus: payload } },
     { new: true }
   )
     .populate('userId', 'fullName email')
@@ -181,16 +180,41 @@ export const updateBookingIntoDB = async (
   return result;
 };
 
-
-export const deleteBookingIntoDB = async (req: Request, res: Response) => {
+export const deleteBookingIntoDB = async (id: string, user: JwtPayload) => {
   // check user
-  const user = await User.findById(req?.body?.ownerId);
-  if (!user) {
+  const isExistsUser = await User.findById(user?.userId);
+  if (!isExistsUser) {
     throw new AppError(StatusCodes.NOT_FOUND, 'User not found.');
   }
 
-  const result = { name: 'booking', status: 'success' };
+  // Check if booking exists
+  const existsBooking = await Booking.findById(id);
+  if (!existsBooking) {
+    throw new AppError(StatusCodes.NOT_FOUND, 'Booking not found.');
+  }
+ 
+  // Ensure only the booking owner can delete
+  if (existsBooking.userId.toString() !== isExistsUser._id.toString()) {
+    throw new AppError(
+      StatusCodes.FORBIDDEN,
+      'You are not authorized to delete this booking.'
+    );
+  }
 
+  //  const result = await Booking.findByIdAndUpdate(
+  //   id,
+  //   { $set: { bookingStatus: 'Delete' } },
+  //   { new: true }
+  // );
+  // Delete the booking permanently
+  const result = await Booking.findByIdAndDelete(id);
+
+  if (!result) {
+    throw new AppError(
+      StatusCodes.INTERNAL_SERVER_ERROR,
+      'Failed to delete booking.'
+    );
+  }
   return result;
 };
 
