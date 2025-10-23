@@ -3,7 +3,7 @@ import auth from '../../middlewares/auth';
 import {SkiPassController} from './skipass.controller';
 import { USER_UPLOADS_FOLDER } from './skipass.constant';
 import validateRequest from './../../shared/validateRequest';
-import { skipassValidations } from './skipass.validations';
+import { SkipassValidations } from './skipass.validations';
 import fileUploadHandler from './../../shared/fileUploadHandler';
 import convertHeicToPngMiddleware from './../../shared/convertHeicToPngMiddleware';
 
@@ -14,7 +14,7 @@ const router = Router();
 // get all ski pass
 router.get(
   '/all',
-  // auth('User','Admin', 'Provider'), 
+  auth('User','Admin', 'Provider'), 
   SkiPassController.getAllSkiPassFromDB
 );
 
@@ -32,9 +32,24 @@ router.post(
   auth('Admin', 'Provider'),
   uploads.single('file'),
   convertHeicToPngMiddleware(USER_UPLOADS_FOLDER),
-   validateRequest(skipassValidations.createSkiPassSchema),
+   validateRequest(SkipassValidations.createSkiPassSchema),
   SkiPassController.addSkiPassIntoDB
 );
 
+
+// update
+router.patch(
+  '/update/:id',
+  auth('User', 'Admin', 'Provider'), 
+  validateRequest(SkipassValidations.createSkiPassSchema),
+  SkiPassController.updateSkiPassIntoDB
+);
+
+// delete
+router.delete(
+  '/delete/:id',
+  auth('User', 'Admin', 'Provider'),
+  SkiPassController.deleteSkiPassIntoDB
+);
  
 export const SkiPassRoutes = router;

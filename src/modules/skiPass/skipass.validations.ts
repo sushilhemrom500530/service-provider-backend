@@ -53,6 +53,6 @@ const createSkiPassSchema = z.object({
   }),
 });
 
-export const skipassValidations = {
+export const SkipassValidations = {
   createSkiPassSchema,
 };
