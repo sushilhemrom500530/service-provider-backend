@@ -142,7 +142,7 @@ export const addBookingIntoDB = async (user: JwtPayload, payload: IBooking) => {
 
 export const updateBookingIntoDB = async (
   user: JwtPayload,
-  payload: BookingStatus, // this is a string like "Delete"
+  payload: BookingStatus,
   bookingId: string
 ) => {
   // Check user
@@ -180,6 +180,97 @@ export const updateBookingIntoDB = async (
   return result;
 };
 
+export const refundBookingIntoDB = async (
+  user: JwtPayload,
+  payload: Partial<any | {}>,
+  bookingId: string
+) => {
+  // Check user
+  const isExistsUser = await User.findOne({
+    _id: payload?.userId,
+    email: user?.email,
+  });
+
+  if (!isExistsUser) {
+    throw new AppError(StatusCodes.NOT_FOUND, 'User not found.');
+  }
+
+  const existsBooking = await Booking.findById(bookingId).populate({
+    path: 'productId',
+    select: 'ownerId',
+  });
+
+  if (!existsBooking) {
+    throw new AppError(StatusCodes.NOT_FOUND, 'Booking not found.');
+  } 
+
+  const result = await Booking.findByIdAndUpdate(
+    bookingId,
+    { $set: { bookingStatus: 'Cancel' } },
+    { new: true }
+  )
+    .populate('userId', 'fullName email')
+    .populate('productId');
+
+  // Identify the correct product model dynamically
+  const productId = existsBooking?.productId;
+  const productModel = existsBooking?.productModel; // e.g. "SkiPass" or "Restaurant"
+
+  if (!productId || !productModel) {
+    throw new AppError(StatusCodes.BAD_REQUEST, 'Invalid product reference.');
+  }
+
+  // Map model names to actual mongoose models
+  const productModels: Record<string, any> = {
+    SkiPass,
+    // SkiHire,
+    // Transport,
+    // Restaurant,
+    // Massage,
+  };
+
+  const ProductModel = productModels[productModel];
+  if (!ProductModel) {
+    throw new AppError(
+      StatusCodes.BAD_REQUEST,
+      `Invalid product model: ${productModel}`
+    );
+  }
+
+  // Find the product
+  const product = await ProductModel.findById(productId);
+  if (!product) {
+    throw new AppError(StatusCodes.NOT_FOUND, `${productModel} not found.`);
+  }
+
+  // Prevent duplicate refunds
+  const alreadyRefunded = product.refunds?.some(
+    (refund: IReview) =>
+      refund.userId.toString() === isExistsUser._id.toString()
+  );
+
+  if (alreadyRefunded) {
+    throw new AppError(
+      StatusCodes.BAD_REQUEST,
+      'You have already refunded or canceled this product.'
+    );
+  }
+
+  // Add refund info
+  const newRefund: IReview = {
+    userId: isExistsUser._id,
+    reason: payload.reason,
+    createdAt: new Date(),
+  } as IReview;
+
+  if (!product.refunds) product.refunds = [];
+  product.refunds.push(newRefund);
+
+  await product.save();
+
+  return result;
+};
+
 export const deleteBookingIntoDB = async (id: string, user: JwtPayload) => {
   // check user
   const isExistsUser = await User.findById(user?.userId);
@@ -192,7 +283,7 @@ export const deleteBookingIntoDB = async (id: string, user: JwtPayload) => {
   if (!existsBooking) {
     throw new AppError(StatusCodes.NOT_FOUND, 'Booking not found.');
   }
- 
+
   // Ensure only the booking owner can delete
   if (existsBooking.userId.toString() !== isExistsUser._id.toString()) {
     throw new AppError(
@@ -223,6 +314,7 @@ export const BookingService = {
   getSingleBookingFromDB,
   addBookingIntoDB,
   updateBookingIntoDB,
+  refundBookingIntoDB,
   deleteBookingIntoDB,
   getMyBooking,
 };

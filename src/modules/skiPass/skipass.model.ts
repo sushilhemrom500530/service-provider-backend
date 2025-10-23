@@ -1,11 +1,11 @@
-import mongoose, { Schema, Model } from "mongoose";
-import { ISkiPass, IReview } from "./skiPass.interface";
+import mongoose, { Schema, Model } from 'mongoose';
+import { ISkiPass, IReview, IRefund } from './skiPass.interface';
 
 const reviewSchema = new Schema<IReview>(
   {
     userId: {
       type: Schema.Types.ObjectId,
-      ref: "User",
+      ref: 'User',
       required: true,
     },
     rating: {
@@ -15,6 +15,26 @@ const reviewSchema = new Schema<IReview>(
       max: 5,
     },
     comment: {
+      type: String,
+      required: true,
+      trim: true,
+    },
+    createdAt: {
+      type: Date,
+      default: Date.now,
+    },
+  },
+  { _id: false }
+);
+
+const refundSchema = new Schema<IRefund>(
+  {
+    userId: {
+      type: Schema.Types.ObjectId,
+      ref: 'User',
+      required: true,
+    },
+    reason: {
       type: String,
       required: true,
       trim: true,
@@ -46,12 +66,12 @@ const skiPassSchema = new Schema<ISkiPass>(
     },
     ownerId: {
       type: Schema.Types.ObjectId,
-      ref: "User",
+      ref: 'User',
       required: true,
     },
     skiPassType: {
       type: String,
-      required: true, 
+      required: true,
     },
     duration: {
       type: String,
@@ -86,14 +106,17 @@ const skiPassSchema = new Schema<ISkiPass>(
       type: [reviewSchema],
       default: [],
     },
+    refunds: {
+      type: [refundSchema],
+      default: [],
+    },
   },
   {
     timestamps: true,
   }
 );
 
- 
-skiPassSchema.pre("save", function (next) {
+skiPassSchema.pre('save', function (next) {
   if (this.reviews && this.reviews.length > 0) {
     const total = this.reviews.reduce((sum, r) => sum + r.rating, 0);
     this.averageRating = parseFloat((total / this.reviews.length).toFixed(1));
@@ -102,4 +125,4 @@ skiPassSchema.pre("save", function (next) {
 });
 
 export const SkiPass: Model<ISkiPass> =
-  mongoose.models.SkiPass || mongoose.model<ISkiPass>("SkiPass", skiPassSchema);
+  mongoose.models.SkiPass || mongoose.model<ISkiPass>('SkiPass', skiPassSchema);

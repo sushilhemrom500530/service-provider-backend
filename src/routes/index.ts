@@ -2,14 +2,15 @@ import { UserRoutes } from './../modules/user/user.route';
 import { AuthRoutes } from './../modules/auth/auth.routes';
 import express from 'express';
 import { ChatRoutes } from '../modules/chat/chat.routes';
-import { MessageRoutes } from '../modules/message/message.routes'; 
+import { MessageRoutes } from '../modules/message/message.routes';
 import { PaymentRoutes } from '../modules/payment/payment.routes';
 import { SkiPassRoutes } from './../modules/skiPass/skipass.routes';
 import { AboutUsRoutes } from './../modules/settings/about-us/about.routes';
 import { PrivacyPolicyRoutes } from './../modules/settings/privacy-policy/privacyPolicy.routes';
 import { TermsAndServiceRoutes } from './../modules/settings/terms-service/termsService.routes';
 import { BookingRoutes } from './../modules/booking/booking.routes';
- 
+import { RestaurantRoutes } from './../modules/restaurant/restaurant.routes';
+
 const router = express.Router();
 
 const apiRoutes = [
@@ -17,10 +18,7 @@ const apiRoutes = [
     path: '/auth',
     route: AuthRoutes,
   },
-  {
-    path: '/ski-pass',
-    route: SkiPassRoutes,
-  },
+
   {
     path: '/booking',
     route: BookingRoutes,
@@ -41,6 +39,14 @@ const apiRoutes = [
     path: '/users',
     route: UserRoutes,
   },
+  {
+    path: '/ski-pass',
+    route: SkiPassRoutes,
+  },
+  // {
+  //   path: '/restaurant',
+  //   route: RestaurantRoutes,
+  // },
   // {
   //   path: '/chats',
   //   route: ChatRoutes,
@@ -49,7 +55,7 @@ const apiRoutes = [
   //   path: '/messages',
   //   route: MessageRoutes,
   // },
-   
+
   // {
   //   path: '/payments',
   //   route: PaymentRoutes,

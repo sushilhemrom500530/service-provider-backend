@@ -154,7 +154,6 @@ const deleteSkiPassIntoDB = async (id: string, user: JwtPayload) => {
   if (!isExistsUser) {
     throw new AppError(StatusCodes.NOT_FOUND, 'User not found.');
   }
-
  
   const skiPass = await SkiPass.findById(id);
   if (!skiPass) {
