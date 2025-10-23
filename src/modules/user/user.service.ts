@@ -128,7 +128,7 @@ const userActivityGraphChart = async (
     );
   }
 
-  // ✅ Fetch User Activity (using correct field path)
+  // Fetch User Activity (using correct field path)
   const userActivity = await User.aggregate([
     {
       $match: {
@@ -163,7 +163,7 @@ const userActivityGraphChart = async (
     { $sort: { _id: 1 } },
   ]);
 
-  // ✅ Populate User Activity Data based on period
+  //  Populate User Activity Data based on period
   userActivity.forEach((entry: any) => {
     if (period === 'weekly') {
       // MongoDB $dayOfWeek: 1 = Sunday, 2 = Monday, ..., 7 = Saturday
@@ -211,7 +211,7 @@ const updateUserStatus = async (
   return result;
 };
 
-// ✅ Get My Profile
+//  Get My Profile
 const getMyProfile = async (userId: string): Promise<IUser | null> => {
   const user = await User.findOne({
     _id: userId,
@@ -225,7 +225,7 @@ const getMyProfile = async (userId: string): Promise<IUser | null> => {
   return user;
 };
 
-// ✅ Update My Profile
+//  Update My Profile
 const updateMyProfile = async (
   userId: string,
   updateData: IUpdateData
@@ -245,7 +245,7 @@ const updateMyProfile = async (
   return result;
 };
 
-// ✅ Delete My Profile
+//  Delete My Profile
 const deleteMyProfile = async (userId: string): Promise<IUser | null> => {
   const user = await User.findById(userId);
   if (!user) {

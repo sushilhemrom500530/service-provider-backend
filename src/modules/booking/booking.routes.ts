@@ -15,28 +15,36 @@ router.get(
   BookingController.getAllBookingFromDB
 );
 
+// get my booking  
+router.get(
+  '/my-booking',
+  auth('User', 'Admin', 'Provider'),
+  BookingController.getMyBookingIntoDB
+);
+ 
 // get single 
 router.get(
   '/:id',
   auth('User', 'Admin', 'Provider'),
   BookingController.getSingleBookingFromDB
 );
-
+ 
 
 // create  
 router.post(
   '/create',
   auth('User', 'Admin', 'Provider'), 
-  validateRequest(BookingRoutesValidations.createSkiPassSchema),
+  validateRequest(BookingRoutesValidations.createBookingSchema),
   BookingController.addBookingIntoDB
 );
+
 
 
 // update
 router.patch(
   '/update/:id',
   auth('User', 'Admin', 'Provider'), 
-  validateRequest(BookingRoutesValidations.createSkiPassSchema),
+  validateRequest(BookingRoutesValidations.createBookingSchema),
   BookingController.updateBookingIntoDB
 );
 

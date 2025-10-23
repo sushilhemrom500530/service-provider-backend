@@ -27,7 +27,7 @@ export interface IUser extends Document {
   fullName: string;
   email: string;
   password: string;
-  providerType: string;
+  providerType?: string;
   phoneNumber: string;
   profileUrl?: string;
   service?: IService;  
