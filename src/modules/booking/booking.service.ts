@@ -6,7 +6,7 @@ import { s3Services } from './../../aws/s3Service';
 import { User } from './../user/user.model';
 import { JwtPayload } from 'jsonwebtoken';
 import { Booking } from './booking.model';
-import { IBooking } from './booking.interface';
+import { IBooking, BookingStatus } from './booking.interface';
 import { SkiPass } from './../skiPass/skipass.model';
 
 const getAllBookingFromDB = async (user: JwtPayload) => {
@@ -140,17 +140,47 @@ export const addBookingIntoDB = async (user: JwtPayload, payload: IBooking) => {
   return result;
 };
 
-export const updateBookingIntoDB = async (req: Request, res: Response) => {
-  // check user
-  const user = await User.findById(req?.body?.ownerId);
-  if (!user) {
+
+export const updateBookingIntoDB = async (
+  user: JwtPayload,
+  payload: BookingStatus, // this is a string like "Delete"
+  bookingId: string
+) => { 
+  // Check user
+  const isExistsUser = await User.findOne({ email: user?.email });
+  if (!isExistsUser) {
     throw new AppError(StatusCodes.NOT_FOUND, 'User not found.');
   }
+ 
+  const existsBooking = await Booking.findById(bookingId).populate({
+    path: 'productId',
+    select: 'ownerId',
+  });
 
-  const result = { name: 'booking', status: 'success' };
+  if (!existsBooking) {
+    throw new AppError(StatusCodes.NOT_FOUND, 'Booking not found.');
+  }
+
+  // Check ownership
+  const ownerId = existsBooking.productId?.ownerId;
+  if (ownerId?.toString() !== isExistsUser._id.toString()) {
+    throw new AppError(
+      StatusCodes.FORBIDDEN,
+      'You are not the owner of this product. Cannot update booking status.'
+    );
+  }
+ 
+  const result = await Booking.findByIdAndUpdate(
+    bookingId,  
+    { $set: { bookingStatus: payload } },  
+    { new: true }
+  )
+    .populate('userId', 'fullName email')
+    .populate('productId');
 
   return result;
 };
+
 
 export const deleteBookingIntoDB = async (req: Request, res: Response) => {
   // check user

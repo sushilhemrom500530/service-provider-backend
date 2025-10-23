@@ -1,25 +1,21 @@
 import { z } from 'zod';
 
- 
-const bookingStatusEnum = z.enum(['Active', 'Complete', 'Cancel', 'Delete']);
+const bookingStatusEnum = z.enum(
+  ['Active', 'Pending', 'Complete', 'Cancel', 'Delete'],
+  {
+    required_error: 'Booking Status is required',
+    invalid_type_error: 'Booking Status must be one of the allowed strings',
+  }
+);
 
-const categoryEnum = z.enum([
-  'Ski_Pass',
-  'Ski_Hire',
-  'Transport',
-  'Restaurant_Booking',
-  'Massage',
-]).optional();
+const categoryEnum = z
+  .enum(['Ski_Pass', 'Ski_Hire', 'Transport', 'Restaurant_Booking', 'Massage'])
+  .optional();
 
-const productModelEnum = z.enum([
-  'SkiPass',
-  'SkiHire',
-  'Transport',
-  'Restaurant',
-  'Massage',
-]).optional();
+const productModelEnum = z
+  .enum(['SkiPass', 'SkiHire', 'Transport', 'Restaurant', 'Massage'])
+  .optional();
 
- 
 const bookingItemSchema = z.object({
   productId: z
     .string({
@@ -34,7 +30,7 @@ const bookingItemSchema = z.object({
     })
     .positive(),
 });
- 
+
 const createBookingSchema = z.object({
   body: z.object({
     userId: z
@@ -60,17 +56,17 @@ const createBookingSchema = z.object({
       .optional(),
 
     date: z
-      .preprocess((arg) => (arg ? new Date(arg as string) : undefined), z.date())
+      .preprocess(arg => (arg ? new Date(arg as string) : undefined), z.date())
       .optional(),
 
     time: z.string().optional(),
 
     startDateAndTime: z
-      .preprocess((arg) => (arg ? new Date(arg as string) : undefined), z.date())
+      .preprocess(arg => (arg ? new Date(arg as string) : undefined), z.date())
       .optional(),
 
     endDateAndTime: z
-      .preprocess((arg) => (arg ? new Date(arg as string) : undefined), z.date())
+      .preprocess(arg => (arg ? new Date(arg as string) : undefined), z.date())
       .optional(),
 
     items: z.array(bookingItemSchema).optional(),
@@ -83,7 +79,13 @@ const createBookingSchema = z.object({
   }),
 });
 
- 
+export const updateBookingSchema = z.object({
+  body: z.object({
+    bookingStatus: bookingStatusEnum
+  }),
+});
+
 export const BookingRoutesValidations = {
   createBookingSchema,
+  updateBookingSchema,
 };

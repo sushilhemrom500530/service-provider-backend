@@ -1,6 +1,6 @@
 import { Document, Types } from 'mongoose';
 
-export type BookingStatus = 'Active' | 'Complete' | 'Cancel' | 'Delete';
+export type BookingStatus = 'Active' | 'Pending' | 'Complete' | 'Cancel' | 'Delete';
 export type BookingCategory =
   | 'Ski_Pass'
   | 'Ski_Hire'

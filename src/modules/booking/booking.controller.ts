@@ -4,7 +4,7 @@ import sendResponse from '../../shared/sendResponse';
 import { Request, Response } from 'express';
 import { JwtPayload } from 'jsonwebtoken';
 import { BookingService } from './booking.service';
-import { IBooking } from './booking.interface';
+import { IBooking, BookingStatus } from './booking.interface';
 
 const getAllBookingFromDB = catchAsync(async (req: Request, res: Response) => {
   const user = req.user as JwtPayload;
@@ -32,7 +32,6 @@ const getSingleBookingFromDB = catchAsync(
 );
 
 const getMyBookingIntoDB = catchAsync(async (req: Request, res: Response) => {
-  
   const user = req.user as JwtPayload;
 
   const result = await BookingService.getMyBooking(user);
@@ -44,11 +43,13 @@ const getMyBookingIntoDB = catchAsync(async (req: Request, res: Response) => {
   });
 });
 
-
 const addBookingIntoDB = catchAsync(async (req: Request, res: Response) => {
   const user = req.user as JwtPayload;
   const formData = req.body;
-  const result = await BookingService.addBookingIntoDB(user, formData as IBooking);
+  const result = await BookingService.addBookingIntoDB(
+    user,
+    formData as IBooking
+  );
   sendResponse(res, {
     code: StatusCodes.OK,
     message: 'Booking successfully',
@@ -56,8 +57,15 @@ const addBookingIntoDB = catchAsync(async (req: Request, res: Response) => {
   });
 });
 
-const updateBookingIntoDB = catchAsync(async (req: Request, res: Response) => {
-  const result = await BookingService.updateBookingIntoDB(req);
+const updateBookingStatus = catchAsync(async (req: Request, res: Response) => {
+  const id = req.params.id;
+  const user = req.user as JwtPayload;
+  const {bookingStatus} = req.body;
+  const result = await BookingService.updateBookingIntoDB(
+    user,
+    bookingStatus as BookingStatus,
+    id as string
+  );
   sendResponse(res, {
     code: StatusCodes.OK,
     message: 'Booking updated successfully',
@@ -78,7 +86,7 @@ export const BookingController = {
   getAllBookingFromDB,
   getSingleBookingFromDB,
   addBookingIntoDB,
-  updateBookingIntoDB,
+  updateBookingStatus,
   deleteBookingIntoDB,
   getMyBookingIntoDB,
 };

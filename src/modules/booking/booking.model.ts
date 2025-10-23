@@ -31,7 +31,13 @@ const bookingSchema = new Schema<IBooking>(
     category: {
       type: String,
       required: true,
-      enum: ['Ski_Pass', 'Ski_Hire', 'Transport', 'Restaurant_Booking', 'Massage'],
+      enum: [
+        'Ski_Pass',
+        'Ski_Hire',
+        'Transport',
+        'Restaurant_Booking',
+        'Massage',
+      ],
     },
 
     personCount: { type: Number },
@@ -49,7 +55,7 @@ const bookingSchema = new Schema<IBooking>(
 
     bookingStatus: {
       type: String,
-      enum: ['Active', 'Complete', 'Cancel', 'Delete'],
+      enum: ['Active', 'Pending', 'Complete', 'Cancel', 'Delete'],
       default: 'Active',
       required: true,
     },
@@ -60,11 +66,3 @@ const bookingSchema = new Schema<IBooking>(
 );
 
 export const Booking = model<IBooking>('Booking', bookingSchema);
-
-
-/**  populated will be  const
- * 
- *  booking = await Booking.findById(id).populate('productId');
- * 
- * 
-*/

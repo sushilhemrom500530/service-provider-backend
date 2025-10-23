@@ -42,10 +42,10 @@ router.post(
 
 // update
 router.patch(
-  '/update/:id',
-  auth('User', 'Admin', 'Provider'), 
-  validateRequest(BookingRoutesValidations.createBookingSchema),
-  BookingController.updateBookingIntoDB
+  '/update-status/:id',
+  auth('Provider'), 
+  validateRequest(BookingRoutesValidations.updateBookingSchema),
+  BookingController.updateBookingStatus
 );
 
 // delete
