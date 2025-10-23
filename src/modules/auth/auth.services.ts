@@ -1,4 +1,3 @@
- 
 import bcrypt from 'bcrypt';
 import { config } from '../../config';
 import { TokenType } from '../token/token.interface';
@@ -28,19 +27,28 @@ const validateUserStatus = (user: IUser) => {
   }
 };
 
-
 const registerUser = async (userData: Partial<IUser>) => {
- 
   const existingUser = await User.findOne({ email: userData?.email });
   if (existingUser) {
     throw new AppError(StatusCodes.BAD_REQUEST, 'User already exists.');
   }
-
-  const newUser = await User.create({
-    email: userData.email,
-    password: userData.password,
-    agreeTermsCondition: userData.agreeTermsCondition, 
+  const isTypeOfSkiPass = await User.find({
+    email: userData?.email,
+    providerType: 'Ski_Pass',
   });
+
+  if (userData?.providerType === 'Ski_Pass') {
+    const existingSkiPassProvider = await User.findOne({
+      providerType: 'Ski_Pass',
+    });
+    if (existingSkiPassProvider) {
+      throw new AppError(
+        StatusCodes.BAD_REQUEST,
+        'Only one user can be the Ski Pass provider.'
+      );
+    }
+  }
+  const newUser = await User.create(userData);
 
   // console.log("creating user info is :", newUser);
 
@@ -58,8 +66,8 @@ const registerUser = async (userData: Partial<IUser>) => {
   const tokens = await TokenService.accessAndRefreshToken(newUser);
 
   return {
-    tokens, 
-    newUser
+    tokens,
+    newUser,
   };
 };
 
@@ -78,83 +86,7 @@ const updateUserProfile = async (email: string, updates: Partial<IUser>) => {
   return updatedUser;
 };
 
-// const registerUser = async (userData: any) => {
-   
-//   const existingUser = await User.findOne({ email: userData?.email });
-//   if (existingUser) {
-//     throw new AppError(StatusCodes.BAD_REQUEST, 'User already exists.');
-//   }
- 
-//   const user = await User.create(userData);
-
-//   // Send verification OTP after user creation
-//   try {
-//     await OtpService.createVerificationEmailOtp(user.email);
-//   } catch (error) {
-//     throw new AppError(
-//       StatusCodes.INTERNAL_SERVER_ERROR,
-//       'Failed to send OTP.'
-//     );
-//   }
   
-//   const tokens = await TokenService.accessAndRefreshToken(user);
-  
-//   return {
-//     tokens,
-//     user 
-//   };
-// };
-
-
-const createUser = async (userData: IRegisterData) => {
-  const existingUser = await User.findOne({ email: userData.email });
-  if (existingUser) {
-    throw new AppError(StatusCodes.BAD_REQUEST, 'User already exists.');
-  }
-  const newUserData: Partial<IUser> = {
-    email: userData?.email,
-    password: userData?.password,
-    authMethods: [AuthMethod.Email],
-    primaryAuthMethod: AuthMethod.Email,
-    profile: {
-      fullName: userData?.fullName,
-      phoneNumber: userData?.phoneNumber,
-      dateOfBirth: new Date(userData?.dateOfBirth),
-    },
-  };
-
-  const user = await User.create(newUserData);
-
-  // Send verification OTP after user creation
-  // try {
-  //   await OtpService.createVerificationEmailOtp(user.email);
-  // } catch (error) {
-  //   throw new AppError(
-  //     StatusCodes.INTERNAL_SERVER_ERROR,
-  //     'Failed to send OTP.'
-  //   );
-  // }
-
-  const formatedUserData = {
-    _id: user?.id,
-    email: user?.email,
-    role: user?.role,
-    status: user?.status,
-    authMethods: user?.authMethods,
-    primaryAuthMethod: user?.primaryAuthMethod,
-    profile: user?.profile,
-    metadata: {
-      createdAt: user?.metadata?.createdAt,
-      updatedAt: user?.metadata?.updatedAt,
-    },
-  };
-
-  const tokens = await TokenService.accessAndRefreshToken(user);
-  return {
-    tokens,
-    user: formatedUserData,
-  };
-};
 
 const verifyOtp = async (payload: IVerifyOtpData) => {
   const user = await User.findOne({ email: payload.email });
@@ -162,11 +94,11 @@ const verifyOtp = async (payload: IVerifyOtpData) => {
     throw new AppError(StatusCodes.NOT_FOUND, 'User not found.');
   }
 
-  validateUserStatus(user); 
+  validateUserStatus(user);
 
   await OtpService.verifyOTP(
     user.email,
-    payload.otp,
+    payload.otp
     // user.isResetPassword ? OtpType.RESET_PASSWORD : OtpType.VERIFY
   );
 
@@ -186,7 +118,6 @@ const verifyOtp = async (payload: IVerifyOtpData) => {
   };
 };
 
-
 const forgotPassword = async (email: string) => {
   const user = await User.findOne({ email });
   if (!user) {
@@ -194,7 +125,7 @@ const forgotPassword = async (email: string) => {
   }
 
   validateUserStatus(user);
- 
+
   await OtpService.createResetPasswordOtp(user?.email);
   user.isResetPassword = true;
   await user.save();
@@ -218,7 +149,7 @@ const resendOtp = async (email: string) => {
   if (user) {
     await OtpService.createResetPasswordOtp(user.email);
     message = 'Password reset OTP has been resent to your email.';
-  } 
+  }
   // else {
   //   // Check if user is already verified
   //   if (user.status === UserStatus.Active) {
@@ -245,9 +176,7 @@ const resetPassword = async (email: string, password: string) => {
 
   validateUserStatus(user);
 
-  console.log("User: ", user);
-
- 
+  console.log('User: ', user);
 
   // Verify that password reset was requested
   // if (!user.isResetPassword) {
@@ -279,7 +208,7 @@ const changePassword = async (
   }
 
   validateUserStatus(user);
- 
+
   // Verify current password
   const isPasswordValid = await bcrypt.compare(currentPassword, user.password);
   if (!isPasswordValid) {
@@ -361,8 +290,7 @@ const refreshAuth = async (refreshToken: string) => {
 
 export const AuthService = {
   registerUser,
-  updateUserProfile,
-  createUser,
+  updateUserProfile, 
   verifyOtp,
   resetPassword,
   forgotPassword,

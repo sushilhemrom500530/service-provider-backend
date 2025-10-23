@@ -27,12 +27,13 @@ export interface IUser extends Document {
   fullName: string;
   email: string;
   password: string;
+  providerType: string;
   phoneNumber: string;
   profileUrl?: string;
   service?: IService;  
   status: UserStatus;
   address: string;
-  role: 'user' | 'provider' | 'admin';
+  role: 'User' | 'Provider' | 'Admin';
   isDeleted: boolean;
   createdAt?: Date;
   updatedAt?: Date;

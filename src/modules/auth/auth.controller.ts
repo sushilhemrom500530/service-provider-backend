@@ -29,6 +29,7 @@ const validateUserStatus = (user: IUser) => {
 
 
 const register = catchAsync(async (req: Request, res: Response) => {
+
   const result = await AuthService.registerUser(req.body);
 
   sendResponse(res, {
@@ -52,15 +53,7 @@ const updateProfile = catchAsync(async (req: Request, res: Response) => {
 
 
 
-// const register = catchAsync(async (req, res) => {
-//   const result = await AuthService.registerUser(req.body)
-//   sendResponse(res, {
-//     code: StatusCodes.CREATED,
-//     message:
-//       'User created successfully. Please check your email for verification code.',
-//     data: result,
-//   });
-// });
+ 
 
 const login = catchAsync(async (req, res) => {
   const { email, password } = req.body;
@@ -105,11 +98,8 @@ const login = catchAsync(async (req, res) => {
     email: user?.email,
     role: user?.role,
     status: user?.status,
-    profile: user?.profile,
-    metadata: {
-      createdAt: user?.metadata?.createdAt,
-      updatedAt: user?.metadata?.updatedAt,
-    },
+    profile: user?.profile, 
+    providerType: user?.providerType,
   };
   // Send response with tokens
   sendResponse(res, {
@@ -222,13 +212,7 @@ const refreshToken = catchAsync(async (req, res) => {
 });
 
  
- const getLinkedAccounts = catchAsync(async (req, res) => {
-  sendResponse(res, {
-    code: StatusCodes.OK,
-    message: 'Linked accounts fetched successfully.',
-    data: [], // or your real logic
-  });
-});
+ 
  
 
 export const AuthController = {
@@ -241,6 +225,5 @@ export const AuthController = {
   changePassword,
   refreshToken,
   forgotPassword,
-  resetPassword, 
-  getLinkedAccounts
+  resetPassword,  
 };

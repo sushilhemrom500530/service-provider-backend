@@ -3,11 +3,14 @@ import { Request, Response } from 'express';
 import { TermsAndServiceService } from './termsService.service';
 import sendResponse from './../../../shared/sendResponse';
 import catchAsync from './../../../shared/catchAsync';
+import { JwtPayload } from 'jsonwebtoken';
  
 
 const getAllTermsFromDB = catchAsync(async (req: Request, res: Response) => {
+
+  const user = req.user as JwtPayload;
   
-  const result = await TermsAndServiceService.getAllTermsFromDB();
+  const result = await TermsAndServiceService.getAllTermsFromDB(user);
  
   sendResponse(res, {
     code: StatusCodes.OK,
@@ -16,19 +19,11 @@ const getAllTermsFromDB = catchAsync(async (req: Request, res: Response) => {
   });
 });
  
-const getSingleTermsFromDB = catchAsync(async (req: Request, res: Response) => {
-   const result = await TermsAndServiceService.getSingleTermsFromDB();
- 
-  sendResponse(res, {
-    code: StatusCodes.OK,
-    message: 'Terms and condition fetched successfully',
-    data: result,
-  });
-});
  
  
 const addTermsIntoDB = catchAsync(async (req: Request, res: Response) => {
-  const result = await TermsAndServiceService.addTermsIntoDB();
+   const user = req.user as JwtPayload;
+  const result = await TermsAndServiceService.addTermsIntoDB(req.body, user);
   sendResponse(res, {
     code: StatusCodes.OK,
     message: 'Terms and condition added successfully',
@@ -38,7 +33,9 @@ const addTermsIntoDB = catchAsync(async (req: Request, res: Response) => {
 
 
 const updateTermsFromDB = catchAsync(async (req: Request, res: Response) => {
-  const result = await TermsAndServiceService.updateTermsFromDB();
+  const id = req.params.id;
+  const user = req.user as JwtPayload;
+  const result = await TermsAndServiceService.updateTermsFromDB(id as string,req.body, user);
   sendResponse(res, {
     code: StatusCodes.OK,
     message: 'Terms and condition updated successfully',
@@ -46,21 +43,11 @@ const updateTermsFromDB = catchAsync(async (req: Request, res: Response) => {
   });
 });
 
-const deleteTermsFromDB = catchAsync(async (req: Request, res: Response) => {
-  const result = await TermsAndServiceService.deleteTermsFromDB();
-  sendResponse(res, {
-    code: StatusCodes.OK,
-    message: 'Terms and condition deleted successfully',
-    data: result,
-  });
-});
-
+ 
  
 
 export const TermsAndServiceController = {
-  getAllTermsFromDB,
-  getSingleTermsFromDB,
+  getAllTermsFromDB, 
   addTermsIntoDB,
-  updateTermsFromDB,
-  deleteTermsFromDB
+  updateTermsFromDB, 
 };

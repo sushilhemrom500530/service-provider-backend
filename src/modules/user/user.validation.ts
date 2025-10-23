@@ -68,8 +68,19 @@ const privacySettingsValidationSchema = z.object({
   }),
 });
 
+
+const updateMyProfileSchema=z.object({
+  body:z.object({
+    fullName:z.string().optional(),
+    age:z.string().optional(),
+    gender:z.string().optional(),
+    aboutMe:z.string().optional(),
+  })
+})
+
 export const UserValidation = {
   changeUserStatusValidationSchema,
   completeProfileValidationSchema,
-  privacySettingsValidationSchema
+  privacySettingsValidationSchema,
+  updateMyProfileSchema
 };

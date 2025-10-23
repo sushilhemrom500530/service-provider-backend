@@ -6,10 +6,11 @@ import pick from '../../shared/pick';
 import { USER_UPLOAD_FOLDER } from './user.constant';
 import { s3Services } from '../../aws/s3Service';
 import { User } from './user.model';
+import { JwtPayload } from 'jsonwebtoken';
 
 const getAllUsers = catchAsync(async (req, res) => {
-  console.log("hellow find you ::");
-  const result = await User.find();
+  
+  const result = await User.find({ isDeleted: false, status:'Active' });
   sendResponse(res, {
     code: StatusCodes.OK,
     message: 'Users retrieved successfully.',
@@ -35,15 +36,15 @@ const getUserById = catchAsync(async (req, res) => {
   });
 });
 
-
 const updateUserStatus = catchAsync(async (req, res) => {
-  const { id } = req.params;
+  const { id } = req.params; 
   const { status } = req.body;
-  const user = await UserService.updateUserStatus(id, status);
+  const user = req.user as JwtPayload;
+  const result = await UserService.updateUserStatus(id, user, status);
   sendResponse(res, {
     code: StatusCodes.OK,
     message: 'User status updated successfully.',
-    data: user,
+    data: result,
   });
 });
 
@@ -78,17 +79,18 @@ const getMyProfile = catchAsync(async (req, res) => {
 
 const updateMyProfile = catchAsync(async (req, res) => {
   const { userId } = req.user;
-
-  
   // Handle file upload
-  // if (req.file) {
-  //   const fileUrl = await s3Services.uploadSingleFileToS3(req.file, USER_UPLOAD_FOLDER);
+  if (req.file) {
+    const fileUrl = await s3Services.uploadSingleFileToS3(
+      req.file,
+      USER_UPLOAD_FOLDER
+    );
+    req.body.profileUrl = fileUrl;
+  }else{
+    throw new Error('File not found');
+  }
 
-  //   req.body.profileUrl = fileUrl;
-  // }
   const updateData = req?.body;
-
-    console.log('update user data:', updateData);
 
   const result = await UserService.updateMyProfile(userId, updateData);
 
@@ -99,13 +101,12 @@ const updateMyProfile = catchAsync(async (req, res) => {
   });
 });
 
-
 const deleteMyProfile = catchAsync(async (req, res) => {
   const { userId } = req.user;
   await UserService.deleteMyProfile(userId);
   sendResponse(res, {
     code: StatusCodes.OK,
-    message: 'Profile deleted successfully.',
+    message: 'User deleted successfully.',
     data: {},
   });
 });

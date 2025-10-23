@@ -27,27 +27,22 @@ const seedUsers = async () => {
   try {
     const usersData = [
       {
-        email: 'rakib2020.tkg@gmail.com',
-        password: '123456',
-        role: 'Super_Admin',
-        status: 'Active',
-        profile: {
-          firstName: 'Rakib',
-          lastName: 'Ali',
-          phone: '1234567890',
-          address: 'Dhaka, Bangladesh',
-        },
-      },
-      {
-        email: 'info@claimbecon.com',
-        password: '123456',
+        email: 'sushil500530@gmail.com',
+        password: '12345678',
         role: 'Admin',
         status: 'Active',
-        profile: {
-          firstName: 'Claim ',
-          lastName: 'Becon',
-          phone: '1234567890',
-          address: 'Usa',
+      },
+      {
+        email: 'sushilhemrom262@gmail.com',
+        password: '12345678',
+        role: 'Provider',
+        status: 'Active',
+        address: '123 Main Street, Springfield, IL 62704',
+        fullName: 'Sushil Hemrom',
+        phoneNumber: '01767122497',
+        service: {
+          serviceType: 'Plumbing',
+          category: ['Home Maintenance', 'Car', 'CNG'],
         },
       },
     ];

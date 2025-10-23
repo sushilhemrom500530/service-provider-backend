@@ -7,23 +7,15 @@ const router = Router();
 // get all  
 router.get(
   '/all',
-  // auth('User','Admin','User', 'Provider'),
-  // validateRequest(paymentValidations.processPayPalPayment),
+  auth('User','Admin', 'Provider'), 
   AboutUsController.getAllAboutFromDB
 );
-
-// get single   
-router.get(
-  '/:id',
-  // auth('User','Admin'),
-  AboutUsController.getSingleAboutFromDB
-);
-
+ 
 
 // create 
 router.post(
   '/create',
-  // auth('Admin'),
+  auth('Admin'),
   // validateRequest(paymentValidations.processPayPalPayment),
   AboutUsController.addAboutIntoDB
 );
@@ -31,17 +23,10 @@ router.post(
 // update 
 router.patch(
   '/update/:id',
-  // auth('Admin'),
+  auth('Admin'),
   // validateRequest(paymentValidations.processPayPalPayment),
   AboutUsController.updateAboutFromDB
 );
-
-// delete 
-router.delete(
-  '/delete/:id',
-  // auth('Admin'), 
-  AboutUsController.deleteAboutFromDB
-);
-
+ 
  
 export const AboutUsRoutes = router;
