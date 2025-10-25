@@ -6,6 +6,8 @@ import { s3Services } from './../../aws/s3Service';
 import { User } from './../user/user.model';
 import { JwtPayload } from 'jsonwebtoken';
 import { Restaurant } from './restaurant.model';
+import { USER_UPLOADS_FOLDER } from './restaurant.constant';
+import { IRestaurant } from './restaurant.interface';
 
 const getAllRestaurantFromDB = async (user: JwtPayload) => {
   const isExistsUser = await User.findOne({ email: user?.email });
@@ -41,6 +43,7 @@ const getSingleRestaurantFromDB = async (id: string, user: JwtPayload) => {
 
 const addRestaurantIntoDB = async (req: Request, res: Response) => {
   const user = req.user as JwtPayload;
+
   // check user
   const isExistsUser = await User.findOne({ email: user?.email });
   if (!isExistsUser) {
@@ -66,20 +69,94 @@ const addRestaurantIntoDB = async (req: Request, res: Response) => {
     );
   }
 
-  if (req.file) {
-    const fileUrl = await s3Services.uploadSingleFileToS3(
-      req.file,
-      USER_UPLOADS_FOLDER
-    );
-    req.body.thumbnail = fileUrl;
-  } else {
+  // Upload restaurant thumbnail
+  const thumbnailFile = req.files?.['thumbnail']?.[0];
+  if (!thumbnailFile) {
     throw new AppError(StatusCodes.BAD_REQUEST, 'Thumbnail file not found.');
   }
+  const thumbnailUrl = await s3Services.uploadSingleFileToS3(
+    thumbnailFile,
+    USER_UPLOADS_FOLDER
+  );
 
-  const updateData = req?.body;
+  // Parse menu items JSON
+  let menuItems: any[] = [];
+  if (typeof req.body.menuItems === 'string') {
+    menuItems = JSON.parse(req.body.menuItems);
+  } else if (Array.isArray(req.body.menuItems)) {
+    menuItems = req.body.menuItems;
+  } else {
+    throw new AppError(
+      StatusCodes.BAD_REQUEST,
+      'Menu items data is missing or invalid.'
+    );
+  }
 
-  const result = await Restaurant.create(updateData);
+  // Upload menu item images
+  const menuItemFiles = req.files?.['menuItems'] || [];
+  const processedMenuItems = await Promise.all(
+    menuItems.map(async (item: any, index: number) => {
+      const menuFile = menuItemFiles[index];
+      if (!menuFile) {
+        throw new AppError(
+          StatusCodes.BAD_REQUEST,
+          `Menu image for item ${item?.name} is missing.`
+        );
+      }
 
+      const menuImageUrl = await s3Services.uploadSingleFileToS3(
+        menuFile,
+        USER_UPLOADS_FOLDER
+      );
+
+      return {
+        ...item,
+        price: Number(item.price),
+        menuImage: menuImageUrl,
+      };
+    })
+  );
+
+  // Calculate total price
+  const { openTime, closeTime } = req.body;
+  const totalPrice = menuItems.reduce(
+    (sum: number, item: any) => sum + Number(item.price || 0),
+    0
+  );
+
+  // day count calculation
+  function timeStrToHours(timeStr: string) {
+    const [time, meridian] = timeStr.split(' ');
+    let [hours, minutes] = time.split(':').map(Number);
+
+    if (meridian === 'PM' && hours !== 12) hours += 12;
+    if (meridian === 'AM' && hours === 12) hours = 0;
+
+    return hours + minutes / 60;
+  }
+
+  // Convert openTime and closeTime to hours
+  const openHours = timeStrToHours(openTime);
+  const closeHours = timeStrToHours(closeTime);
+
+  // Calculate total hours difference
+  let totalHours = closeHours - openHours;
+  if (totalHours < 0) totalHours += 24; // handle overnight shifts
+
+  // Calculate dayCount as fractional days
+  const dayCount = totalHours / 24;
+
+  //Prepare restaurant data
+  const restaurantData = {
+    ...(req.body as IRestaurant),
+    ownerId: isExistsUser?._id,
+    thumbnail: thumbnailUrl,
+    totalPrice,
+    dayCount,
+    menuItems: processedMenuItems,
+  };
+ 
+  const result = await Restaurant.create(restaurantData);
   return result;
 };
 

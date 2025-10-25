@@ -55,7 +55,7 @@ const createSkiPassSchema = z.object({
 
 const updateSkiPassSchema = z.object({
   body: z.object({
-    title: z.string().optional(),
+   title: z.string().min(1, 'Title cannot be empty').optional(),
     description: z.string().optional(),
     ownerId: z.string().optional(),
     skiPassType: z.string().optional(),

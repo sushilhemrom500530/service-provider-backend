@@ -29,7 +29,7 @@ import { z } from 'zod';
 
  const updateMassage = z.object({
   body: z.object({
-    title: z.string().optional(),
+   title: z.string().min(1, 'Title cannot be empty').optional(),
     description: z.string().optional(), 
     serviceArea:  z.string().optional(),
     amount:  z.string().optional(),

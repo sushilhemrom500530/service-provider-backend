@@ -17,8 +17,7 @@ const menuItemsSchema = new Schema<IMenuItems>(
     price: {
       type: Number,
       required: true,
-      min: 1,
-      max: 5,
+      min: 1, 
     },
     menuImage: {
       type: String,
@@ -29,8 +28,7 @@ const menuItemsSchema = new Schema<IMenuItems>(
       required: true,
       trim: true,
     },
-  },
-  { _id: false }
+  }, 
 );
 
 const restaurantSchema = new Schema<IRestaurant>(
@@ -64,6 +62,11 @@ const restaurantSchema = new Schema<IRestaurant>(
     },
 
     totalPrice: {
+      type: Number,
+      required: true,
+      min: 0,
+    },
+    dayCount: {
       type: Number,
       required: true,
       min: 0,

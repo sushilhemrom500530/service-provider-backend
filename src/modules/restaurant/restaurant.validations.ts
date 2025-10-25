@@ -1,5 +1,26 @@
 import { z } from 'zod';
 
+const menuItemSchema = z.object({
+  name: z.string({
+    required_error: 'Menu item name is required',
+  }),
+  menuType: z.string({
+    required_error: 'Menu type is required',
+  }),
+  price: z.coerce
+    .number()
+    .min(1, { message: 'Amount must be greater than zero' }),
+    
+  menuImage: z
+    .string({
+      required_error: 'Menu image is required',
+    })
+    .optional(),
+  description: z.string({
+    required_error: 'Description is required',
+  }),
+});
+
 const createRestaurant = z.object({
   body: z.object({
     title: z
@@ -8,107 +29,56 @@ const createRestaurant = z.object({
         invalid_type_error: 'Title must be a string',
       })
       .min(1, 'Title cannot be empty'),
-    description: z
-      .string({
-        required_error: 'Description is required',
-        invalid_type_error: 'Description must be a string',
-      })
-      .min(1, 'Description cannot be empty'),
-    ownerId: z
-      .string({
-        required_error: 'OwnerId is required',
-        invalid_type_error: 'OwnerId must be a string',
-      })
-      .regex(/^[0-9a-fA-F]{24}$/, 'Invalid MongoDB ObjectId'),
-    skiPassType: z.enum(['Basic', 'Premium', 'Family', 'Night', 'Custom'], {
-      required_error: 'SkiPassType is required',
+
+    openTime: z.string({
+      required_error: 'Open time is required',
     }),
-    duration: z
-      .string({
-        required_error: 'Duration is required',
-        invalid_type_error: 'Duration must be a string',
+
+    closeTime: z.string({
+      required_error: 'Close time is required',
+    }),
+
+    serviceArea: z.string({
+      required_error: 'Service area is required',
+    }),
+
+    menuItems: z
+      .array(menuItemSchema, {
+        required_error: 'Menu items are required',
       })
-      .min(1, 'Duration cannot be empty'),
-    time: z
-      .string({
-        required_error: 'Time is required',
-        invalid_type_error: 'Time must be a string',
-      })
-      .min(1, 'Time cannot be empty'),
-    date: z
-      .string({
-        required_error: 'Date is required',
-        invalid_type_error: 'Date must be a string',
-      })
-      .refine(val => !isNaN(Date.parse(val)), 'Invalid date format'),
-    serviceArea: z
-      .string({
-        required_error: 'Service area is required',
-        invalid_type_error: 'Service area must be a string',
-      })
-      .min(1, 'Service area cannot be empty'),
-    amount: z.coerce
-      .number()
-      .min(1, { message: 'Amount must be greater than zero' }),
+      .min(1, 'At least one menu item is required'),
   }),
 });
-
 
 const updateRestaurant = z.object({
   body: z.object({
-    title: z
-      .string({
-        required_error: 'Title is required',
-        invalid_type_error: 'Title must be a string',
+    title: z.string().min(1, 'Title cannot be empty').optional(),
+
+    ownerId: z.string().optional(),
+
+    thumbnail: z.string().optional(),
+
+    openTime: z.string().optional(),
+
+    closeTime: z.string().optional(),
+
+    serviceArea: z.string().optional(),
+
+    totalPrice: z
+      .number({
+        invalid_type_error: 'Total price must be a number',
       })
-      .min(1, 'Title cannot be empty'),
-    description: z
-      .string({
-        required_error: 'Description is required',
-        invalid_type_error: 'Description must be a string',
-      })
-      .min(1, 'Description cannot be empty'),
-    ownerId: z
-      .string({
-        required_error: 'OwnerId is required',
-        invalid_type_error: 'OwnerId must be a string',
-      })
-      .regex(/^[0-9a-fA-F]{24}$/, 'Invalid MongoDB ObjectId'),
-    skiPassType: z.enum(['Basic', 'Premium', 'Family', 'Night', 'Custom'], {
-      required_error: 'SkiPassType is required',
-    }),
-    duration: z
-      .string({
-        required_error: 'Duration is required',
-        invalid_type_error: 'Duration must be a string',
-      })
-      .min(1, 'Duration cannot be empty'),
-    time: z
-      .string({
-        required_error: 'Time is required',
-        invalid_type_error: 'Time must be a string',
-      })
-      .min(1, 'Time cannot be empty'),
-    date: z
-      .string({
-        required_error: 'Date is required',
-        invalid_type_error: 'Date must be a string',
-      })
-      .refine(val => !isNaN(Date.parse(val)), 'Invalid date format'),
-    serviceArea: z
-      .string({
-        required_error: 'Service area is required',
-        invalid_type_error: 'Service area must be a string',
-      })
-      .min(1, 'Service area cannot be empty'),
-    amount: z.coerce
-      .number()
-      .min(1, { message: 'Amount must be greater than zero' }),
+      .min(0, 'Total price must be non-negative')
+      .optional(),
+
+    menuItems: z
+      .array(menuItemSchema)
+      .min(1, 'At least one menu item is required')
+      .optional(),
   }),
 });
- 
 
 export const RestaurantValidations = {
   createRestaurant,
-  updateRestaurant
+  updateRestaurant,
 };

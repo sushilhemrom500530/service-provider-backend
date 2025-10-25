@@ -2,6 +2,14 @@ import mongoose, { Schema, Model } from 'mongoose';
 import { IMassage } from './massage.interface';
 import { reviewSchema, refundSchema } from './../common/common.schema';
 
+const durationSchema = new Schema(
+  {
+    duration: { type: String, required: true },
+    amount: { type: Number, required: true },
+  },
+  { _id: false }
+);
+
 const massageSchema = new Schema<IMassage>(
   {
     title: {
@@ -33,19 +41,10 @@ const massageSchema = new Schema<IMassage>(
       required: true,
       min: 0,
     },
-    durationByAmount: [
-      {
-        duration: {
-          type: String,
-          required: true,
-        },
-        amount: {
-          type: Number,
-          required: true,
-          min: 0,
-        },
-      },
-    ],
+    durationByAmount: {
+      type: [durationSchema],
+      required: true,
+    },
     benefits: {
       type: String,
       required: true,
