@@ -1,0 +1,178 @@
+import { Types } from 'mongoose';
+import AppError from '../../errors/AppErro';
+import { StatusCodes } from 'http-status-codes';
+import { Request, Response } from 'express';
+import { s3Services } from './../../aws/s3Service'; 
+import { User } from './../user/user.model';
+import { JwtPayload } from 'jsonwebtoken'; 
+
+const getAllRestaurantFromDB = async (user: JwtPayload) => {
+  const isExistsUser = await User.findOne({ email: user?.email });
+  if (!isExistsUser) {
+    throw new AppError(StatusCodes.NOT_FOUND, 'User not found.');
+  }
+
+  const result = await Restaurant.find();
+  return result;
+};
+
+const getSingleRestaurantFromDB = async (id: string, user: JwtPayload) => {
+  const isExistsUser = await User.findOne({ email: user?.email });
+  if (!isExistsUser) {
+    throw new AppError(StatusCodes.NOT_FOUND, 'User not found.');
+  }
+  const result = await SkiPass.findById(id);
+  return result;
+};
+
+const addRestaurantIntoDB = async (req: Request, res: Response) => {
+  // check user
+  const user = await User.findById(req?.body?.ownerId);
+  if (!user) {
+    throw new AppError(StatusCodes.NOT_FOUND, 'User not found.');
+  }
+
+  // Check providerType
+  if (user.providerType !== 'Ski_Pass') {
+    throw new AppError(
+      StatusCodes.FORBIDDEN,
+      'User is not authorized to create a Ski Pass.'
+    );
+  }
+
+  if (req.file) {
+    const fileUrl = await s3Services.uploadSingleFileToS3(
+      req.file,
+      USER_UPLOADS_FOLDER
+    );
+    req.body.thumbnail = fileUrl;
+  } else {
+    throw new AppError(StatusCodes.BAD_REQUEST, 'Thumbnail file not found.');
+  }
+
+  const updateData = req?.body;
+
+  const result = await SkiPass.create(updateData);
+
+  return result;
+};
+
+export const reviewRestaurant = async (
+  id: string,
+  user: JwtPayload,
+  payload: Partial<IReview>
+) => {
+  // Verify user exists
+  const isExistsUser = await User.findOne({ email: user?.email });
+  if (!isExistsUser) {
+    throw new AppError(StatusCodes.NOT_FOUND, "User not found.");
+  }
+
+  // Ensure user role is 'User'
+  if (isExistsUser?.role !== "User") {
+    throw new AppError(
+      StatusCodes.FORBIDDEN,
+      "You cannot add a review because your account is not a user."
+    );
+  }
+
+  // Find the SkiPass product
+  const skiPass = await SkiPass.findById(id);
+  if (!skiPass) {
+    throw new AppError(StatusCodes.NOT_FOUND, "Ski pass not found");
+  }
+
+  //  (Optional) Prevent duplicate reviews by the same user
+  const alreadyReviewed = skiPass.reviews.some(
+    (review) => review.userId.toString() === isExistsUser._id.toString()
+  );
+  if (alreadyReviewed) {
+    throw new AppError(
+      StatusCodes.BAD_REQUEST,
+      "You have already reviewed this ski pass."
+    );
+  }
+
+  // Push new review
+  const newReview = {
+    userId: isExistsUser._id,
+    rating: payload.rating,
+    comment: payload.comment,
+    createdAt: new Date(),
+  };
+
+  skiPass.reviews.push(newReview as IReview);
+
+  // Recalculate average rating
+  const total = skiPass.reviews.reduce((sum, r) => sum + r.rating, 0);
+  skiPass.averageRating = parseFloat(
+    (total / skiPass.reviews.length).toFixed(1)
+  );
+
+  // Save updated SkiPass
+  await skiPass.save();
+
+  return skiPass;
+};
+
+const updateRestaurantIntoDB = async (
+  req: Request,
+  res: Response,
+  payload: Partial<any | {}>
+) => {
+  const id = req.params.id;
+  const user = req.user as JwtPayload;
+
+  // check user
+  const existsUser = await User.findById(req?.body?.ownerId);
+  if (!existsUser) {
+    throw new AppError(StatusCodes.NOT_FOUND, 'User not found.');
+  }
+
+  if (req.file) {
+    const fileUrl = await s3Services.uploadSingleFileToS3(
+      req.file,
+      USER_UPLOADS_FOLDER
+    );
+    req.body.thumbnail = fileUrl;
+  } else {
+    throw new AppError(StatusCodes.BAD_REQUEST, 'Thumbnail file not found.');
+  }
+
+  const updateData = req?.body;
+
+  const result = await SkiPass.create(updateData);
+
+  return result;
+};
+
+const deleteRestaurantIntoDB = async (id: string, user: JwtPayload) => {
+  const isExistsUser = await User.findOne({ email: user?.email });
+  if (!isExistsUser) {
+    throw new AppError(StatusCodes.NOT_FOUND, 'User not found.');
+  }
+ 
+  const skiPass = await SkiPass.findById(id);
+  if (!skiPass) {
+    throw new AppError(StatusCodes.NOT_FOUND, "Ski pass not found.");
+  }
+ 
+  if (skiPass.ownerId.toString() !== isExistsUser._id.toString()) {
+    throw new AppError(
+      StatusCodes.FORBIDDEN,
+      "You are not authorized to delete this ski pass."
+    );
+  }
+
+  const result = await SkiPass.findByIdAndDelete(id);
+  return result;
+};
+
+export const RestaurantService = {
+  getAllRestaurantFromDB,
+  addRestaurantIntoDB,
+  reviewRestaurant,
+  getSingleRestaurantFromDB,
+  updateRestaurantIntoDB,
+  deleteRestaurantIntoDB,
+};

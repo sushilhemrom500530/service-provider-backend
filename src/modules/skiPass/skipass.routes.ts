@@ -44,7 +44,7 @@ router.post(
    validateRequest(SkipassValidations.reviewSkiPassSchema),
   SkiPassController.reviewSkiPass
 );
-
+ 
 
 // update
 router.patch(

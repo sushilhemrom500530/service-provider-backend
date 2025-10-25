@@ -73,6 +73,23 @@ const updateBookingStatus = catchAsync(async (req: Request, res: Response) => {
   });
 });
 
+const refundBookingIntoDB = catchAsync(async (req: Request, res: Response) => {
+  
+  const id = req.params.id;
+  const user = req.user as JwtPayload;
+  const refundData = req.body; 
+  const result = await BookingService.refundBookingIntoDB(
+    user,
+    refundData as any,
+    id as string
+  );
+  sendResponse(res, {
+    code: StatusCodes.OK,
+    message: 'Booking cancelled successfully',
+    data: result,
+  });
+});
+
 const deleteBookingIntoDB = catchAsync(async (req: Request, res: Response) => {
   const id = req.params.id;
   const user = req.user as JwtPayload;
@@ -89,6 +106,7 @@ export const BookingController = {
   getSingleBookingFromDB,
   addBookingIntoDB,
   updateBookingStatus,
+  refundBookingIntoDB,
   deleteBookingIntoDB,
   getMyBookingIntoDB,
 };

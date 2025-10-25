@@ -5,6 +5,7 @@ import fileUploadHandler from './../../shared/fileUploadHandler';
 import convertHeicToPngMiddleware from './../../shared/convertHeicToPngMiddleware';
 import { BookingController } from './booking.controller';
 import { BookingRoutesValidations } from './booking.validations';
+import { SkipassValidations } from './../skiPass/skipass.validations';
 
 const router = Router();
 
@@ -43,6 +44,14 @@ router.patch(
   auth('Provider'),
   validateRequest(BookingRoutesValidations.updateBookingSchema),
   BookingController.updateBookingStatus
+);
+
+// refund
+router.patch(
+  '/refund/:id',
+  auth('User'),
+  validateRequest(SkipassValidations.refundSkiPassSchema),
+  BookingController.refundBookingIntoDB
 );
 
 // delete

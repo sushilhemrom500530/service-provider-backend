@@ -53,15 +53,16 @@ const reviewSkiPass = catchAsync(async (req: Request, res: Response) => {
     data: result,
   });
 });
-
+ 
 const updateSkiPassIntoDB = catchAsync(async (req: Request, res: Response) => {
   const result = await SkiPassService.updateSkiPassIntoDB(req)
   sendResponse(res, {
     code: StatusCodes.OK,
-    message: 'Ski pass added successfully',
+    message: 'Ski pass updated successfully',
     data: result,
   });
 });
+
 
 const deleteSkiPassIntoDB = catchAsync(async (req: Request, res: Response) => {
   const id = req.params.id;
@@ -82,5 +83,5 @@ export const SkiPassController = {
   addSkiPassIntoDB,
   reviewSkiPass,
   updateSkiPassIntoDB,
-  deleteSkiPassIntoDB
+  deleteSkiPassIntoDB, 
 };

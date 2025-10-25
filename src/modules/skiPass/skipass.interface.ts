@@ -6,6 +6,11 @@ export interface IReview {
   comment: string;
   createdAt?: Date;
 }
+export interface IRefund {
+  userId: Types.ObjectId;
+  reason: number; 
+  createdAt?: Date;
+}
 
 export interface ISkiPass extends Document {
   title: string;
@@ -20,6 +25,7 @@ export interface ISkiPass extends Document {
   amount: number;
   averageRating?: number;
   reviews?: IReview[];
+  refunds?: IRefund[];
   createdAt?: Date;
   updatedAt?: Date;
 }
