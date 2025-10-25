@@ -9,7 +9,7 @@ const bookingStatusEnum = z.enum(
 );
 
 const categoryEnum = z
-  .enum(['Ski_Pass', 'Ski_Hire', 'Transport', 'Restaurant_Booking', 'Massage'])
+  .enum(['Ski_Pass', 'Ski_Hire', 'Transport', 'Restaurant', 'Massage'])
   .optional();
 
 const productModelEnum = z

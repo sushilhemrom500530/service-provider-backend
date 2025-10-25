@@ -3,7 +3,10 @@ import auth from '../../middlewares/auth';
 import fileUploadHandler from './../../shared/fileUploadHandler';
 import convertHeicToPngMiddleware from './../../shared/convertHeicToPngMiddleware';
 import { USER_UPLOADS_FOLDER } from './massage.constant'; 
-import { MassageController } from './massage.controller';
+import { MassageController } from './massage.controller'; 
+import validateRequest from './../../shared/validateRequest';
+import { MassageValidations } from './massage.validations';
+import { CommonValidations } from './../common/common.validation';
 
  const uploads = fileUploadHandler(USER_UPLOADS_FOLDER);
 
@@ -30,7 +33,7 @@ router.post(
   auth('Admin', 'Provider'),
   uploads.single('file'),
   convertHeicToPngMiddleware(USER_UPLOADS_FOLDER),
-  //  validateRequest(MassageValidations.createMassageSchema),
+   validateRequest(MassageValidations.createMassage),
   MassageController.addMassageIntoDB
 );
 
@@ -39,7 +42,7 @@ router.post(
 router.post(
   '/review/:id',
   auth('User',),  
-  //  validateRequest(MassageValidations.reviewMassageSchema),
+   validateRequest(CommonValidations.reviewSchema),
   MassageController.reviewMassage
 );
  
@@ -48,7 +51,7 @@ router.post(
 router.patch(
   '/update/:id',
   auth('User', 'Admin', 'Provider'), 
-  // validateRequest(MassageValidations.createMassageSchema),
+  validateRequest(MassageValidations.updateMassage),
   MassageController.updateMassageIntoDB
 );
 

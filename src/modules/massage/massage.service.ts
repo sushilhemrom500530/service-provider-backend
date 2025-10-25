@@ -1,12 +1,13 @@
-import { Types } from 'mongoose'; 
+import { Types } from 'mongoose';
 import { StatusCodes } from 'http-status-codes';
-import { Request, Response } from 'express'; 
-import { JwtPayload } from 'jsonwebtoken'; 
+import { Request, Response } from 'express';
+import { JwtPayload } from 'jsonwebtoken';
 import { User } from './../user/user.model';
 import AppError from './../../errors/AppErro';
 import { Massage } from './massage.model';
 import { s3Services } from './../../aws/s3Service';
 import { IReview } from './../common/common.interface';
+import { USER_UPLOADS_FOLDER } from './massage.constant';
 
 const getAllMassageFromDB = async (user: JwtPayload) => {
   const isExistsUser = await User.findOne({ email: user?.email });
@@ -23,22 +24,35 @@ const getSingleMassageFromDB = async (id: string, user: JwtPayload) => {
   if (!isExistsUser) {
     throw new AppError(StatusCodes.NOT_FOUND, 'User not found.');
   }
-  const result = await Massage.findById(id);
+  const result = await Massage.findById(id).populate('ownerId');
+
+  if(!result){
+    throw new AppError(StatusCodes.NOT_FOUND, ` This massage id's ${id} data not found.'`);
+  }
   return result;
 };
 
 const addMassageIntoDB = async (req: Request, res: Response) => {
+  const user = req.user as JwtPayload;
   // check user
-  const user = await User.findById(req?.body?.ownerId);
-  if (!user) {
+  const isExistsUser = await User.findOne({ email: user?.email });
+  if (!isExistsUser) {
     throw new AppError(StatusCodes.NOT_FOUND, 'User not found.');
   }
 
-  // Check providerType
-  if (user.providerType !== 'Ski_Pass') {
+  // Validate provider role and type
+  if (isExistsUser?.role !== 'Provider') {
     throw new AppError(
       StatusCodes.FORBIDDEN,
-      'User is not authorized to create a Ski Pass.'
+      'You are not authorized to create a massage service.'
+    );
+  }
+
+  // Now we know user is a Provider — check providerType
+  if (isExistsUser?.providerType !== 'Restaurant') {
+    throw new AppError(
+      StatusCodes.FORBIDDEN,
+      'Only providers with providerType : Restaurant can create a massage service.'
     );
   }
 
@@ -52,7 +66,10 @@ const addMassageIntoDB = async (req: Request, res: Response) => {
     throw new AppError(StatusCodes.BAD_REQUEST, 'Thumbnail file not found.');
   }
 
-  const updateData = req?.body;
+  const updateData = {
+    ...req?.body,
+    ownerId: isExistsUser._id as Types.ObjectId,
+  };
 
   const result = await Massage.create(updateData);
 
@@ -67,31 +84,31 @@ export const reviewMassage = async (
   // Verify user exists
   const isExistsUser = await User.findOne({ email: user?.email });
   if (!isExistsUser) {
-    throw new AppError(StatusCodes.NOT_FOUND, "User not found.");
+    throw new AppError(StatusCodes.NOT_FOUND, 'User not found.');
   }
 
   // Ensure user role is 'User'
-  if (isExistsUser?.role !== "User") {
+  if (isExistsUser?.role !== 'User') {
     throw new AppError(
       StatusCodes.FORBIDDEN,
-      "You cannot add a review because your account is not a user."
+      'You cannot add a review because your account is not a user.'
     );
   }
 
   // Find the SkiPass product
   const massage = await Massage.findById(id);
   if (!massage) {
-    throw new AppError(StatusCodes.NOT_FOUND, "Massage not found");
+    throw new AppError(StatusCodes.NOT_FOUND, 'Massage not found');
   }
 
   //  (Optional) Prevent duplicate reviews by the same user
   const alreadyReviewed = massage.reviews.some(
-    (review) => review.userId.toString() === isExistsUser._id.toString()
+    review => review.userId.toString() === isExistsUser._id.toString()
   );
   if (alreadyReviewed) {
     throw new AppError(
       StatusCodes.BAD_REQUEST,
-      "You have already reviewed this massage."
+      'You have already reviewed this massage.'
     );
   }
 
@@ -153,16 +170,16 @@ const deleteMassageIntoDB = async (id: string, user: JwtPayload) => {
   if (!isExistsUser) {
     throw new AppError(StatusCodes.NOT_FOUND, 'User not found.');
   }
- 
+
   const massage = await Massage.findById(id);
   if (!massage) {
-    throw new AppError(StatusCodes.NOT_FOUND, "Massage not found.");
+    throw new AppError(StatusCodes.NOT_FOUND, 'Massage not found.');
   }
- 
+
   if (massage?.ownerId.toString() !== isExistsUser?._id.toString()) {
     throw new AppError(
       StatusCodes.FORBIDDEN,
-      "You are not authorized to delete this massage."
+      'You are not authorized to delete this massage.'
     );
   }
 

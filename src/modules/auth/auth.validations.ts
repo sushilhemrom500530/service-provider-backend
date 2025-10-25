@@ -17,11 +17,11 @@ const registerProviderSchema = z.object({
       .min(8, 'Password must be at least 8 characters long'),
 
     providerType: z.enum(
-      ['Ski_Pass', 'Ski_Hire', 'Transport', 'Restaurant_Booking', 'Massage'],
+      ['Ski_Pass', 'Ski_Hire', 'Transport', 'Restaurant', 'Massage'],
       {
         required_error: 'Provider Type is required',
         invalid_type_error:
-          'Provider Type must be one of Ski_Pass, Ski_Hire, Transport, Restaurant_Booking, or Massage',
+          'Provider Type must be one of Ski_Pass, Ski_Hire, Transport, Restaurant, or Massage',
       }
     ).optional(),
     role: z

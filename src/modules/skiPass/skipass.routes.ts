@@ -6,6 +6,7 @@ import validateRequest from './../../shared/validateRequest';
 import { SkipassValidations } from './skipass.validations';
 import fileUploadHandler from './../../shared/fileUploadHandler';
 import convertHeicToPngMiddleware from './../../shared/convertHeicToPngMiddleware';
+import { CommonValidations } from './../common/common.validation';
 
  const uploads = fileUploadHandler(USER_UPLOADS_FOLDER);
 
@@ -41,7 +42,7 @@ router.post(
 router.post(
   '/review/:id',
   auth('User',),  
-   validateRequest(SkipassValidations.reviewSkiPassSchema),
+   validateRequest(CommonValidations.reviewSchema),
   SkiPassController.reviewSkiPass
 );
  
@@ -50,7 +51,7 @@ router.post(
 router.patch(
   '/update/:id',
   auth('User', 'Admin', 'Provider'), 
-  validateRequest(SkipassValidations.createSkiPassSchema),
+  validateRequest(SkipassValidations.updateSkiPassSchema),
   SkiPassController.updateSkiPassIntoDB
 );
 
