@@ -10,6 +10,7 @@ import { PrivacyPolicyRoutes } from './../modules/settings/privacy-policy/privac
 import { TermsAndServiceRoutes } from './../modules/settings/terms-service/termsService.routes';
 import { BookingRoutes } from './../modules/booking/booking.routes';
 import { RestaurantRoutes } from './../modules/restaurant/restaurant.routes';
+import { MassageRoutes } from './../modules/massage/massage.routes';
 
 const router = express.Router();
 
@@ -42,6 +43,10 @@ const apiRoutes = [
   {
     path: '/ski-pass',
     route: SkiPassRoutes,
+  },
+  {
+    path: '/massage',
+    route: MassageRoutes,
   },
   // {
   //   path: '/restaurant',
