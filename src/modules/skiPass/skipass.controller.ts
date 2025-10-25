@@ -58,7 +58,7 @@ const updateSkiPassIntoDB = catchAsync(async (req: Request, res: Response) => {
   const result = await SkiPassService.updateSkiPassIntoDB(req)
   sendResponse(res, {
     code: StatusCodes.OK,
-    message: 'Ski pass added successfully',
+    message: 'Ski pass updated successfully',
     data: result,
   });
 });
