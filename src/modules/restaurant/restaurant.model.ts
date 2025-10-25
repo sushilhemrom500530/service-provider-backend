@@ -1,15 +1,41 @@
 import mongoose, { Schema, Model } from 'mongoose';
-import { IRestaurant } from './restaurant.interface';
+import { IRestaurant, IMenuItems } from './restaurant.interface';
 import { reviewSchema, refundSchema } from './../common/common.schema';
 
-const restaurantSchema = new Schema<IRestaurant>(
+const menuItemsSchema = new Schema<IMenuItems>(
   {
-    title: {
+    name: {
       type: String,
       required: true,
       trim: true,
     },
+    menuType: {
+      type: String,
+      required: true,
+      trim: true,
+    },
+    price: {
+      type: Number,
+      required: true,
+      min: 1,
+      max: 5,
+    },
+    menuImage: {
+      type: String,
+      required: true,
+    },
     description: {
+      type: String,
+      required: true,
+      trim: true,
+    },
+  },
+  { _id: false }
+);
+
+const restaurantSchema = new Schema<IRestaurant>(
+  {
+    title: {
       type: String,
       required: true,
       trim: true,
@@ -32,18 +58,19 @@ const restaurantSchema = new Schema<IRestaurant>(
       type: String,
       required: true,
     },
-    location: {
+    serviceArea: {
       type: String,
       required: true,
     },
-    type: {
-      type: String,
-      required: true,
-    },
-    amount: {
+
+    totalPrice: {
       type: Number,
       required: true,
       min: 0,
+    },
+    menuItems: {
+      type: [menuItemsSchema],
+      required: true,
     },
     // optional fields for later updates
     averageRating: {
