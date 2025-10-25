@@ -1,11 +1,11 @@
 import { Types } from 'mongoose';
 import { StatusCodes } from 'http-status-codes';
-import { Request, Response } from 'express';
+import { Request, Response, Express } from 'express';
 import { JwtPayload } from 'jsonwebtoken';
 import { User } from './../user/user.model';
-import AppError from './../../errors/AppErro'; 
+import AppError from './../../errors/AppErro';
 import { s3Services } from './../../aws/s3Service';
-import { IReview } from './../common/common.interface'; 
+import { IReview } from './../common/common.interface';
 import { Transport } from './transport.model';
 import { USER_UPLOADS_FOLDER } from './transport.constant';
 
@@ -67,23 +67,37 @@ const addTransportIntoDB = async (req: Request, res: Response) => {
     );
   }
 
-  if (req.file) {
-    const fileUrl = await s3Services.uploadSingleFileToS3(
-      req.file,
-      USER_UPLOADS_FOLDER
+  const files = req.files as { [fieldname: string]: Express.Multer.File[] };
+  const brandPhotoFile = files?.['brandPhoto']?.[0];
+  const thumbnailFile = files?.['thumbnail']?.[0];
+
+  if (!brandPhotoFile || !thumbnailFile) {
+    throw new AppError(
+      StatusCodes.BAD_REQUEST,
+      'Both brandPhoto and thumbnail files are required.'
     );
-    req.body.thumbnail = fileUrl;
-  } else {
-    throw new AppError(StatusCodes.BAD_REQUEST, 'Thumbnail file not found.');
   }
 
-  const updateData = {
-    ...req?.body,
-    ownerId: isExistsUser._id as Types.ObjectId,
+  // Upload files to S3
+  const [brandPhotoUrl, thumbnailUrl] = await Promise.all([
+    s3Services.uploadSingleFileToS3(brandPhotoFile, USER_UPLOADS_FOLDER),
+    s3Services.uploadSingleFileToS3(thumbnailFile, USER_UPLOADS_FOLDER),
+  ]);
+
+  // Prepare transport data
+  const transportData = {
+    ...req.body,
+    ownerId: isExistsUser?._id,
+    brandPhoto: brandPhotoUrl,
+    thumbnail: thumbnailUrl,
   };
 
-  const result = await Massage.create(updateData);
+  // Ensure numeric fields are properly typed
+  transportData.personCount = Number(transportData.personCount);
+  transportData.amount = Number(transportData.amount);
 
+  // Create transport document
+  const result = await Transport.create(transportData);
   return result;
 };
 
@@ -153,15 +167,14 @@ const updateTransportIntoDB = async (
   res: Response,
   payload: Partial<any | {}>
 ) => {
-  const id = req.params.id;
-  const user = req.user as JwtPayload;
+  const id = req?.params?.id;
+  const user = req?.user as JwtPayload;
 
   const isExistsTransport = await Transport.findById(id);
 
   if (!isExistsTransport) {
     throw new AppError(StatusCodes.NOT_FOUND, 'Transport not found.');
-  }
-
+  } 
   // check user
   const existsUser = await User.findById({ _id: user?.userId });
   if (!existsUser) {
@@ -171,23 +184,46 @@ const updateTransportIntoDB = async (
     );
   }
 
-  if (req.file) {
-    const fileUrl = await s3Services.uploadSingleFileToS3(
-      req.file,
+  const files = req.files as
+    | { [fieldname: string]: Express.Multer.File[] }
+    | undefined;
+  let brandPhotoUrl = isExistsTransport?.brandPhoto;
+  let thumbnailUrl = isExistsTransport?.thumbnail;
+
+  if (files?.['brandPhoto']?.[0]) {
+    brandPhotoUrl = await s3Services.uploadSingleFileToS3(
+      files['brandPhoto'][0],
       USER_UPLOADS_FOLDER
     );
-    req.body.thumbnail = fileUrl;
-  } else {
-    throw new AppError(StatusCodes.BAD_REQUEST, 'Thumbnail file not found.');
   }
 
-  const updateData = req?.body;
+  if (files?.['thumbnail']?.[0]) {
+    thumbnailUrl = await s3Services.uploadSingleFileToS3(
+      files['thumbnail'][0],
+      USER_UPLOADS_FOLDER
+    );
+  }
 
-  const result = await Massage.findByIdAndUpdate(
+  const updateData = {
+    ...req.body,
+    brandPhoto: brandPhotoUrl,
+    thumbnail: thumbnailUrl,
+  };
+
+  // Convert numeric fields
+  if (updateData.personCount) {
+    updateData.personCount = Number(updateData?.personCount);
+  }
+  if (updateData.amount) {
+    updateData.amount = Number(updateData?.amount);
+  }
+
+  const result = await Transport.findByIdAndUpdate(
     id,
     { $set: updateData },
     { new: true }
   );
+
   return result;
 };
 

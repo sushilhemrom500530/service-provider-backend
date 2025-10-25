@@ -49,8 +49,7 @@ const transportSchema = new Schema<ITransport>(
       trim: true,
     },
     benefits: {
-      type: String,
-      required: true,
+      type: String, 
     }, 
 
     // optional fields for later updates
