@@ -1,11 +1,11 @@
-import mongoose, { Schema, Model } from "mongoose";
-import { ISkiPass, IReview } from "./skiPass.interface";
+import mongoose, { Schema, Model } from 'mongoose';
+import { IReview, IRestaurent, IRefund } from './restaurant.interface';
 
 const reviewSchema = new Schema<IReview>(
   {
     userId: {
       type: Schema.Types.ObjectId,
-      ref: "User",
+      ref: 'User',
       required: true,
     },
     rating: {
@@ -27,7 +27,27 @@ const reviewSchema = new Schema<IReview>(
   { _id: false }
 );
 
-const skiPassSchema = new Schema<ISkiPass>(
+const refundSchema = new Schema<IRefund>(
+  {
+    userId: {
+      type: Schema.Types.ObjectId,
+      ref: 'User',
+      required: true,
+    },
+    reason: {
+      type: String,
+      required: true,
+      trim: true,
+    },
+    createdAt: {
+      type: Date,
+      default: Date.now,
+    },
+  },
+  { _id: false }
+);
+
+const restaurentSchema = new Schema<IRestaurent>(
   {
     title: {
       type: String,
@@ -46,29 +66,24 @@ const skiPassSchema = new Schema<ISkiPass>(
     },
     ownerId: {
       type: Schema.Types.ObjectId,
-      ref: "User",
+      ref: 'User',
       required: true,
     },
-    skiPassType: {
-      type: String,
-      required: true, 
-    },
-    duration: {
+    openTime: {
       type: String,
       required: true,
     },
-    time: {
+    closeTime: {
       type: String,
       required: true,
     },
-    date: {
+    location: {
       type: String,
       required: true,
     },
-    serviceArea: {
+    type: {
       type: String,
       required: true,
-      trim: true,
     },
     amount: {
       type: Number,
@@ -86,14 +101,17 @@ const skiPassSchema = new Schema<ISkiPass>(
       type: [reviewSchema],
       default: [],
     },
+    refunds: {
+      type: [refundSchema],
+      default: [],
+    },
   },
   {
     timestamps: true,
   }
 );
 
- 
-skiPassSchema.pre("save", function (next) {
+restaurentSchema.pre('save', function (next) {
   if (this.reviews && this.reviews.length > 0) {
     const total = this.reviews.reduce((sum, r) => sum + r.rating, 0);
     this.averageRating = parseFloat((total / this.reviews.length).toFixed(1));
@@ -101,5 +119,6 @@ skiPassSchema.pre("save", function (next) {
   next();
 });
 
-export const SkiPass: Model<ISkiPass> =
-  mongoose.models.SkiPass || mongoose.model<ISkiPass>("SkiPass", skiPassSchema);
+export const Restaurent: Model<IRestaurent> =
+  mongoose.models.Restaurent ||
+  mongoose.model<IRestaurent>('Restaurent', restaurentSchema);

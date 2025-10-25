@@ -7,7 +7,7 @@ export interface IReview {
   createdAt?: Date;
 }
 
-export interface ISkiPass extends Document {
+export interface IRestaurent extends Document {
   title: string;
   description: string;
   ownerId: Types.ObjectId;

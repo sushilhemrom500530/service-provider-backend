@@ -2,24 +2,21 @@ import { Types } from 'mongoose';
 import AppError from '../../errors/AppErro';
 import { StatusCodes } from 'http-status-codes';
 import { Request, Response } from 'express';
-import { s3Services } from './../../aws/s3Service';
-import { USER_UPLOADS_FOLDER } from './skipass.constant';
-import { SkiPass } from './skipass.model';
+import { s3Services } from './../../aws/s3Service'; 
 import { User } from './../user/user.model';
-import { JwtPayload } from 'jsonwebtoken';
-import { IReview } from './skipass.interface';
+import { JwtPayload } from 'jsonwebtoken'; 
 
-const getAllSkiPassFromDB = async (user: JwtPayload) => {
+const getAllRestaurantFromDB = async (user: JwtPayload) => {
   const isExistsUser = await User.findOne({ email: user?.email });
   if (!isExistsUser) {
     throw new AppError(StatusCodes.NOT_FOUND, 'User not found.');
   }
 
-  const result = await SkiPass.find();
+  const result = await Restaurant.find();
   return result;
 };
 
-const getSingleSkipPassFromDB = async (id: string, user: JwtPayload) => {
+const getSingleRestaurantFromDB = async (id: string, user: JwtPayload) => {
   const isExistsUser = await User.findOne({ email: user?.email });
   if (!isExistsUser) {
     throw new AppError(StatusCodes.NOT_FOUND, 'User not found.');
@@ -28,7 +25,7 @@ const getSingleSkipPassFromDB = async (id: string, user: JwtPayload) => {
   return result;
 };
 
-const addSkiPassIntoDB = async (req: Request, res: Response) => {
+const addRestaurantIntoDB = async (req: Request, res: Response) => {
   // check user
   const user = await User.findById(req?.body?.ownerId);
   if (!user) {
@@ -60,7 +57,7 @@ const addSkiPassIntoDB = async (req: Request, res: Response) => {
   return result;
 };
 
-export const reviewSkiPass = async (
+export const reviewRestaurant = async (
   id: string,
   user: JwtPayload,
   payload: Partial<IReview>
@@ -118,7 +115,7 @@ export const reviewSkiPass = async (
   return skiPass;
 };
 
-const updateSkiPassIntoDB = async (
+const updateRestaurantIntoDB = async (
   req: Request,
   res: Response,
   payload: Partial<any | {}>
@@ -149,7 +146,7 @@ const updateSkiPassIntoDB = async (
   return result;
 };
 
-const deleteSkiPassIntoDB = async (id: string, user: JwtPayload) => {
+const deleteRestaurantIntoDB = async (id: string, user: JwtPayload) => {
   const isExistsUser = await User.findOne({ email: user?.email });
   if (!isExistsUser) {
     throw new AppError(StatusCodes.NOT_FOUND, 'User not found.');
@@ -171,11 +168,11 @@ const deleteSkiPassIntoDB = async (id: string, user: JwtPayload) => {
   return result;
 };
 
-export const SkiPassService = {
-  getAllSkiPassFromDB,
-  addSkiPassIntoDB,
-  reviewSkiPass,
-  getSingleSkipPassFromDB,
-  updateSkiPassIntoDB,
-  deleteSkiPassIntoDB,
+export const RestaurantService = {
+  getAllRestaurantFromDB,
+  addRestaurantIntoDB,
+  reviewRestaurant,
+  getSingleRestaurantFromDB,
+  updateRestaurantIntoDB,
+  deleteRestaurantIntoDB,
 };
