@@ -144,7 +144,7 @@ const addRestaurantIntoDB = async (req: Request, res: Response) => {
   if (totalHours < 0) totalHours += 24; // handle overnight shifts
 
   // Calculate dayCount as fractional days
-  const dayCount = totalHours / 24;
+  const dayCount = Number((totalHours / 24).toFixed(2));
 
   //Prepare restaurant data
   const restaurantData = {
@@ -155,7 +155,7 @@ const addRestaurantIntoDB = async (req: Request, res: Response) => {
     dayCount,
     menuItems: processedMenuItems,
   };
- 
+
   const result = await Restaurant.create(restaurantData);
   return result;
 };
@@ -226,34 +226,122 @@ const updateRestaurantIntoDB = async (
   res: Response,
   payload: Partial<any | {}>
 ) => {
-  const id = req.params.id;
+  const id = req?.params?.id;
   const user = req.user as JwtPayload;
 
+  // Check if restaurant exists
   const isExistsRestaurant = await Restaurant.findById(id);
   if (!isExistsRestaurant) {
     throw new AppError(StatusCodes.NOT_FOUND, 'Restaurant not found.');
   }
 
-  // check user
-  const existsUser = await User.findById(req?.body?.ownerId);
-  if (!existsUser) {
+  // Verify user
+  const isExistsUser = await User.findOne({ email: user?.email });
+  if (!isExistsUser) {
     throw new AppError(
       StatusCodes.NOT_FOUND,
       'You cannot view this data because your account was not found.'
     );
   }
 
-  if (req.file) {
-    const fileUrl = await s3Services.uploadSingleFileToS3(
-      req.file,
-      USER_UPLOADS_FOLDER
+  // Check provider role & type
+  if (
+    isExistsUser?.role !== 'Provider' ||
+    isExistsUser?.providerType !== 'Restaurant'
+  ) {
+    throw new AppError(
+      StatusCodes.FORBIDDEN,
+      'You are not authorized to update this restaurant service.'
     );
-    req.body.thumbnail = fileUrl;
-  } else {
-    throw new AppError(StatusCodes.BAD_REQUEST, 'Thumbnail file not found.');
   }
 
-  const updateData = req?.body;
+  // Handle thumbnail update (optional)
+  let thumbnailUrl = isExistsRestaurant.thumbnail;
+  const thumbnailFile = req.files?.['thumbnail']?.[0];
+  if (thumbnailFile) {
+    thumbnailUrl = await s3Services.uploadSingleFileToS3(
+      thumbnailFile,
+      USER_UPLOADS_FOLDER
+    );
+  }
+
+  // Parse menu items (if provided)
+  let menuItems = isExistsRestaurant.menuItems;
+  if (req.body.menuItems) {
+    let parsedMenuItems: any[] = [];
+
+    if (typeof req.body.menuItems === 'string') {
+      parsedMenuItems = JSON.parse(req.body.menuItems);
+    } else if (Array.isArray(req.body.menuItems)) {
+      parsedMenuItems = req.body.menuItems;
+    }
+
+    const menuItemFiles = req.files?.['menuItems'] || [];
+
+    // Map new or updated menu items
+    const processedMenuItems = await Promise.all(
+      parsedMenuItems.map(async (item: any, index: number) => {
+        const menuFile = menuItemFiles[index];
+
+        let menuImageUrl = item.menuImage || '';
+
+        if (menuFile) {
+          menuImageUrl = await s3Services.uploadSingleFileToS3(
+            menuFile,
+            USER_UPLOADS_FOLDER
+          );
+        } else if (!menuImageUrl) {
+          throw new AppError(
+            StatusCodes.BAD_REQUEST,
+            `Menu image missing for item ${item.name}`
+          );
+        }
+
+        return {
+          ...item,
+          price: Number(item.price),
+          menuImage: menuImageUrl,
+        };
+      })
+    );
+
+    menuItems = processedMenuItems;
+  }
+
+  //  Recalculate total price
+  const totalPrice = menuItems.reduce(
+    (sum, item) => sum + Number(item.price || 0),
+    0
+  );
+
+  // Recalculate day count (if times updated)
+  let openTime = req.body.openTime || isExistsRestaurant.openTime;
+  let closeTime = req.body.closeTime || isExistsRestaurant.closeTime;
+
+  function timeStrToHours(timeStr: string) {
+    const [time, meridian] = timeStr.split(' ');
+    let [hours, minutes] = time.split(':').map(Number);
+
+    if (meridian === 'PM' && hours !== 12) hours += 12;
+    if (meridian === 'AM' && hours === 12) hours = 0;
+
+    return hours + minutes / 60;
+  }
+
+  const openHours = timeStrToHours(openTime);
+  const closeHours = timeStrToHours(closeTime);
+
+  let totalHours = closeHours - openHours;
+  if (totalHours < 0) totalHours += 24;
+  const dayCount = Number((totalHours / 24).toFixed(2));
+
+  const updateData = {
+    ...(req.body as Partial<IRestaurant>),
+    thumbnail: thumbnailUrl,
+    menuItems,
+    totalPrice,
+    dayCount,
+  };
 
   const result = await Restaurant.findByIdAndUpdate(
     id,
