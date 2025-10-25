@@ -26,8 +26,10 @@ const getSingleMassageFromDB = async (id: string, user: JwtPayload) => {
   }
   const result = await Massage.findById(id).populate('ownerId');
 
-  if(!result){
-    throw new AppError(StatusCodes.NOT_FOUND, ` This massage id's ${id} data not found.'`);
+  if (!result) {
+    return {
+      message: ` This massage id's ${id} data not found.`,
+    };
   }
   return result;
 };
@@ -49,10 +51,10 @@ const addMassageIntoDB = async (req: Request, res: Response) => {
   }
 
   // Now we know user is a Provider — check providerType
-  if (isExistsUser?.providerType !== 'Restaurant') {
+  if (isExistsUser?.providerType !== 'Massage') {
     throw new AppError(
       StatusCodes.FORBIDDEN,
-      'Only providers with providerType : Restaurant can create a massage service.'
+      'Only providers with providerType : Massage can create a massage service.'
     );
   }
 
@@ -142,8 +144,14 @@ const updateMassageIntoDB = async (
   const id = req.params.id;
   const user = req.user as JwtPayload;
 
+  const isExistsMassage = await Massage.findById(id);
+
+  if (!isExistsMassage) {
+    throw new AppError(StatusCodes.NOT_FOUND, 'Massage not found.');
+  }
+
   // check user
-  const existsUser = await User.findById(req?.body?.ownerId);
+  const existsUser = await User.findById({ _id: user?.userId }); 
   if (!existsUser) {
     throw new AppError(StatusCodes.NOT_FOUND, 'User not found.');
   }
@@ -160,8 +168,11 @@ const updateMassageIntoDB = async (
 
   const updateData = req?.body;
 
-  const result = await Massage.create(updateData);
-
+  const result = await Massage.findByIdAndUpdate(
+    id,
+    { $set: updateData },
+    { new: true }
+  );
   return result;
 };
 

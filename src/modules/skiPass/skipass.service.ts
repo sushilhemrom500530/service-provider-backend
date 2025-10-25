@@ -26,8 +26,10 @@ const getSingleSkipPassFromDB = async (id: string, user: JwtPayload) => {
   }
   const result = await SkiPass.findById(id).populate('ownerId');
 
-  if(!result){
-    throw new AppError(StatusCodes.NOT_FOUND, ` This ski pass id's ${id} data not found.'`);
+  if (!result) {
+    return {
+      message: ` This ski pass id's ${id} data not found.'`,
+    };
   }
   return result;
 };
@@ -139,6 +141,12 @@ const updateSkiPassIntoDB = async (
   const id = req.params.id;
   const user = req.user as JwtPayload;
 
+  const isExistsSkiPass = await SkiPass.findById(id);
+
+  if (!isExistsSkiPass) {
+    throw new AppError(StatusCodes.NOT_FOUND, 'Ski pass not found.');
+  }
+
   // check user
   const existsUser = await User.findById(req?.body?.ownerId);
   if (!existsUser) {
@@ -157,7 +165,11 @@ const updateSkiPassIntoDB = async (
 
   const updateData = req?.body;
 
-  const result = await SkiPass.create(updateData);
+  const result = await SkiPass.findByIdAndUpdate(
+    id,
+    { $set: updateData },
+    { new: true }
+  );
 
   return result;
 };

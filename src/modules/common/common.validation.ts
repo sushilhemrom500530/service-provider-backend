@@ -1,13 +1,7 @@
 import { z } from 'zod';
 
 const reviewSchema = z.object({
-  body: z.object({
-    userId: z
-      .string({
-        required_error: 'User id is required',
-        invalid_type_error: 'User id must be a string',
-      })
-      .min(1, 'User id cannot be empty'),
+  body: z.object({ 
     rating: z
       .number({
         required_error: 'Rating is required',
@@ -25,13 +19,7 @@ const reviewSchema = z.object({
 });
 
 const refundSchema = z.object({
-  body: z.object({
-    userId: z
-      .string({
-        required_error: 'User id is required',
-        invalid_type_error: 'User id must be a string',
-      })
-      .min(1, 'User id cannot be empty'),
+  body: z.object({ 
     reason: z
       .string({
         required_error: 'Comment is required',
