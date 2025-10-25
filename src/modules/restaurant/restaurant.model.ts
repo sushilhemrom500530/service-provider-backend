@@ -1,53 +1,8 @@
 import mongoose, { Schema, Model } from 'mongoose';
-import { IReview, IRestaurent, IRefund } from './restaurant.interface';
+import { IRestaurant } from './restaurant.interface';
+import { reviewSchema, refundSchema } from './../common/common.schema';
 
-const reviewSchema = new Schema<IReview>(
-  {
-    userId: {
-      type: Schema.Types.ObjectId,
-      ref: 'User',
-      required: true,
-    },
-    rating: {
-      type: Number,
-      required: true,
-      min: 1,
-      max: 5,
-    },
-    comment: {
-      type: String,
-      required: true,
-      trim: true,
-    },
-    createdAt: {
-      type: Date,
-      default: Date.now,
-    },
-  },
-  { _id: false }
-);
-
-const refundSchema = new Schema<IRefund>(
-  {
-    userId: {
-      type: Schema.Types.ObjectId,
-      ref: 'User',
-      required: true,
-    },
-    reason: {
-      type: String,
-      required: true,
-      trim: true,
-    },
-    createdAt: {
-      type: Date,
-      default: Date.now,
-    },
-  },
-  { _id: false }
-);
-
-const restaurentSchema = new Schema<IRestaurent>(
+const restaurantSchema = new Schema<IRestaurant>(
   {
     title: {
       type: String,
@@ -111,7 +66,7 @@ const restaurentSchema = new Schema<IRestaurent>(
   }
 );
 
-restaurentSchema.pre('save', function (next) {
+restaurantSchema.pre('save', function (next) {
   if (this.reviews && this.reviews.length > 0) {
     const total = this.reviews.reduce((sum, r) => sum + r.rating, 0);
     this.averageRating = parseFloat((total / this.reviews.length).toFixed(1));
@@ -119,6 +74,6 @@ restaurentSchema.pre('save', function (next) {
   next();
 });
 
-export const Restaurent: Model<IRestaurent> =
-  mongoose.models.Restaurent ||
-  mongoose.model<IRestaurent>('Restaurent', restaurentSchema);
+export const Restaurant: Model<IRestaurant> =
+  mongoose.models.Restaurant ||
+  mongoose.model<IRestaurant>('Restaurant', restaurantSchema);

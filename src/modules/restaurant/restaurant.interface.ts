@@ -1,13 +1,8 @@
 import { Document, Types } from "mongoose";
 
-export interface IReview {
-  userId: Types.ObjectId;
-  rating: number;
-  comment: string;
-  createdAt?: Date;
-}
+ 
 
-export interface IRestaurent extends Document {
+export interface IRestaurant extends Document {
   title: string;
   description: string;
   ownerId: Types.ObjectId;

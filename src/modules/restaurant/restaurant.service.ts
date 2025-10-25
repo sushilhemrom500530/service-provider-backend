@@ -2,14 +2,18 @@ import { Types } from 'mongoose';
 import AppError from '../../errors/AppErro';
 import { StatusCodes } from 'http-status-codes';
 import { Request, Response } from 'express';
-import { s3Services } from './../../aws/s3Service'; 
+import { s3Services } from './../../aws/s3Service';
 import { User } from './../user/user.model';
-import { JwtPayload } from 'jsonwebtoken'; 
+import { JwtPayload } from 'jsonwebtoken';
+import { Restaurant } from './restaurant.model';
 
 const getAllRestaurantFromDB = async (user: JwtPayload) => {
   const isExistsUser = await User.findOne({ email: user?.email });
   if (!isExistsUser) {
-    throw new AppError(StatusCodes.NOT_FOUND, 'User not found.');
+    throw new AppError(
+      StatusCodes.NOT_FOUND,
+      'You cannot view this data because your account was not found.'
+    );
   }
 
   const result = await Restaurant.find();
@@ -19,24 +23,46 @@ const getAllRestaurantFromDB = async (user: JwtPayload) => {
 const getSingleRestaurantFromDB = async (id: string, user: JwtPayload) => {
   const isExistsUser = await User.findOne({ email: user?.email });
   if (!isExistsUser) {
-    throw new AppError(StatusCodes.NOT_FOUND, 'User not found.');
+    throw new AppError(
+      StatusCodes.NOT_FOUND,
+      'You cannot view this data because your account was not found.'
+    );
   }
-  const result = await SkiPass.findById(id);
+  const result = await Restaurant.findById(id);
+
+  if (!result) {
+    return {
+      message: ` This massage id's ${id} data not found.`,
+    };
+  }
+
   return result;
 };
 
 const addRestaurantIntoDB = async (req: Request, res: Response) => {
+  const user = req.user as JwtPayload;
   // check user
-  const user = await User.findById(req?.body?.ownerId);
-  if (!user) {
-    throw new AppError(StatusCodes.NOT_FOUND, 'User not found.');
+  const isExistsUser = await User.findOne({ email: user?.email });
+  if (!isExistsUser) {
+    throw new AppError(
+      StatusCodes.NOT_FOUND,
+      'You cannot view this data because your account was not found.'
+    );
   }
 
-  // Check providerType
-  if (user.providerType !== 'Ski_Pass') {
+  // Validate provider role and type
+  if (isExistsUser?.role !== 'Provider') {
     throw new AppError(
       StatusCodes.FORBIDDEN,
-      'User is not authorized to create a Ski Pass.'
+      'You are not authorized to create a restaurant service.'
+    );
+  }
+
+  // Now we know user is a Provider — check providerType
+  if (isExistsUser?.providerType !== 'Restaurant') {
+    throw new AppError(
+      StatusCodes.FORBIDDEN,
+      'Only providers with providerType : Restaurant can create a restaurant service.'
     );
   }
 
@@ -52,7 +78,7 @@ const addRestaurantIntoDB = async (req: Request, res: Response) => {
 
   const updateData = req?.body;
 
-  const result = await SkiPass.create(updateData);
+  const result = await Restaurant.create(updateData);
 
   return result;
 };
@@ -65,54 +91,57 @@ export const reviewRestaurant = async (
   // Verify user exists
   const isExistsUser = await User.findOne({ email: user?.email });
   if (!isExistsUser) {
-    throw new AppError(StatusCodes.NOT_FOUND, "User not found.");
+    throw new AppError(
+      StatusCodes.NOT_FOUND,
+      'You cannot view this data because your account was not found.'
+    );
   }
 
   // Ensure user role is 'User'
-  if (isExistsUser?.role !== "User") {
+  if (isExistsUser?.role !== 'User') {
     throw new AppError(
       StatusCodes.FORBIDDEN,
-      "You cannot add a review because your account is not a user."
+      'You cannot add a review because your account is not a user.'
     );
   }
 
   // Find the SkiPass product
-  const skiPass = await SkiPass.findById(id);
-  if (!skiPass) {
-    throw new AppError(StatusCodes.NOT_FOUND, "Ski pass not found");
+  const restaurant = await Restaurant.findById(id);
+  if (!restaurant) {
+    throw new AppError(StatusCodes.NOT_FOUND, 'Restaurant not found');
   }
 
   //  (Optional) Prevent duplicate reviews by the same user
-  const alreadyReviewed = skiPass.reviews.some(
-    (review) => review.userId.toString() === isExistsUser._id.toString()
+  const alreadyReviewed = restaurant.reviews.some(
+    review => review.userId.toString() === isExistsUser._id.toString()
   );
   if (alreadyReviewed) {
     throw new AppError(
       StatusCodes.BAD_REQUEST,
-      "You have already reviewed this ski pass."
+      'You have already reviewed this restaurant.'
     );
   }
 
   // Push new review
   const newReview = {
-    userId: isExistsUser._id,
-    rating: payload.rating,
-    comment: payload.comment,
+    userId: isExistsUser?._id,
+    rating: payload?.rating,
+    comment: payload?.comment,
     createdAt: new Date(),
   };
 
-  skiPass.reviews.push(newReview as IReview);
+  restaurant.reviews.push(newReview as IReview);
 
   // Recalculate average rating
-  const total = skiPass.reviews.reduce((sum, r) => sum + r.rating, 0);
-  skiPass.averageRating = parseFloat(
-    (total / skiPass.reviews.length).toFixed(1)
+  const total = restaurant.reviews.reduce((sum, r) => sum + r.rating, 0);
+  restaurant.averageRating = parseFloat(
+    (total / restaurant.reviews.length).toFixed(1)
   );
 
-  // Save updated SkiPass
-  await skiPass.save();
+  // Save updated restaurant
+  await restaurant.save();
 
-  return skiPass;
+  return restaurant;
 };
 
 const updateRestaurantIntoDB = async (
@@ -123,10 +152,18 @@ const updateRestaurantIntoDB = async (
   const id = req.params.id;
   const user = req.user as JwtPayload;
 
+  const isExistsRestaurant = await Restaurant.findById(id);
+  if (!isExistsRestaurant) {
+    throw new AppError(StatusCodes.NOT_FOUND, 'Restaurant not found.');
+  }
+
   // check user
   const existsUser = await User.findById(req?.body?.ownerId);
   if (!existsUser) {
-    throw new AppError(StatusCodes.NOT_FOUND, 'User not found.');
+    throw new AppError(
+      StatusCodes.NOT_FOUND,
+      'You cannot view this data because your account was not found.'
+    );
   }
 
   if (req.file) {
@@ -141,7 +178,11 @@ const updateRestaurantIntoDB = async (
 
   const updateData = req?.body;
 
-  const result = await SkiPass.create(updateData);
+  const result = await Restaurant.findByIdAndUpdate(
+    id,
+    { $set: updateData },
+    { new: true }
+  );
 
   return result;
 };
@@ -149,22 +190,25 @@ const updateRestaurantIntoDB = async (
 const deleteRestaurantIntoDB = async (id: string, user: JwtPayload) => {
   const isExistsUser = await User.findOne({ email: user?.email });
   if (!isExistsUser) {
-    throw new AppError(StatusCodes.NOT_FOUND, 'User not found.');
-  }
- 
-  const skiPass = await SkiPass.findById(id);
-  if (!skiPass) {
-    throw new AppError(StatusCodes.NOT_FOUND, "Ski pass not found.");
-  }
- 
-  if (skiPass.ownerId.toString() !== isExistsUser._id.toString()) {
     throw new AppError(
-      StatusCodes.FORBIDDEN,
-      "You are not authorized to delete this ski pass."
+      StatusCodes.NOT_FOUND,
+      'You cannot view this data because your account was not found.'
     );
   }
 
-  const result = await SkiPass.findByIdAndDelete(id);
+  const restaurant = await Restaurant.findById(id);
+  if (!restaurant) {
+    throw new AppError(StatusCodes.NOT_FOUND, 'Restaurant not found.');
+  }
+
+  if (restaurant?.ownerId.toString() !== isExistsUser?._id.toString()) {
+    throw new AppError(
+      StatusCodes.FORBIDDEN,
+      'You are not authorized to delete this restaurant.'
+    );
+  }
+
+  const result = await Restaurant.findByIdAndDelete(id);
   return result;
 };
 
