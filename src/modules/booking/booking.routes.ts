@@ -6,6 +6,7 @@ import convertHeicToPngMiddleware from './../../shared/convertHeicToPngMiddlewar
 import { BookingController } from './booking.controller';
 import { BookingRoutesValidations } from './booking.validations';
 import { SkipassValidations } from './../skiPass/skipass.validations';
+import { CommonValidations } from './../common/common.validation';
 
 const router = Router();
 
@@ -33,7 +34,7 @@ router.get(
 // create
 router.post(
   '/create',
-  auth('User', 'Admin', 'Provider'),
+  auth('User'),
   validateRequest(BookingRoutesValidations.createBookingSchema),
   BookingController.addBookingIntoDB
 );
@@ -50,14 +51,14 @@ router.patch(
 router.patch(
   '/refund/:id',
   auth('User'),
-  validateRequest(SkipassValidations.refundSkiPassSchema),
+  validateRequest(CommonValidations.refundSchema),
   BookingController.refundBookingIntoDB
 );
 
 // delete
 router.delete(
   '/delete/:id',
-  auth('User', 'Admin', 'Provider'),
+  auth('User'),
   BookingController.deleteBookingIntoDB
 );
 

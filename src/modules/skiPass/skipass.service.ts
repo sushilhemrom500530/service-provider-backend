@@ -12,7 +12,10 @@ import { IReview } from './skipass.interface';
 const getAllSkiPassFromDB = async (user: JwtPayload) => {
   const isExistsUser = await User.findOne({ email: user?.email });
   if (!isExistsUser) {
-    throw new AppError(StatusCodes.NOT_FOUND, 'User not found.');
+    throw new AppError(
+      StatusCodes.NOT_FOUND,
+      'You cannot view this data because your account was not found.'
+    );
   }
 
   const result = await SkiPass.find();
@@ -22,7 +25,10 @@ const getAllSkiPassFromDB = async (user: JwtPayload) => {
 const getSingleSkipPassFromDB = async (id: string, user: JwtPayload) => {
   const isExistsUser = await User.findOne({ email: user?.email });
   if (!isExistsUser) {
-    throw new AppError(StatusCodes.NOT_FOUND, 'User not found.');
+    throw new AppError(
+      StatusCodes.NOT_FOUND,
+      'You cannot view this data because your account was not found.'
+    );
   }
   const result = await SkiPass.findById(id).populate('ownerId');
 
@@ -39,7 +45,10 @@ const addSkiPassIntoDB = async (req: Request, res: Response) => {
   // check user
   const isExistsUser = await User.findOne({ email: user?.email });
   if (!isExistsUser) {
-    throw new AppError(StatusCodes.NOT_FOUND, 'User not found.');
+    throw new AppError(
+      StatusCodes.NOT_FOUND,
+      'You cannot view this data because your account was not found.'
+    );
   }
 
   // Validate provider role and type
@@ -83,7 +92,10 @@ export const reviewSkiPass = async (
   // Verify user exists
   const isExistsUser = await User.findOne({ email: user?.email });
   if (!isExistsUser) {
-    throw new AppError(StatusCodes.NOT_FOUND, 'User not found.');
+    throw new AppError(
+      StatusCodes.NOT_FOUND,
+      'You cannot view this data because your account was not found.'
+    );
   }
 
   // Ensure user role is 'User'
@@ -113,9 +125,9 @@ export const reviewSkiPass = async (
 
   // Push new review
   const newReview = {
-    userId: isExistsUser._id,
-    rating: payload.rating,
-    comment: payload.comment,
+    userId: isExistsUser?._id,
+    rating: payload?.rating,
+    comment: payload?.comment,
     createdAt: new Date(),
   };
 
@@ -150,7 +162,10 @@ const updateSkiPassIntoDB = async (
   // check user
   const existsUser = await User.findById(req?.body?.ownerId);
   if (!existsUser) {
-    throw new AppError(StatusCodes.NOT_FOUND, 'User not found.');
+    throw new AppError(
+      StatusCodes.NOT_FOUND,
+      'You cannot view this data because your account was not found.'
+    );
   }
 
   if (req.file) {
@@ -177,7 +192,10 @@ const updateSkiPassIntoDB = async (
 const deleteSkiPassIntoDB = async (id: string, user: JwtPayload) => {
   const isExistsUser = await User.findOne({ email: user?.email });
   if (!isExistsUser) {
-    throw new AppError(StatusCodes.NOT_FOUND, 'User not found.');
+    throw new AppError(
+      StatusCodes.NOT_FOUND,
+      'You cannot view this data because your account was not found.'
+    );
   }
 
   const skiPass = await SkiPass.findById(id);

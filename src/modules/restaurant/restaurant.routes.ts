@@ -1,64 +1,70 @@
 import { Router } from 'express';
-import auth from '../../middlewares/auth';
-import {RestaurantController} from './restaurant.controller';
-import { USER_UPLOADS_FOLDER } from './skipass.constant';
-import validateRequest from './../../shared/validateRequest';
-import { SkipassValidations } from './skipass.validations';
 import fileUploadHandler from './../../shared/fileUploadHandler';
+import { USER_UPLOADS_FOLDER } from './restaurant.constant';
+import auth from './../../middlewares/auth';
+import { RestaurantController } from './restaurant.controller';
+import validateRequest from './../../shared/validateRequest';
 import convertHeicToPngMiddleware from './../../shared/convertHeicToPngMiddleware';
+import { RestaurantValidations } from './restaurant.validations';
+import { CommonValidations } from './../common/common.validation';
 
- const uploads = fileUploadHandler(USER_UPLOADS_FOLDER);
+const uploads = fileUploadHandler(USER_UPLOADS_FOLDER);
 
 const router = Router();
 
 // get all
 router.get(
   '/all',
-  auth('User','Admin', 'Provider'), 
-  RestaurantController.getAllSkiPassFromDB
+  auth('User', 'Admin', 'Provider'),
+  RestaurantController.getAllRestaurantFromDB
 );
 
-// get single 
+// get single
 router.get(
   '/:id',
-  auth('User','Admin', 'Provider'),
-  RestaurantController.getSingleSkipPassFromDB
+  auth('User', 'Admin', 'Provider'),
+  RestaurantController.getSingleRestaurantFromDB
 );
 
-
-// create 
+// create
 router.post(
   '/create',
-  auth('Admin', 'Provider'),
-  uploads.single('file'),
+  auth('Admin', 'Provider'), 
+  uploads.fields([
+    { name: 'thumbnail', maxCount: 1 },
+    { name: 'menuItems', maxCount: 20 },
+  ]),
   convertHeicToPngMiddleware(USER_UPLOADS_FOLDER),
-   validateRequest(SkipassValidations.createSkiPassSchema),
-  RestaurantController.addSkiPassIntoDB
+  validateRequest(RestaurantValidations.createRestaurant),
+  RestaurantController.addRestaurantIntoDB
 );
 
-
-// review 
+// review
 router.post(
   '/review/:id',
-  auth('User',),  
-   validateRequest(SkipassValidations.reviewSkiPassSchema),
-  RestaurantController.reviewSkiPass
+  auth('User'),
+  validateRequest(CommonValidations.reviewSchema),
+  RestaurantController.reviewRestaurant
 );
-
 
 // update
 router.patch(
   '/update/:id',
-  auth('User', 'Admin', 'Provider'), 
-  validateRequest(SkipassValidations.createSkiPassSchema),
-  RestaurantController.updateSkiPassIntoDB
+  auth('Admin', 'Provider'), 
+  uploads.fields([
+    { name: 'thumbnail', maxCount: 1 },
+    { name: 'menuItems', maxCount: 20 },
+  ]),
+  convertHeicToPngMiddleware(USER_UPLOADS_FOLDER),
+  validateRequest(RestaurantValidations.updateRestaurant),
+  RestaurantController.updateRestaurantIntoDB
 );
 
 // delete
 router.delete(
   '/delete/:id',
-  auth('Provider'),
-  RestaurantController.deleteSkiPassIntoDB
+  auth('Admin', 'Provider'),
+  RestaurantController.deleteRestaurantIntoDB
 );
- 
+
 export const RestaurantRoutes = router;

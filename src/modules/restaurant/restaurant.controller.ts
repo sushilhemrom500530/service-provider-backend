@@ -3,6 +3,8 @@ import { Request, Response } from 'express';
 import { JwtPayload } from 'jsonwebtoken';
 import catchAsync from './../../shared/catchAsync';
 import sendResponse from './../../shared/sendResponse';
+import { RestaurantService } from './restaurant.service';
+import { IReview } from './../common/common.interface';
  
 
 const getAllRestaurantFromDB = catchAsync(async (req: Request, res: Response) => {
@@ -12,19 +14,19 @@ const getAllRestaurantFromDB = catchAsync(async (req: Request, res: Response) =>
   const result = await RestaurantService.getAllRestaurantFromDB(user)
   sendResponse(res, {
     code: StatusCodes.OK,
-    message: 'Ski pass fetched successfully.',
+    message: 'Restaurant fetched successfully.',
     data: result,
   });
 });
  
-const getSingleSkipPassFromDB = catchAsync(async (req: Request, res: Response) => {
+const getSingleRestaurantFromDB = catchAsync(async (req: Request, res: Response) => {
   const id = req.params.id;
   const user = req.user as JwtPayload;
   
   const result = await RestaurantService.getSingleRestaurantFromDB(id, user)
   sendResponse(res, {
     code: StatusCodes.OK,
-    message: 'Ski pass fetched successfully',
+    message: 'Restaurant fetched successfully',
     data: result,
   });
 });
@@ -34,7 +36,7 @@ const addRestaurantIntoDB = catchAsync(async (req: Request, res: Response) => {
   const result = await RestaurantService.addRestaurantIntoDB(req)
   sendResponse(res, {
     code: StatusCodes.OK,
-    message: 'Ski pass added successfully',
+    message: 'Restaurant added successfully',
     data: result,
   });
 });
@@ -56,7 +58,7 @@ const updateRestaurantIntoDB = catchAsync(async (req: Request, res: Response) =>
   const result = await RestaurantService.updateRestaurantIntoDB(req)
   sendResponse(res, {
     code: StatusCodes.OK,
-    message: 'Ski pass added successfully',
+    message: 'Restaurant added successfully',
     data: result,
   });
 });
@@ -67,7 +69,7 @@ const deleteRestaurantIntoDB = catchAsync(async (req: Request, res: Response) =>
   const result = await RestaurantService.deleteRestaurantIntoDB(id, user)
   sendResponse(res, {
     code: StatusCodes.OK,
-    message: 'Ski pass added successfully',
+    message: 'Restaurant added successfully',
     data: result,
   });
 });
@@ -76,7 +78,7 @@ const deleteRestaurantIntoDB = catchAsync(async (req: Request, res: Response) =>
 
 export const RestaurantController = {
   getAllRestaurantFromDB,
-  getSingleSkipPassFromDB,
+  getSingleRestaurantFromDB,
   addRestaurantIntoDB,
   reviewRestaurant,
   updateRestaurantIntoDB,

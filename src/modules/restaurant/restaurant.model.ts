@@ -1,60 +1,39 @@
 import mongoose, { Schema, Model } from 'mongoose';
-import { IReview, IRestaurent, IRefund } from './restaurant.interface';
+import { IRestaurant, IMenuItems } from './restaurant.interface';
+import { reviewSchema, refundSchema } from './../common/common.schema';
 
-const reviewSchema = new Schema<IReview>(
+const menuItemsSchema = new Schema<IMenuItems>(
   {
-    userId: {
-      type: Schema.Types.ObjectId,
-      ref: 'User',
+    name: {
+      type: String,
       required: true,
+      trim: true,
     },
-    rating: {
+    menuType: {
+      type: String,
+      required: true,
+      trim: true,
+    },
+    price: {
       type: Number,
       required: true,
-      min: 1,
-      max: 5,
+      min: 1, 
     },
-    comment: {
+    menuImage: {
       type: String,
       required: true,
-      trim: true,
-    },
-    createdAt: {
-      type: Date,
-      default: Date.now,
-    },
-  },
-  { _id: false }
-);
-
-const refundSchema = new Schema<IRefund>(
-  {
-    userId: {
-      type: Schema.Types.ObjectId,
-      ref: 'User',
-      required: true,
-    },
-    reason: {
-      type: String,
-      required: true,
-      trim: true,
-    },
-    createdAt: {
-      type: Date,
-      default: Date.now,
-    },
-  },
-  { _id: false }
-);
-
-const restaurentSchema = new Schema<IRestaurent>(
-  {
-    title: {
-      type: String,
-      required: true,
-      trim: true,
     },
     description: {
+      type: String,
+      required: true,
+      trim: true,
+    },
+  }, 
+);
+
+const restaurantSchema = new Schema<IRestaurant>(
+  {
+    title: {
       type: String,
       required: true,
       trim: true,
@@ -77,18 +56,24 @@ const restaurentSchema = new Schema<IRestaurent>(
       type: String,
       required: true,
     },
-    location: {
+    serviceArea: {
       type: String,
       required: true,
     },
-    type: {
-      type: String,
-      required: true,
-    },
-    amount: {
+
+    totalPrice: {
       type: Number,
       required: true,
       min: 0,
+    },
+    dayCount: {
+      type: Number,
+      required: true,
+      min: 0,
+    },
+    menuItems: {
+      type: [menuItemsSchema],
+      required: true,
     },
     // optional fields for later updates
     averageRating: {
@@ -111,7 +96,7 @@ const restaurentSchema = new Schema<IRestaurent>(
   }
 );
 
-restaurentSchema.pre('save', function (next) {
+restaurantSchema.pre('save', function (next) {
   if (this.reviews && this.reviews.length > 0) {
     const total = this.reviews.reduce((sum, r) => sum + r.rating, 0);
     this.averageRating = parseFloat((total / this.reviews.length).toFixed(1));
@@ -119,6 +104,6 @@ restaurentSchema.pre('save', function (next) {
   next();
 });
 
-export const Restaurent: Model<IRestaurent> =
-  mongoose.models.Restaurent ||
-  mongoose.model<IRestaurent>('Restaurent', restaurentSchema);
+export const Restaurant: Model<IRestaurant> =
+  mongoose.models.Restaurant ||
+  mongoose.model<IRestaurant>('Restaurant', restaurantSchema);

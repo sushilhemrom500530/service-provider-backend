@@ -12,7 +12,10 @@ import { USER_UPLOADS_FOLDER } from './massage.constant';
 const getAllMassageFromDB = async (user: JwtPayload) => {
   const isExistsUser = await User.findOne({ email: user?.email });
   if (!isExistsUser) {
-    throw new AppError(StatusCodes.NOT_FOUND, 'User not found.');
+    throw new AppError(
+      StatusCodes.NOT_FOUND,
+      'You cannot view this data because your account was not found.'
+    );
   }
 
   const result = await Massage.find();
@@ -22,7 +25,10 @@ const getAllMassageFromDB = async (user: JwtPayload) => {
 const getSingleMassageFromDB = async (id: string, user: JwtPayload) => {
   const isExistsUser = await User.findOne({ email: user?.email });
   if (!isExistsUser) {
-    throw new AppError(StatusCodes.NOT_FOUND, 'User not found.');
+    throw new AppError(
+      StatusCodes.NOT_FOUND,
+      'You cannot view this data because your account was not found.'
+    );
   }
   const result = await Massage.findById(id).populate('ownerId');
 
@@ -39,7 +45,10 @@ const addMassageIntoDB = async (req: Request, res: Response) => {
   // check user
   const isExistsUser = await User.findOne({ email: user?.email });
   if (!isExistsUser) {
-    throw new AppError(StatusCodes.NOT_FOUND, 'User not found.');
+    throw new AppError(
+      StatusCodes.NOT_FOUND,
+      'You cannot view this data because your account was not found.'
+    );
   }
 
   // Validate provider role and type
@@ -86,7 +95,10 @@ export const reviewMassage = async (
   // Verify user exists
   const isExistsUser = await User.findOne({ email: user?.email });
   if (!isExistsUser) {
-    throw new AppError(StatusCodes.NOT_FOUND, 'User not found.');
+    throw new AppError(
+      StatusCodes.NOT_FOUND,
+      'You cannot view this data because your account was not found.'
+    );
   }
 
   // Ensure user role is 'User'
@@ -116,9 +128,9 @@ export const reviewMassage = async (
 
   // Push new review
   const newReview = {
-    userId: isExistsUser._id,
-    rating: payload.rating,
-    comment: payload.comment,
+    userId: isExistsUser?._id,
+    rating: payload?.rating,
+    comment: payload?.comment,
     createdAt: new Date(),
   };
 
@@ -151,9 +163,12 @@ const updateMassageIntoDB = async (
   }
 
   // check user
-  const existsUser = await User.findById({ _id: user?.userId }); 
+  const existsUser = await User.findById({ _id: user?.userId });
   if (!existsUser) {
-    throw new AppError(StatusCodes.NOT_FOUND, 'User not found.');
+    throw new AppError(
+      StatusCodes.NOT_FOUND,
+      'You cannot view this data because your account was not found.'
+    );
   }
 
   if (req.file) {
@@ -179,7 +194,10 @@ const updateMassageIntoDB = async (
 const deleteMassageIntoDB = async (id: string, user: JwtPayload) => {
   const isExistsUser = await User.findOne({ email: user?.email });
   if (!isExistsUser) {
-    throw new AppError(StatusCodes.NOT_FOUND, 'User not found.');
+    throw new AppError(
+      StatusCodes.NOT_FOUND,
+      'You cannot view this data because your account was not found.'
+    );
   }
 
   const massage = await Massage.findById(id);

@@ -48,10 +48,10 @@ const apiRoutes = [
     path: '/massage',
     route: MassageRoutes,
   },
-  // {
-  //   path: '/restaurant',
-  //   route: RestaurantRoutes,
-  // },
+  {
+    path: '/restaurant',
+    route: RestaurantRoutes,
+  },
   // {
   //   path: '/chats',
   //   route: ChatRoutes,

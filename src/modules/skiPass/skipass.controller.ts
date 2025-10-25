@@ -3,8 +3,8 @@ import catchAsync from '../../shared/catchAsync';
 import sendResponse from '../../shared/sendResponse';
 import { Request, Response } from 'express';
 import { SkiPassService } from './skipass.service';
-import { JwtPayload } from 'jsonwebtoken';
-import { IReview } from './skipass.interface';
+import { JwtPayload } from 'jsonwebtoken'; 
+import { IReview } from './../common/common.interface';
 
 
 const getAllSkiPassFromDB = catchAsync(async (req: Request, res: Response) => {

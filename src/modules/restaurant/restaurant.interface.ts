@@ -1,25 +1,29 @@
-import { Document, Types } from "mongoose";
+import { Document, Types } from 'mongoose';
+import { IReview } from './../massage/massage.interface';
 
-export interface IReview {
-  userId: Types.ObjectId;
-  rating: number;
-  comment: string;
-  createdAt?: Date;
+
+export interface IMenuItems {
+  name: string;
+  menuType: string;
+  price: number;
+  menuImage: string;
+  description: string;
 }
 
-export interface IRestaurent extends Document {
+
+
+export interface IRestaurant extends Document {
   title: string;
-  description: string;
   ownerId: Types.ObjectId;
   thumbnail: string;
-  skiPassType: string;
-  duration: string;
-  time: string;
-  date: string;
+  openTime: string;
+  closeTime: string;
   serviceArea: string;
-  amount: number;
+  totalPrice: number;
+  menuItems: IMenuItems[];
   averageRating?: number;
   reviews?: IReview[];
+  refunds?: IRefund[];
   createdAt?: Date;
   updatedAt?: Date;
 }

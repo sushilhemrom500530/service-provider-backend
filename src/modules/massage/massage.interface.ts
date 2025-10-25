@@ -1,18 +1,7 @@
 import { Document, Types } from 'mongoose';
 import { IReview, IRefund } from './../common/common.interface';
-
-// export interface IReview {
-//   userId: Types.ObjectId;
-//   rating: number;
-//   comment: string;
-//   createdAt?: Date;
-// }
-// export interface IRefund {
-//   userId: Types.ObjectId;
-//   reason: number;
-//   createdAt?: Date;
-// }
-
+ 
+ 
 export interface IDurationByAmount {
   duration: string;
   amount: number;
