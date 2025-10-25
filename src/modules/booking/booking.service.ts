@@ -113,7 +113,7 @@ export const addBookingIntoDB = async (user: JwtPayload, payload: IBooking) => {
     case 'Transport':
       productModel = 'Transport';
       break;
-    case 'Restaurant_Booking':
+    case 'Restaurant':
       productModel = 'Restaurant';
       break;
     case 'Massage':

@@ -53,6 +53,22 @@ const createSkiPassSchema = z.object({
   }),
 });
 
+const updateSkiPassSchema = z.object({
+  body: z.object({
+    title: z.string().optional(),
+    description: z.string().optional(),
+    ownerId: z.string().optional(),
+    skiPassType: z.string().optional(),
+    duration: z.string().optional(),
+    time: z.string().optional(),
+    date: z.string().optional(),
+    serviceArea: z.string().optional(),
+    amount: z.coerce
+      .number()
+      .optional(),
+  }),
+});
+
 const reviewSkiPassSchema = z.object({
   body: z.object({
     userId: z
@@ -96,6 +112,7 @@ const refundSkiPassSchema = z.object({
 
 export const SkipassValidations = {
   createSkiPassSchema,
+  updateSkiPassSchema,
   reviewSkiPassSchema,
   refundSkiPassSchema,
 };

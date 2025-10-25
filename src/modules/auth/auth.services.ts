@@ -49,7 +49,7 @@ const registerUser = async (userData: Partial<IUser>) => {
     if (existingSkiPassProvider) {
       throw new AppError(
         StatusCodes.BAD_REQUEST,
-        'Only one user can be the Ski Pass provider.'
+        'Only one user can be the Ski Pass provider. please create another type of provider.'
       );
     }
   }

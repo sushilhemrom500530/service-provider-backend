@@ -24,19 +24,34 @@ const getSingleSkipPassFromDB = async (id: string, user: JwtPayload) => {
   if (!isExistsUser) {
     throw new AppError(StatusCodes.NOT_FOUND, 'User not found.');
   }
-  const result = await SkiPass.findById(id);
+  const result = await SkiPass.findById(id).populate('ownerId');
+
+  if (!result) {
+    return {
+      message: ` This ski pass id's ${id} data not found.'`,
+    };
+  }
   return result;
 };
 
 const addSkiPassIntoDB = async (req: Request, res: Response) => {
+  const user = req?.user as JwtPayload;
   // check user
-  const user = await User.findById(req?.body?.ownerId);
-  if (!user) {
+  const isExistsUser = await User.findOne({ email: user?.email });
+  if (!isExistsUser) {
     throw new AppError(StatusCodes.NOT_FOUND, 'User not found.');
   }
 
+  // Validate provider role and type
+  if (isExistsUser?.role !== 'Provider') {
+    throw new AppError(
+      StatusCodes.FORBIDDEN,
+      'You are not authorized to create a ski pass service.'
+    );
+  }
+
   // Check providerType
-  if (user.providerType !== 'Ski_Pass') {
+  if (isExistsUser?.providerType !== 'Ski_Pass') {
     throw new AppError(
       StatusCodes.FORBIDDEN,
       'User is not authorized to create a Ski Pass.'
@@ -68,31 +83,31 @@ export const reviewSkiPass = async (
   // Verify user exists
   const isExistsUser = await User.findOne({ email: user?.email });
   if (!isExistsUser) {
-    throw new AppError(StatusCodes.NOT_FOUND, "User not found.");
+    throw new AppError(StatusCodes.NOT_FOUND, 'User not found.');
   }
 
   // Ensure user role is 'User'
-  if (isExistsUser?.role !== "User") {
+  if (isExistsUser?.role !== 'User') {
     throw new AppError(
       StatusCodes.FORBIDDEN,
-      "You cannot add a review because your account is not a user."
+      'You cannot add a review because your account is not a user.'
     );
   }
 
   // Find the SkiPass product
   const skiPass = await SkiPass.findById(id);
   if (!skiPass) {
-    throw new AppError(StatusCodes.NOT_FOUND, "Ski pass not found");
+    throw new AppError(StatusCodes.NOT_FOUND, 'Ski pass not found');
   }
 
   //  (Optional) Prevent duplicate reviews by the same user
   const alreadyReviewed = skiPass.reviews.some(
-    (review) => review.userId.toString() === isExistsUser._id.toString()
+    review => review.userId.toString() === isExistsUser._id.toString()
   );
   if (alreadyReviewed) {
     throw new AppError(
       StatusCodes.BAD_REQUEST,
-      "You have already reviewed this ski pass."
+      'You have already reviewed this ski pass.'
     );
   }
 
@@ -126,6 +141,12 @@ const updateSkiPassIntoDB = async (
   const id = req.params.id;
   const user = req.user as JwtPayload;
 
+  const isExistsSkiPass = await SkiPass.findById(id);
+
+  if (!isExistsSkiPass) {
+    throw new AppError(StatusCodes.NOT_FOUND, 'Ski pass not found.');
+  }
+
   // check user
   const existsUser = await User.findById(req?.body?.ownerId);
   if (!existsUser) {
@@ -144,7 +165,11 @@ const updateSkiPassIntoDB = async (
 
   const updateData = req?.body;
 
-  const result = await SkiPass.create(updateData);
+  const result = await SkiPass.findByIdAndUpdate(
+    id,
+    { $set: updateData },
+    { new: true }
+  );
 
   return result;
 };
@@ -154,16 +179,16 @@ const deleteSkiPassIntoDB = async (id: string, user: JwtPayload) => {
   if (!isExistsUser) {
     throw new AppError(StatusCodes.NOT_FOUND, 'User not found.');
   }
- 
+
   const skiPass = await SkiPass.findById(id);
   if (!skiPass) {
-    throw new AppError(StatusCodes.NOT_FOUND, "Ski pass not found.");
+    throw new AppError(StatusCodes.NOT_FOUND, 'Ski pass not found.');
   }
- 
+
   if (skiPass.ownerId.toString() !== isExistsUser._id.toString()) {
     throw new AppError(
       StatusCodes.FORBIDDEN,
-      "You are not authorized to delete this ski pass."
+      'You are not authorized to delete this ski pass.'
     );
   }
 

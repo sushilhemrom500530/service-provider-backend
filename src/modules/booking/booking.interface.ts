@@ -5,7 +5,7 @@ export type BookingCategory =
   | 'Ski_Pass'
   | 'Ski_Hire'
   | 'Transport'
-  | 'Restaurant_Booking'
+  | 'Restaurant'
   | 'Massage';
 
 export type ProductModelName =

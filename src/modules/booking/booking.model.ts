@@ -35,7 +35,7 @@ const bookingSchema = new Schema<IBooking>(
         'Ski_Pass',
         'Ski_Hire',
         'Transport',
-        'Restaurant_Booking',
+        'Restaurant',
         'Massage',
       ],
     },

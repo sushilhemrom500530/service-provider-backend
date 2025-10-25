@@ -2,14 +2,16 @@ import { StatusCodes } from 'http-status-codes';
 import { Request, Response } from 'express'; 
 import { JwtPayload } from 'jsonwebtoken'; 
 import catchAsync from './../../shared/catchAsync';
-import sendResponse from './../../shared/sendResponse';
+import sendResponse from './../../shared/sendResponse';  
+import { IReview } from './../common/common.interface';
+import { MassageService } from './massage.service';
 
 
 const getAllMassageFromDB = catchAsync(async (req: Request, res: Response) => {
 
   const user = req.user as JwtPayload;
   
-  const result = await SkiPassService.getAllMassageFromDB(user)
+  const result = await MassageService.getAllMassageFromDB(user)
   sendResponse(res, {
     code: StatusCodes.OK,
     message: 'Massage fetched successfully.',
@@ -21,7 +23,7 @@ const getSingleMassageFromDB = catchAsync(async (req: Request, res: Response) =>
   const id = req.params.id;
   const user = req.user as JwtPayload;
   
-  const result = await SkiPassService.getSingleMassageFromDB(id, user)
+  const result = await MassageService.getSingleMassageFromDB(id, user)
   sendResponse(res, {
     code: StatusCodes.OK,
     message: 'Massage fetched successfully',
@@ -31,7 +33,7 @@ const getSingleMassageFromDB = catchAsync(async (req: Request, res: Response) =>
  
  
 const addMassageIntoDB = catchAsync(async (req: Request, res: Response) => {
-  const result = await SkiPassService.addMassageIntoDB(req)
+  const result = await MassageService.addMassageIntoDB(req)
   sendResponse(res, {
     code: StatusCodes.OK,
     message: 'Massage added successfully',
@@ -44,7 +46,7 @@ const reviewMassage = catchAsync(async (req: Request, res: Response) => {
   const user = req.user as JwtPayload;
   const id = req.params.id;
   const reviewData = req.body;
-  const result = await SkiPassService.reviewMassage(id as string, user, reviewData as IReview)
+  const result = await MassageService.reviewMassage(id as string, user, reviewData as IReview)
   sendResponse(res, {
     code: StatusCodes.OK,
     message: 'Review successfully',
@@ -53,7 +55,7 @@ const reviewMassage = catchAsync(async (req: Request, res: Response) => {
 });
  
 const updateMassageIntoDB = catchAsync(async (req: Request, res: Response) => {
-  const result = await SkiPassService.updateMassageIntoDB(req)
+  const result = await MassageService.updateMassageIntoDB(req)
   sendResponse(res, {
     code: StatusCodes.OK,
     message: 'Massage updated successfully',
@@ -65,7 +67,7 @@ const updateMassageIntoDB = catchAsync(async (req: Request, res: Response) => {
 const deleteMassageIntoDB = catchAsync(async (req: Request, res: Response) => {
   const id = req.params.id;
   const user = req.user as JwtPayload;
-  const result = await SkiPassService.deleteMassageIntoDB(id, user)
+  const result = await MassageService.deleteMassageIntoDB(id, user)
   sendResponse(res, {
     code: StatusCodes.OK,
     message: 'Massage added successfully',
