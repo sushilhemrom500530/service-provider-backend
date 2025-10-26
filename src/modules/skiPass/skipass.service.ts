@@ -77,11 +77,17 @@ const addSkiPassIntoDB = async (req: Request, res: Response) => {
     throw new AppError(StatusCodes.BAD_REQUEST, 'Thumbnail file not found.');
   }
 
-  const updateData = req?.body;
+
+  const updateData = {
+    ...req?.body,
+    ownerId: isExistsUser?._id,
+  };
+
+  // console.log("req data ===================> :", updateData);
 
   const result = await SkiPass.create(updateData);
 
-  return result;
+  return result ;
 };
 
 export const reviewSkiPass = async (

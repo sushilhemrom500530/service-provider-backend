@@ -14,12 +14,6 @@ const createSkiPassSchema = z.object({
         invalid_type_error: 'Description must be a string',
       })
       .min(1, 'Description cannot be empty'),
-    ownerId: z
-      .string({
-        required_error: 'OwnerId is required',
-        invalid_type_error: 'OwnerId must be a string',
-      })
-      .regex(/^[0-9a-fA-F]{24}$/, 'Invalid MongoDB ObjectId'),
     skiPassType: z.enum(['Basic', 'Vip', 'Premium'], {
       required_error: 'SkiPassType is required',
     }),
@@ -48,6 +42,18 @@ const createSkiPassSchema = z.object({
         invalid_type_error: 'Extra Time must be a string',
       })
       .min(1, 'Extra Time cannot be empty'),
+
+    benefits: z.object(
+      {
+        perkingCount: z.coerce.number().min(1, 'Perking cannot be empty'),
+        eventCount: z.coerce.number().min(1, 'Event cannot be empty'),
+        lessionCount: z.coerce.number().min(1, 'Lession cannot be empty'),
+      },
+      {
+        required_error: 'Benefits are required',
+        invalid_type_error: 'Benefits must be an object',
+      }
+    ),
     serviceArea: z
       .string({
         required_error: 'Service area is required',
@@ -64,10 +70,22 @@ const updateSkiPassSchema = z.object({
   body: z.object({
     title: z.string().min(1, 'Title cannot be empty').optional(),
     description: z.string().optional(),
-    ownerId: z.string().optional(),
     skiPassType: z.string().optional(),
     duration: z.string().optional(),
     time: z.string().optional(),
+    benefits: z
+      .object(
+        {
+          perkingCount: z.coerce.number().min(1, 'Perking cannot be empty'),
+          eventCount: z.coerce.number().min(1, 'Event cannot be empty'),
+          lessionCount: z.coerce.number().min(1, 'Lession cannot be empty'),
+        },
+        {
+          required_error: 'Benefits are required',
+          invalid_type_error: 'Benefits must be an object',
+        }
+      )
+      .optional(),
     date: z.string().optional(),
     serviceArea: z.string().optional(),
     amount: z.coerce.number().optional(),
