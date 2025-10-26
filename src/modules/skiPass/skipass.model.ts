@@ -1,5 +1,5 @@
 import mongoose, { Schema, Model } from 'mongoose';
-import { ISkiPass } from './skiPass.interface';
+import { ISkiPass, ISkiPassType } from './skiPass.interface';
 import { reviewSchema, refundSchema } from './../common/common.schema';
 
 const skiPassSchema = new Schema<ISkiPass>(
@@ -26,6 +26,7 @@ const skiPassSchema = new Schema<ISkiPass>(
     },
     skiPassType: {
       type: String,
+      enum: Object.values(ISkiPassType),
       required: true,
     },
     duration: {
@@ -35,8 +36,12 @@ const skiPassSchema = new Schema<ISkiPass>(
     time: {
       type: String,
       required: true,
-    },
+    }, 
     date: {
+      type: String,
+      required: true,
+    },
+    extraTimePerHours: {
       type: String,
       required: true,
     },

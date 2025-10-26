@@ -11,6 +11,8 @@ import { TermsAndServiceRoutes } from './../modules/settings/terms-service/terms
 import { BookingRoutes } from './../modules/booking/booking.routes';
 import { RestaurantRoutes } from './../modules/restaurant/restaurant.routes';
 import { MassageRoutes } from './../modules/massage/massage.routes';
+import { TransportRoutes } from './../modules/transport/transport.routes';
+import { SkiHireRoutes } from './../modules/skiHire/skihire.routes';
 
 const router = express.Router();
 
@@ -51,6 +53,14 @@ const apiRoutes = [
   {
     path: '/restaurant',
     route: RestaurantRoutes,
+  },
+  {
+    path: '/transport',
+    route: TransportRoutes,
+  },
+  {
+    path: '/ski-hire',
+    route: SkiHireRoutes,
   },
   // {
   //   path: '/chats',
