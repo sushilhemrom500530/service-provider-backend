@@ -93,15 +93,15 @@ const addTransportIntoDB = async (req: Request, res: Response) => {
   };
 
   // Ensure numeric fields are properly typed
-  transportData?.specific?.milageCount = Number(
-    transportData?.specific?.milageCount
-  );
-  transportData?.specific?.powerCount = Number(
-    transportData?.specific?.powerCount
-  );
-  transportData?.specific?.personCount = Number(
-    transportData?.specific?.personCount
-  );
+  // transportData?.specific?.milageCount = Number(
+  //   transportData?.specific?.milageCount
+  // );
+  // transportData?.specific?.powerCount = Number(
+  //   transportData?.specific?.powerCount
+  // );
+  // transportData?.specific?.personCount = Number(
+  //   transportData?.specific?.personCount
+  // );
   transportData?.amount = Number(transportData?.amount);
 
   // console.log('response data ==============>', transportData);
@@ -220,19 +220,19 @@ const updateTransportIntoDB = async (
   };
 
   // Convert numeric fields
-  if (updateData?.specific?.milageCount) {
-    updateData?.specific?.milageCount = Number(
-      updateData?.specific?.milageCount
-    );
-  }
-  if (updateData?.specific?.powerCount) {
-    updateData?.specific?.powerCount = Number(updateData?.specific?.powerCount);
-  }
-  if (updateData?.specific?.powerCount) {
-    updateData?.specific?.personCount = Number(
-      updateData?.specific?.personCount
-    );
-  }
+  // if (updateData?.specific?.milageCount) {
+  //   updateData?.specific?.milageCount = Number(
+  //     updateData?.specific?.milageCount
+  //   );
+  // }
+  // if (updateData?.specific?.powerCount) {
+  //   updateData?.specific?.powerCount = Number(updateData?.specific?.powerCount);
+  // }
+  // if (updateData?.specific?.powerCount) {
+  //   updateData?.specific?.personCount = Number(
+  //     updateData?.specific?.personCount
+  //   );
+  // }
   if (updateData?.amount) {
     updateData?.amount = Number(updateData?.amount);
   }

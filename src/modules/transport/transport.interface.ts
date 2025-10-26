@@ -2,9 +2,9 @@ import { Document, Types } from 'mongoose';
 import { IReview, IRefund } from './../common/common.interface';
 
 export interface ISpecific {
-  personCount: number;
-  milageCount: number;
-  powerCount: number;
+  personCount: string;
+  milageCount: string;
+  powerCount: string;
 }
 
  

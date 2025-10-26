@@ -30,9 +30,9 @@ const transportSchema = new Schema<ITransport>(
       required: true,
     },
     specific: {
-      personCount: { type: Number, required: true },
-      milageCount: { type: Number, required: true },
-      powerCount: { type: Number, required: true },
+      personCount: { type: String, required: true },
+      milageCount: { type: String, required: true },
+      powerCount: { type: String, required: true },
     },
     extraTimePerHours: {
       type: String,
