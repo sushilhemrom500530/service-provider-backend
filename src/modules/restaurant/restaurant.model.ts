@@ -2,34 +2,32 @@ import mongoose, { Schema, Model } from 'mongoose';
 import { IRestaurant, IMenuItems } from './restaurant.interface';
 import { reviewSchema, refundSchema } from './../common/common.schema';
 
-const menuItemsSchema = new Schema<IMenuItems>(
-  {
-    name: {
-      type: String,
-      required: true,
-      trim: true,
-    },
-    menuType: {
-      type: String,
-      required: true,
-      trim: true,
-    },
-    price: {
-      type: Number,
-      required: true,
-      min: 1, 
-    },
-    menuImage: {
-      type: String,
-      required: true,
-    },
-    description: {
-      type: String,
-      required: true,
-      trim: true,
-    },
-  }, 
-);
+const menuItemsSchema = new Schema<IMenuItems>({
+  name: {
+    type: String,
+    required: true,
+    trim: true,
+  },
+  menuType: {
+    type: String,
+    required: true,
+    trim: true,
+  },
+  price: {
+    type: Number,
+    required: true,
+    min: 1,
+  },
+  menuImage: {
+    type: String,
+    required: true,
+  },
+  description: {
+    type: String,
+    required: true,
+    trim: true,
+  },
+});
 
 const restaurantSchema = new Schema<IRestaurant>(
   {
@@ -73,6 +71,10 @@ const restaurantSchema = new Schema<IRestaurant>(
     },
     menuItems: {
       type: [menuItemsSchema],
+      required: true,
+    },
+    extraTimePerHours: {
+      type: String,
       required: true,
     },
     // optional fields for later updates
