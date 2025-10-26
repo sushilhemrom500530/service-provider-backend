@@ -1,47 +1,46 @@
 import { Router, NextFunction, Response, Request } from 'express';
-import auth from '../../middlewares/auth'; 
-import fileUploadHandler from '../../shared/fileUploadHandler'; 
+import auth from '../../middlewares/auth';
+import fileUploadHandler from '../../shared/fileUploadHandler';
 import convertHeicToPngMiddleware from '../../shared/convertHeicToPngMiddleware';
-import validateRequest from './../../shared/validateRequest'; 
+import validateRequest from './../../shared/validateRequest';
+import { CategoryController } from './category.controller';
+import { USER_UPLOADS_FOLDER } from './category.constant';
+import { CategoryValidation } from './category.validation';
 
 const uploads = fileUploadHandler(USER_UPLOADS_FOLDER);
 
 const router = Router();
- 
 
-router.get('/all', UserController.getAllUsers);
+router.get('/all', CategoryController.getAllCategories);
 
 router.get(
   '/:id',
   auth('Admin', 'Provider'),
-  UserController.getUserById
+  CategoryController.getCategoryById
 );
 
-router.patch(
-  '/:id/status',
-  auth('Admin', 'Provider', 'User'),
-  UserController.updateUserStatus
-);
-
-router.get(
-  '/profile/me',
-  auth('Admin', 'Provider', 'User'),
-  UserController.getMyProfile
-);
-
-router.patch(
-  '/update-profile',
+router.post(
+  '/create',
   auth('Admin', 'Provider', 'User'),
   uploads.single('file'),
   convertHeicToPngMiddleware(USER_UPLOADS_FOLDER),
-  validateRequest(UserValidation.updateMyProfileSchema),
-  UserController.updateMyProfile
+  validateRequest(CategoryValidation.createCategory),
+  CategoryController.createCategory
+);
+ 
+router.patch(
+  '/:id',
+  auth('Admin', 'Provider', 'User'),
+  uploads.single('file'),
+  convertHeicToPngMiddleware(USER_UPLOADS_FOLDER),
+  validateRequest(CategoryValidation.updateCategory),
+  CategoryController.updateCategory
 );
 
 router.delete(
   '/delete/:id',
   auth('Admin', 'Provider', 'User'),
-  UserController.deleteMyProfile
+  CategoryController.deleteCategory
 );
 
-export const UserRoutes = router;
+export const CategoryRoutes = router;

@@ -9,6 +9,16 @@ const createCategory=z.object({
   })
 })
 
+const updateCategory=z.object({
+  body:z.object({
+    fullName:z.string().optional(),
+    age:z.string().optional(),
+    gender:z.string().optional(),
+    aboutMe:z.string().optional(),
+  })
+})
+
 export const CategoryValidation = {
   createCategory, 
+  updateCategory
 };
