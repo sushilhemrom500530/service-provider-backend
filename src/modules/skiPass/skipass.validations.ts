@@ -20,7 +20,7 @@ const createSkiPassSchema = z.object({
         invalid_type_error: 'OwnerId must be a string',
       })
       .regex(/^[0-9a-fA-F]{24}$/, 'Invalid MongoDB ObjectId'),
-    skiPassType: z.enum(['Basic', 'Premium', 'Family', 'Night', 'Custom'], {
+    skiPassType: z.enum(['Basic', 'Vip', 'Premium'], {
       required_error: 'SkiPassType is required',
     }),
     duration: z
@@ -35,12 +35,19 @@ const createSkiPassSchema = z.object({
         invalid_type_error: 'Time must be a string',
       })
       .min(1, 'Time cannot be empty'),
+
     date: z
       .string({
         required_error: 'Date is required',
         invalid_type_error: 'Date must be a string',
       })
       .refine(val => !isNaN(Date.parse(val)), 'Invalid date format'),
+    extraTimePerHours: z
+      .string({
+        required_error: 'Extra Time is required',
+        invalid_type_error: 'Extra Time must be a string',
+      })
+      .min(1, 'Extra Time cannot be empty'),
     serviceArea: z
       .string({
         required_error: 'Service area is required',
@@ -55,7 +62,7 @@ const createSkiPassSchema = z.object({
 
 const updateSkiPassSchema = z.object({
   body: z.object({
-   title: z.string().min(1, 'Title cannot be empty').optional(),
+    title: z.string().min(1, 'Title cannot be empty').optional(),
     description: z.string().optional(),
     ownerId: z.string().optional(),
     skiPassType: z.string().optional(),
@@ -63,14 +70,11 @@ const updateSkiPassSchema = z.object({
     time: z.string().optional(),
     date: z.string().optional(),
     serviceArea: z.string().optional(),
-    amount: z.coerce
-      .number()
-      .optional(),
+    amount: z.coerce.number().optional(),
   }),
 });
- 
 
 export const SkipassValidations = {
   createSkiPassSchema,
-  updateSkiPassSchema, 
+  updateSkiPassSchema,
 };
