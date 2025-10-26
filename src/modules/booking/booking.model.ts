@@ -1,10 +1,9 @@
 import { Schema, model } from 'mongoose';
 import { IBooking } from './booking.interface';
 
-// Booking item schema (optional array of items)
 const bookingItemSchema = new Schema(
   {
-    productId: { type: Schema.Types.ObjectId, required: true },
+    itemId: { type: Schema.Types.ObjectId, required: true },
     quantity: { type: Number, required: true },
   },
   { _id: false }
@@ -31,16 +30,11 @@ const bookingSchema = new Schema<IBooking>(
     category: {
       type: String,
       required: true,
-      enum: [
-        'Ski_Pass',
-        'Ski_Hire',
-        'Transport',
-        'Restaurant',
-        'Massage',
-      ],
+      enum: ['Ski_Pass', 'Ski_Hire', 'Transport', 'Restaurant', 'Massage'],
     },
 
     personCount: { type: Number },
+
     date: { type: Date },
     time: { type: String },
 
@@ -55,7 +49,7 @@ const bookingSchema = new Schema<IBooking>(
 
     bookingStatus: {
       type: String,
-      enum: ['Active', 'Pending', 'Complete', 'Cancel', 'Delete'],
+      enum: ['Active', 'Pending', 'Completed', 'Cancelled', 'Deleted'],
       default: 'Pending',
       required: true,
     },

@@ -1,7 +1,7 @@
 import { z } from 'zod';
 
 const bookingStatusEnum = z.enum(
-  ['Active', 'Pending', 'Complete', 'Cancel', 'Delete'],
+  ['Active', 'Pending', 'Completed', 'Cancelled', 'Delete'],
   {
     required_error: 'Booking Status is required',
     invalid_type_error: 'Booking Status must be one of the allowed strings',
@@ -17,7 +17,7 @@ const productModelEnum = z
   .optional();
 
 const bookingItemSchema = z.object({
-  productId: z
+  itemId: z
     .string({
       required_error: 'Product ID is required in items',
       invalid_type_error: 'Product ID must be a string',
