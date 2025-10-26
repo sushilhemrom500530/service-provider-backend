@@ -83,7 +83,7 @@ const addTransportIntoDB = async (req: Request, res: Response) => {
     s3Services.uploadSingleFileToS3(brandPhotoFile, USER_UPLOADS_FOLDER),
     s3Services.uploadSingleFileToS3(thumbnailFile, USER_UPLOADS_FOLDER),
   ]);
-
+  
   // Prepare transport data
   const transportData = {
     ...req.body,
@@ -93,9 +93,18 @@ const addTransportIntoDB = async (req: Request, res: Response) => {
   };
 
   // Ensure numeric fields are properly typed
-  transportData.personCount = Number(transportData.personCount);
-  transportData.amount = Number(transportData.amount);
+  transportData?.specific?.milageCount = Number(
+    transportData?.specific?.milageCount
+  );
+  transportData?.specific?.powerCount = Number(
+    transportData?.specific?.powerCount
+  );
+  transportData?.specific?.personCount = Number(
+    transportData?.specific?.personCount
+  );
+  transportData?.amount = Number(transportData?.amount);
 
+  // console.log('response data ==============>', transportData);
   // Create transport document
   const result = await Transport.create(transportData);
   return result;
@@ -174,7 +183,7 @@ const updateTransportIntoDB = async (
 
   if (!isExistsTransport) {
     throw new AppError(StatusCodes.NOT_FOUND, 'Transport not found.');
-  } 
+  }
   // check user
   const existsUser = await User.findById({ _id: user?.userId });
   if (!existsUser) {
@@ -211,13 +220,23 @@ const updateTransportIntoDB = async (
   };
 
   // Convert numeric fields
-  if (updateData.personCount) {
-    updateData.personCount = Number(updateData?.personCount);
+  if (updateData?.specific?.milageCount) {
+    updateData?.specific?.milageCount = Number(
+      updateData?.specific?.milageCount
+    );
   }
-  if (updateData.amount) {
-    updateData.amount = Number(updateData?.amount);
+  if (updateData?.specific?.powerCount) {
+    updateData?.specific?.powerCount = Number(updateData?.specific?.powerCount);
   }
-
+  if (updateData?.specific?.powerCount) {
+    updateData?.specific?.personCount = Number(
+      updateData?.specific?.personCount
+    );
+  }
+  if (updateData?.amount) {
+    updateData?.amount = Number(updateData?.amount);
+  }
+  
   const result = await Transport.findByIdAndUpdate(
     id,
     { $set: updateData },

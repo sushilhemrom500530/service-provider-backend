@@ -1,16 +1,24 @@
 import { Document, Types } from 'mongoose';
 import { IReview, IRefund } from './../common/common.interface';
- 
-  
 
-export interface ITransport extends Document {
-  brandName: string; 
-  brandPhoto: string;
-  thumbnail: string; 
-  title: string;
+export interface ISpecific {
   personCount: number;
+  milageCount: number;
+  powerCount: number;
+}
+
+ 
+export interface ITransport extends Document {
+  brandName: string;
+  brandPhoto: string;
+  thumbnail: string;
+  title: string;
+  specific: ISpecific; 
+  extraTimePerHours: string;
+  insuranceFee: number;
+  maintainCharge: number;
   serviceArea: string;
-  amount: number; 
+  amount: number;
   description?: string;
   ownerId: Types.ObjectId;
   benefits?: string;
