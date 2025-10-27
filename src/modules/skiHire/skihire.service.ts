@@ -1,4 +1,4 @@
-import { Types } from 'mongoose';
+import { Types, mongoose } from 'mongoose';
 import AppError from '../../errors/AppErro';
 import { StatusCodes } from 'http-status-codes';
 import { Request, Response } from 'express';
@@ -31,15 +31,23 @@ const getSingleSkiHireFromDB = async (id: string, user: JwtPayload) => {
       'You cannot view this data because your account was not found.'
     );
   }
-  const result = await SkiHire.findById(id);
 
-  if (!result) {
-    return {
-      message: ` This massage id's ${id} data not found.`,
-    };
-  }
+  const skiHire = await SkiHire.findById(id);
+  if (!skiHire)
+    throw new AppError(StatusCodes.NOT_FOUND, 'Ski Hire not found.');
 
-  return result;
+  // manually populate subcategory
+  const categoryDoc = await Category.findOne(
+    { primaryCategoryName: 'Ski_Hire', 'subCategory._id': skiHire.category },
+    { 'subCategory.$': 1 }
+  );
+
+  const subCategoryData = categoryDoc?.subCategory?.[0] || null;
+
+  return {
+    ...skiHire.toObject(),
+    category: subCategoryData,
+  };
 };
 
 const addSkiHireIntoDB = async (req: Request, res: Response) => {
@@ -146,7 +154,9 @@ const addSkiHireIntoDB = async (req: Request, res: Response) => {
   );
 
   const skiHireData = {
-    category: categoryId,
+    category:
+      new mongoose.Types.ObjectId(categoryId) ||
+      new mongoose.Types.ObjectId(req.body.category),
     title: req.body.title,
     thumbnail: thumbnailUrl,
     ownerId: isExistsUser._id,
