@@ -8,6 +8,7 @@ import { JwtPayload } from 'jsonwebtoken';
 import { Restaurant } from './restaurant.model';
 import { USER_UPLOADS_FOLDER } from './restaurant.constant';
 import { IRestaurant } from './restaurant.interface';
+import { Category } from './../category/category.model';
 
 const getAllRestaurantFromDB = async (user: JwtPayload) => {
   const isExistsUser = await User.findOne({ email: user?.email });
@@ -30,19 +31,30 @@ const getSingleRestaurantFromDB = async (id: string, user: JwtPayload) => {
       'You cannot view this data because your account was not found.'
     );
   }
-  const result = await Restaurant.findById(id);
+  const restaurant = await Restaurant.findById(id).populate({
+    path: 'owner',
+    select: '-isDeleted -agreeTermsCondition -__v',
+  });
+  if (!restaurant)
+    throw new AppError(StatusCodes.NOT_FOUND, 'Restaurant not found.');
 
-  if (!result) {
-    return {
-      message: ` This massage id's ${id} data not found.`,
-    };
-  }
+  // manually populate subcategory
+  const categoryDoc = await Category.findOne(
+    { primaryCategoryName: 'Restaurant', 'subCategory._id': restaurant?.category },
+    { 'subCategory.$': 1 }
+  );
 
-  return result;
+  const subCategoryData = categoryDoc?.subCategory?.[0] || null;
+
+  return {
+    ...restaurant.toObject(),
+    category: subCategoryData,
+  };
 };
 
 const addRestaurantIntoDB = async (req: Request, res: Response) => {
   const user = req.user as JwtPayload;
+  const { category: categoryId, openTime, closeTime } = req.body;
 
   // check user
   const isExistsUser = await User.findOne({ email: user?.email });
@@ -66,6 +78,26 @@ const addRestaurantIntoDB = async (req: Request, res: Response) => {
     throw new AppError(
       StatusCodes.FORBIDDEN,
       'Only providers with providerType : Restaurant can create a restaurant service.'
+    );
+  }
+
+  const category = await Category.findOne({
+    primaryCategoryName: 'Restaurant',
+  });
+  if (!category) {
+    throw new AppError(StatusCodes.NOT_FOUND, 'Restaurant category not found.');
+  }
+
+  const subCategoryItems = category?.subCategory || [];
+
+  const exists = subCategoryItems.some(
+    item => item._id.toString() === categoryId
+  );
+
+  if (!exists) {
+    throw new AppError(
+      StatusCodes.BAD_REQUEST,
+      'Invalid sub-category ID for Restaurant.'
     );
   }
 
@@ -112,13 +144,12 @@ const addRestaurantIntoDB = async (req: Request, res: Response) => {
       return {
         ...item,
         price: Number(item.price),
-        menuImage: menuImageUrl,
+        menuPhoto: menuImageUrl,
       };
     })
   );
 
   // Calculate total price
-  const { openTime, closeTime } = req.body;
   const totalPrice = menuItems.reduce(
     (sum: number, item: any) => sum + Number(item.price || 0),
     0
@@ -149,7 +180,7 @@ const addRestaurantIntoDB = async (req: Request, res: Response) => {
   //Prepare restaurant data
   const restaurantData = {
     ...(req.body as IRestaurant),
-    ownerId: isExistsUser?._id,
+    owner: isExistsUser?._id,
     thumbnail: thumbnailUrl,
     totalPrice,
     dayCount,

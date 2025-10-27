@@ -1,10 +1,9 @@
 import mongoose, { Schema, Model } from 'mongoose';
 import { reviewSchema, refundSchema } from './../common/common.schema';
 import { IProductItems } from './skihire.interface';
- 
 
 const productItemsSchema = new Schema<IProductItems>({
-  prorductName: {
+  productName: {    
     type: String,
     required: true,
     trim: true,
@@ -27,6 +26,11 @@ const productItemsSchema = new Schema<IProductItems>({
 
 const skiHireSchema = new Schema<ISkiHire>(
   {
+    category: {
+      type: Schema.Types.ObjectId,
+      ref: 'Category',
+      required: true,
+    },
     title: {
       type: String,
       required: true,
@@ -42,11 +46,16 @@ const skiHireSchema = new Schema<ISkiHire>(
       ref: 'User',
       required: true,
     },
+    extraChargePerHour: {
+      type: Number,
+      required: true,
+      min: 0,
+    },
     totalPrice: {
       type: Number,
       required: true,
       min: 0,
-    }, 
+    },
     serviceArea: {
       type: String,
       required: true,

@@ -22,7 +22,7 @@ router.post(
  
 router.post(
   '/login',
-   auth('Admin', 'User', 'Provider'),
+  //  auth('Admin', 'User', 'Provider'),
   validateRequest(authValidations.login),
   AuthController.login
 );

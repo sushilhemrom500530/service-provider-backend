@@ -4,6 +4,7 @@ import { JwtPayload } from 'jsonwebtoken';
 import catchAsync from './../../shared/catchAsync';
 import sendResponse from './../../shared/sendResponse'; 
 import { IReview } from './../common/common.interface';
+import { SkiHireService } from './skihire.service';
  
 
 const getAllSkiHireFromDB = catchAsync(async (req: Request, res: Response) => {
@@ -57,7 +58,7 @@ const updateSkiHireIntoDB = catchAsync(async (req: Request, res: Response) => {
   const result = await SkiHireService.updateSkiHireIntoDB(req)
   sendResponse(res, {
     code: StatusCodes.OK,
-    message: 'Ski Hire added successfully',
+    message: 'Ski Hire deleted successfully',
     data: result,
   });
 });

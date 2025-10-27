@@ -1,28 +1,31 @@
 import { z } from 'zod';
 
-const menuItemSchema = z.object({
-  name: z.string({
+const productItemSchema = z.object({
+  productName: z.string({
     required_error: 'Menu item name is required',
   }),
-  menuType: z.string({
-    required_error: 'Menu type is required',
-  }),
+  productPhoto: z
+    .string({
+      required_error: 'Product Photo is required',
+    })
+    .optional(),
   price: z.coerce
     .number()
     .min(1, { message: 'Amount must be greater than zero' }),
-    
-  menuImage: z
-    .string({
-      required_error: 'Menu image is required',
-    })
-    .optional(),
-  description: z.string({
-    required_error: 'Description is required',
-  }),
+
+  quantity: z.coerce
+    .number()
+    .min(1, { message: 'Quantity must be greater than zero' }),
 });
 
-const createRestaurant = z.object({
+const createSkiHireSchema = z.object({
   body: z.object({
+    category: z
+      .string({
+        required_error: 'Category is required',
+        invalid_type_error: 'Category must be a string',
+      })
+      .min(1, 'Title cannot be empty'),
     title: z
       .string({
         required_error: 'Title is required',
@@ -30,55 +33,47 @@ const createRestaurant = z.object({
       })
       .min(1, 'Title cannot be empty'),
 
-    openTime: z.string({
-      required_error: 'Open time is required',
-    }),
-
-    closeTime: z.string({
-      required_error: 'Close time is required',
-    }),
+    extraChargePerHour: z.coerce
+      .number()
+      .min(1, { message: 'Extra Charge Per Hour must be greater than zero' }),
 
     serviceArea: z.string({
       required_error: 'Service area is required',
     }),
 
-    menuItems: z
-      .array(menuItemSchema, {
-        required_error: 'Menu items are required',
+    productItems: z
+      .array(productItemSchema, {
+        required_error: 'Product items are required',
       })
       .min(1, 'At least one menu item is required'),
   }),
 });
 
-const updateRestaurant = z.object({
+const updateSkiHireSchema = z.object({
   body: z.object({
+    category: z.string().min(1, 'Category cannot be empty').optional(),
+
     title: z.string().min(1, 'Title cannot be empty').optional(),
 
     ownerId: z.string().optional(),
 
     thumbnail: z.string().optional(),
 
-    openTime: z.string().optional(),
-
-    closeTime: z.string().optional(),
+    extraChargePerHour: z.coerce
+      .number()
+      .min(1, { message: 'Amount must be greater than zero' })
+      .optional(),
 
     serviceArea: z.string().optional(),
 
-    totalPrice: z
-      .number({
-        invalid_type_error: 'Total price must be a number',
-      })
-      .min(0, 'Total price must be non-negative')
-      .optional(),
-
-    menuItems: z
-      .array(menuItemSchema)
+    productItems: z
+      .array(productItemSchema)
       .min(1, 'At least one menu item is required')
       .optional(),
   }),
 });
 
-export const RestaurantValidations = {
-  createRestaurant,
-  updateRestaurant,
+export const SkiHireValidations = {
+  createSkiHireSchema,
+  updateSkiHireSchema,
 };

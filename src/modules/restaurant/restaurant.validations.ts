@@ -10,8 +10,8 @@ const menuItemSchema = z.object({
   price: z.coerce
     .number()
     .min(1, { message: 'Amount must be greater than zero' }),
-    
-  menuImage: z
+
+  menuPhoto: z
     .string({
       required_error: 'Menu image is required',
     })
@@ -19,6 +19,9 @@ const menuItemSchema = z.object({
   description: z.string({
     required_error: 'Description is required',
   }),
+  quantity: z.coerce
+    .number()
+    .min(1, { message: 'Quantity must be greater than zero' }),
 });
 
 const createRestaurant = z.object({

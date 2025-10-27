@@ -14,6 +14,7 @@ import { MassageRoutes } from './../modules/massage/massage.routes';
 import { TransportRoutes } from './../modules/transport/transport.routes';
 import { SkiHireRoutes } from './../modules/skiHire/skihire.routes';
 import { CategoryRoutes } from './../modules/category/category.route';
+import { CommonRoutes } from './../modules/common/common.routes';
 
 const router = express.Router();
 
@@ -66,6 +67,10 @@ const apiRoutes = [
   {
     path: '/category',
     route: CategoryRoutes,
+  },
+  {
+    path: '/common/category',
+    route: CommonRoutes,
   },
   // {
   //   path: '/chats',

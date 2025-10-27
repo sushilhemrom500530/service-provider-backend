@@ -31,7 +31,17 @@ const updateCategory = z.object({
   }),
 });
 
+
+const createSubCategory = z.object({
+  body: z.object({
+  name: z.string().min(1, 'Subcategory name is required'),
+    categoryPhoto: z.string().url('Invalid category photo URL'),
+  }),
+});
+ 
+
 export const CategoryValidation = {
   createCategory,
   updateCategory,
+  subCategorySchema,
 };

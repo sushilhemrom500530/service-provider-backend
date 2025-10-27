@@ -6,22 +6,24 @@ export interface IMenuItems {
   name: string;
   menuType: string;
   price: number;
-  menuImage: string;
+  menuPhoto: string;
   description: string;
+  quantity: number;
 }
 
 
 
 export interface IRestaurant extends Document {
   title: string;
-  ownerId: Types.ObjectId;
+  owner: Types.ObjectId;
   thumbnail: string;
+  category: Types.ObjectId;
   openTime: string;
   closeTime: string;
   serviceArea: string;
   totalPrice: number;
   menuItems: IMenuItems[];
-  extraTimePerHours: string;
+  extraChargePerHour: string;
   averageRating?: number;
   reviews?: IReview[];
   refunds?: IRefund[];

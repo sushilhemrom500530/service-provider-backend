@@ -18,7 +18,7 @@ const menuItemsSchema = new Schema<IMenuItems>({
     required: true,
     min: 1,
   },
-  menuImage: {
+  menuPhoto: {
     type: String,
     required: true,
   },
@@ -26,6 +26,11 @@ const menuItemsSchema = new Schema<IMenuItems>({
     type: String,
     required: true,
     trim: true,
+  },
+  quantity: {
+    type: Number,
+    required: true,
+    min: 0,
   },
 });
 
@@ -41,7 +46,12 @@ const restaurantSchema = new Schema<IRestaurant>(
       required: true,
       trim: true,
     },
-    ownerId: {
+    category: {
+      type: Schema.Types.ObjectId,
+      ref: 'Category',
+      required: true,
+    },
+    owner: {
       type: Schema.Types.ObjectId,
       ref: 'User',
       required: true,
@@ -73,7 +83,7 @@ const restaurantSchema = new Schema<IRestaurant>(
       type: [menuItemsSchema],
       required: true,
     },
-    extraTimePerHours: {
+    extraChargePerHour: {
       type: String,
       required: true,
     },

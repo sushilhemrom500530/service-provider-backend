@@ -9,21 +9,20 @@ import { User } from './user.model';
 import { JwtPayload } from 'jsonwebtoken';
 
 const getAllUsers = catchAsync(async (req, res) => {
-  
-  const result = await User.find({ isDeleted: false, status:'Active' });
-  sendResponse(res, {
-    code: StatusCodes.OK,
-    message: 'Users retrieved successfully.',
-    data: result,
-  });
-  // const filters = pick(req.query, ['role', 'status', 'searchTerm']);
-  // const options = pick(req.query, ['sortBy', 'limit', 'page', 'populate']);
-  // const users = await UserService.getAllUsers(filters, options);
+  // const result = await User.find({ isDeleted: false, status:'Active' });
   // sendResponse(res, {
   //   code: StatusCodes.OK,
   //   message: 'Users retrieved successfully.',
-  //   data: users,
+  //   data: result,
   // });
+  const filters = pick(req.query, ['role', 'status', 'searchTerm']);
+  const options = pick(req.query, ['sortBy', 'limit', 'page', 'populate']);
+  const users = await UserService.getAllUsers(filters, options);
+  sendResponse(res, {
+    code: StatusCodes.OK,
+    message: 'Users retrieved successfully.',
+    data: users,
+  });
 });
 
 const getUserById = catchAsync(async (req, res) => {
@@ -37,7 +36,7 @@ const getUserById = catchAsync(async (req, res) => {
 });
 
 const updateUserStatus = catchAsync(async (req, res) => {
-  const { id } = req.params; 
+  const { id } = req.params;
   const { status } = req.body;
   const user = req.user as JwtPayload;
   const result = await UserService.updateUserStatus(id, user, status);
@@ -47,25 +46,7 @@ const updateUserStatus = catchAsync(async (req, res) => {
     data: result,
   });
 });
-
-const getDashboardOverview = catchAsync(async (req, res) => {
-  const data = await UserService.getDashboardOverview();
-  sendResponse(res, {
-    code: StatusCodes.OK,
-    message: 'Dashboard overview retrieved successfully.',
-    data,
-  });
-});
-
-const userActivityGraphChart = catchAsync(async (req, res) => {
-  const { period } = req.query as { period: 'weekly' | 'monthly' | 'yearly' };
-  const data = await UserService.userActivityGraphChart(period);
-  sendResponse(res, {
-    code: StatusCodes.OK,
-    message: 'User activity data retrieved successfully.',
-    data,
-  });
-});
+ 
 
 const getMyProfile = catchAsync(async (req, res) => {
   const { userId } = req.user;
@@ -86,7 +67,7 @@ const updateMyProfile = catchAsync(async (req, res) => {
       USER_UPLOAD_FOLDER
     );
     req.body.profileUrl = fileUrl;
-  }else{
+  } else {
     throw new Error('File not found');
   }
 
@@ -115,9 +96,7 @@ export const UserController = {
   getAllUsers,
   getUserById,
   updateUserStatus,
-  getMyProfile,
-  userActivityGraphChart,
+  getMyProfile, 
   updateMyProfile,
-  deleteMyProfile,
-  getDashboardOverview,
+  deleteMyProfile, 
 };
