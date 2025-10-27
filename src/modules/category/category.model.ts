@@ -12,9 +12,6 @@ const subCategorySchema = new Schema<ISubCategory>(
       type: String,
       required: true,
     },
-  },
-  {
-    _id: false,
   }
 );
 
@@ -25,6 +22,9 @@ const categorySchema = new Schema<ICategory>(
       type: String,
       enum: ['Ski_Pass', 'Ski_Hire', 'Transport', 'Restaurant', 'Massage'],
       required: true,
+    },
+    thumbnail: {
+      type: String,
     },
     subCategory: {
       type: [subCategorySchema],

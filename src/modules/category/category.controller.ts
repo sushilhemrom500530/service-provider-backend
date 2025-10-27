@@ -5,6 +5,7 @@ import { s3Services } from '../../aws/s3Service';
 import { JwtPayload } from 'jsonwebtoken';
 import { Category } from './category.model';
 import { CategoryService } from './category.service';
+import { Request } from 'express';
 
 const getAllCategories = catchAsync(async (req, res) => {
   
@@ -36,7 +37,7 @@ const getCategoryById = catchAsync(async (req, res) => {
 
 const createCategory = catchAsync(async (req, res) => {
   const user = req.user as JwtPayload;
-  const result = await CategoryService.createCategory(id, user, status);
+  const result = await CategoryService.createCategory(req as Request, user);
   sendResponse(res, {
     code: StatusCodes.OK,
     message: 'Category create successfully.',

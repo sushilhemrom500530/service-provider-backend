@@ -22,12 +22,15 @@ router.get(
 router.post(
   '/create',
   auth('Admin', 'Provider', 'User'),
-  uploads.single('file'),
+  uploads.fields([
+    { name: 'thumbnail', maxCount: 1 },
+    { name: 'files', maxCount: 20 },
+  ]),
   convertHeicToPngMiddleware(USER_UPLOADS_FOLDER),
   validateRequest(CategoryValidation.createCategory),
   CategoryController.createCategory
 );
- 
+
 router.patch(
   '/:id',
   auth('Admin', 'Provider', 'User'),

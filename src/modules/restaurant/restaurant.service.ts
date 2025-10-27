@@ -82,8 +82,8 @@ const addRestaurantIntoDB = async (req: Request, res: Response) => {
   // Parse menu items JSON
   let menuItems: any[] = [];
   if (typeof req.body.menuItems === 'string') {
-    menuItems = JSON.parse(req.body.menuItems);
-  } else if (Array.isArray(req.body.menuItems)) {
+    menuItems = JSON.parse(req.body?.menuItems);
+  } else if (Array.isArray(req.body?.menuItems)) {
     menuItems = req.body.menuItems;
   } else {
     throw new AppError(

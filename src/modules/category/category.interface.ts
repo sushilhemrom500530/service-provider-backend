@@ -13,6 +13,7 @@ export type PrimaryCategoryType =
 
 export interface ICategory {
   primaryCategoryName: PrimaryCategoryType;
+  thumbnail?: string;
   subCategory: ISubCategory[];
   createdAt?: Date;
   updatedAt?: Date;
