@@ -4,9 +4,11 @@ import { StatusCodes } from 'http-status-codes';
 import { Request, Response } from 'express';
 import { s3Services } from './../../aws/s3Service';
 import { User } from './../user/user.model';
-import { JwtPayload } from 'jsonwebtoken';  
+import { JwtPayload } from 'jsonwebtoken';
 import { IReview } from '../common/common.interface';
 import { SkiHire } from './skihire.model';
+import { Category } from './../category/category.model';
+import { USER_UPLOADS_FOLDER } from './skihire.constant';
 
 const getAllSkiHireFromDB = async (user: JwtPayload) => {
   const isExistsUser = await User.findOne({ email: user?.email });
@@ -42,6 +44,7 @@ const getSingleSkiHireFromDB = async (id: string, user: JwtPayload) => {
 
 const addSkiHireIntoDB = async (req: Request, res: Response) => {
   const user = req.user as JwtPayload;
+  const { category: categoryId } = req.body;
 
   // check user
   const isExistsUser = await User.findOne({ email: user?.email });
@@ -61,98 +64,96 @@ const addSkiHireIntoDB = async (req: Request, res: Response) => {
   }
 
   // Now we know user is a Provider — check providerType
-  if (isExistsUser?.providerType !== 'SkiHire') {
+  if (isExistsUser?.providerType !== 'Ski_Hire') {
     throw new AppError(
       StatusCodes.FORBIDDEN,
       'Only providers with providerType : SkiHire can create a ski hire service.'
     );
   }
 
-  // Upload ski hire thumbnail
+  const category = await Category.findOne({ primaryCategoryName: 'Ski_Hire' });
+  if (!category) {
+    throw new AppError(StatusCodes.NOT_FOUND, 'Ski Hire category not found.');
+  }
+
+  const subCategoryItems = category?.subCategory || [];
+
+  const exists = subCategoryItems.some(
+    item => item._id.toString() === categoryId
+  );
+
+  if (!exists) {
+    throw new AppError(
+      StatusCodes.BAD_REQUEST,
+      'Invalid sub-category ID for Ski Hire.'
+    );
+  }
+
   const thumbnailFile = req.files?.['thumbnail']?.[0];
   if (!thumbnailFile) {
     throw new AppError(StatusCodes.BAD_REQUEST, 'Thumbnail file not found.');
   }
+
   const thumbnailUrl = await s3Services.uploadSingleFileToS3(
     thumbnailFile,
     USER_UPLOADS_FOLDER
   );
 
-  // Parse menu items JSON
-  let menuItems: any[] = [];
-  if (typeof req.body.menuItems === 'string') {
-    menuItems = JSON.parse(req.body.menuItems);
-  } else if (Array.isArray(req.body.menuItems)) {
-    menuItems = req.body.menuItems;
+  // Parse product items
+  let productItems: any[] = [];
+
+  if (typeof req.body.productItems === 'string') {
+    productItems = JSON.parse(req.body.productItems);
+  } else if (Array.isArray(req.body.productItems)) {
+    productItems = req.body.productItems;
   } else {
     throw new AppError(
       StatusCodes.BAD_REQUEST,
-      'Menu items data is missing or invalid.'
+      'Product items data is missing or invalid.'
     );
   }
 
-  // Upload menu item images
-  const menuItemFiles = req.files?.['menuItems'] || [];
-  const processedMenuItems = await Promise.all(
-    menuItems.map(async (item: any, index: number) => {
-      const menuFile = menuItemFiles[index];
-      if (!menuFile) {
+  //  Upload product item images
+  const productItemFiles = req.files?.['images'] || [];
+
+  const processedProductItems = await Promise.all(
+    productItems.map(async (item: any, index: number) => {
+      const productFile = productItemFiles[index];
+      if (!productFile) {
         throw new AppError(
           StatusCodes.BAD_REQUEST,
-          `Menu image for item ${item?.name} is missing.`
+          `Product image for item "${item?.productName}" is missing.`
         );
       }
 
-      const menuImageUrl = await s3Services.uploadSingleFileToS3(
-        menuFile,
+      const productPhotoUrl = await s3Services.uploadSingleFileToS3(
+        productFile,
         USER_UPLOADS_FOLDER
       );
 
       return {
-        ...item,
+        productName: item?.productName,
+        productPhoto: productPhotoUrl,
         price: Number(item.price),
-        menuImage: menuImageUrl,
+        quantity: Number(item.quantity),
       };
     })
   );
 
-  // Calculate total price
-  const { openTime, closeTime } = req.body;
-  const totalPrice = menuItems.reduce(
-    (sum: number, item: any) => sum + Number(item.price || 0),
+  const totalPrice = processedProductItems.reduce(
+    (sum: number, item: any) => sum + item.price * item.quantity,
     0
   );
 
-  // day count calculation
-  function timeStrToHours(timeStr: string) {
-    const [time, meridian] = timeStr.split(' ');
-    let [hours, minutes] = time.split(':').map(Number);
-
-    if (meridian === 'PM' && hours !== 12) hours += 12;
-    if (meridian === 'AM' && hours === 12) hours = 0;
-
-    return hours + minutes / 60;
-  }
-
-  // Convert openTime and closeTime to hours
-  const openHours = timeStrToHours(openTime);
-  const closeHours = timeStrToHours(closeTime);
-
-  // Calculate total hours difference
-  let totalHours = closeHours - openHours;
-  if (totalHours < 0) totalHours += 24; // handle overnight shifts
-
-  // Calculate dayCount as fractional days
-  const dayCount = Number((totalHours / 24).toFixed(2));
-
-  //Prepare ski hire data
   const skiHireData = {
-    ...(req.body ),
-    ownerId: isExistsUser?._id,
+    category: categoryId,
+    title: req.body.title,
     thumbnail: thumbnailUrl,
+    ownerId: isExistsUser._id,
+    extraChargePerHour: Number(req.body.extraChargePerHour) || 0,
     totalPrice,
-    dayCount,
-    menuItems: processedMenuItems,
+    serviceArea: req.body.serviceArea,
+    productItems: processedProductItems,
   };
 
   const result = await SkiHire.create(skiHireData);
@@ -335,7 +336,7 @@ const updateSkiHireIntoDB = async (
   const dayCount = Number((totalHours / 24).toFixed(2));
 
   const updateData = {
-    ...(req.body),
+    ...req.body,
     thumbnail: thumbnailUrl,
     menuItems,
     totalPrice,

@@ -3,7 +3,7 @@ import { IReview } from './../massage/massage.interface';
 
 
 export interface IProductItems {
-  prorductName: string;
+  productName: string;
   productPhoto: string; 
   price: number;
   quantity: number; 
@@ -12,9 +12,11 @@ export interface IProductItems {
 
 
 export interface ISkiHire extends Document {
+  category: Types.ObjectId;
   title: string;
   thumbnail: string;
   ownerId: Types.ObjectId; 
+  extraChargePerHour: number;
   totalPrice: number;
   serviceArea: string;
   productItems: IProductItems[];
