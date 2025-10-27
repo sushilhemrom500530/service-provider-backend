@@ -46,25 +46,7 @@ const updateUserStatus = catchAsync(async (req, res) => {
     data: result,
   });
 });
-
-const getDashboardOverview = catchAsync(async (req, res) => {
-  const data = await UserService.getDashboardOverview();
-  sendResponse(res, {
-    code: StatusCodes.OK,
-    message: 'Dashboard overview retrieved successfully.',
-    data,
-  });
-});
-
-const userActivityGraphChart = catchAsync(async (req, res) => {
-  const { period } = req.query as { period: 'weekly' | 'monthly' | 'yearly' };
-  const data = await UserService.userActivityGraphChart(period);
-  sendResponse(res, {
-    code: StatusCodes.OK,
-    message: 'User activity data retrieved successfully.',
-    data,
-  });
-});
+ 
 
 const getMyProfile = catchAsync(async (req, res) => {
   const { userId } = req.user;
@@ -114,9 +96,7 @@ export const UserController = {
   getAllUsers,
   getUserById,
   updateUserStatus,
-  getMyProfile,
-  userActivityGraphChart,
+  getMyProfile, 
   updateMyProfile,
-  deleteMyProfile,
-  getDashboardOverview,
+  deleteMyProfile, 
 };

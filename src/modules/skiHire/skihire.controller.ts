@@ -4,6 +4,7 @@ import { JwtPayload } from 'jsonwebtoken';
 import catchAsync from './../../shared/catchAsync';
 import sendResponse from './../../shared/sendResponse'; 
 import { IReview } from './../common/common.interface';
+import { SkiHireService } from './skihire.service';
  
 
 const getAllSkiHireFromDB = catchAsync(async (req: Request, res: Response) => {

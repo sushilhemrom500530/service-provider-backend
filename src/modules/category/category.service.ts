@@ -43,31 +43,30 @@ const getCategoryById = async (id: string, user: JwtPayload) => {
 
 const createCategory = async (req: Request, res: Response) => {
   const user = req.user as JwtPayload;
-
-  // Verify user
-  const isExistsUser = await User.findOne({
-    email: user?.email,
-    role: 'Admin',
-  });
-
+  // check user
+  const isExistsUser = await User.findOne({ email: user?.email });
   if (!isExistsUser) {
     throw new AppError(
       StatusCodes.NOT_FOUND,
-      'You cannot create this data because your account was not found.'
+      'You cannot view this data because your account was not found.'
     );
   }
 
-  const categoryId = req.params.id;
+  const { primaryCategoryName } = req.body;
 
-  // Check if category exists
-  const category = await Category.findById(categoryId);
-  if (!category) {
-    throw new AppError(StatusCodes.NOT_FOUND, 'Category not found.');
-  }
+  const thumbnailFile = req.files?.['thumbnail']?.[0];
+  // if (!thumbnailFile) {
+  //   throw new AppError(StatusCodes.BAD_REQUEST, 'Thumbnail file not found.');
+  // }
 
-  // Parse subCategory
-  let subCategory: ISubCategory[] = [];
-  if (typeof req.body.subCategory === 'string') {
+  const thumbnailUrl = await s3Services.uploadSingleFileToS3(
+    thumbnailFile,
+    USER_UPLOADS_FOLDER
+  );
+
+  let subCategory: ICategory[] = [];
+
+  if (typeof req.body?.subCategory === 'string') {
     try {
       subCategory = JSON.parse(req.body.subCategory);
     } catch {
@@ -76,7 +75,7 @@ const createCategory = async (req: Request, res: Response) => {
         'Invalid subCategory format. Must be valid JSON.'
       );
     }
-  } else if (Array.isArray(req.body.subCategory)) {
+  } else if (Array.isArray(req.body?.subCategory)) {
     subCategory = req.body.subCategory;
   } else {
     throw new AppError(
@@ -85,52 +84,42 @@ const createCategory = async (req: Request, res: Response) => {
     );
   }
 
-  // Upload files and match with subCategory
+  //  Upload subCategory images
   const subCategoryFiles = req.files?.['files'] || [];
 
   const processedSubCategory = await Promise.all(
     subCategory.map(async (item, index) => {
       const subFile = subCategoryFiles[index];
-      let categoryPhoto = item.categoryPhoto;
-
-      // If a new file uploaded for this index → upload & override
-      if (subFile) {
-        categoryPhoto = await s3Services.uploadSingleFileToS3(
-          subFile,
-          USER_UPLOADS_FOLDER
+      if (!subFile) {
+        throw new AppError(
+          StatusCodes.BAD_REQUEST,
+          `Subcategory image for "${item?.name}" is missing.`
         );
       }
 
+      const subCategoryPhotoUrl = await s3Services.uploadSingleFileToS3(
+        subFile,
+        USER_UPLOADS_FOLDER
+      );
+
       return {
-        ...item,
-        categoryPhoto,
+        name: item.name,
+        categoryPhoto: subCategoryPhotoUrl,
       };
     })
   );
 
-  for (const sub of processedSubCategory) {
-    if (sub._id) {
-      // Update existing subcategory by _id
-      await Category.updateOne(
-        { _id: categoryId, 'subCategory._id': sub._id },
-        {
-          $set: {
-            'subCategory.$.name': sub.name,
-            'subCategory.$.categoryPhoto': sub.categoryPhoto,
-          },
-        }
-      );
-    } else {
-      await Category.findByIdAndUpdate(categoryId, {
-        $push: { subCategory: sub },
-      });
-    }
-  }
+  const categoryData = {
+    primaryCategoryName,
+    thumbnail: thumbnailUrl,
+    subCategory: processedSubCategory,
+  };
 
-  const updatedCategory = await Category.findById(categoryId);
+  const result: ICategory = await Category.create(categoryData);
 
-  return updatedCategory;
+  return result;
 };
+
 const addSubCategory = async (req: Request, res: Response) => {
   const user = req.user as JwtPayload;
   // check user
@@ -331,12 +320,12 @@ const deleteCategory = async (
     );
   }
 
-  const updatedCategory = await Category.findByIdAndUpdate(
+  await Category.findByIdAndUpdate(
     categoryId,
     { $pull: { subCategory: { _id: { $in: existingIds } } } },
     { new: true }
   );
- 
+
   return { deletedCount: existingIds.length };
 };
 

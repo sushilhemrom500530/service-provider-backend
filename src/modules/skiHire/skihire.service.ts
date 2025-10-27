@@ -4,10 +4,9 @@ import { StatusCodes } from 'http-status-codes';
 import { Request, Response } from 'express';
 import { s3Services } from './../../aws/s3Service';
 import { User } from './../user/user.model';
-import { JwtPayload } from 'jsonwebtoken';
-import { Restaurant } from './restaurant.model';
-import { USER_UPLOADS_FOLDER } from './restaurant.constant';
-import { IRestaurant } from './restaurant.interface';
+import { JwtPayload } from 'jsonwebtoken';  
+import { IReview } from '../common/common.interface';
+import { SkiHire } from './skihire.model';
 
 const getAllSkiHireFromDB = async (user: JwtPayload) => {
   const isExistsUser = await User.findOne({ email: user?.email });
@@ -18,7 +17,7 @@ const getAllSkiHireFromDB = async (user: JwtPayload) => {
     );
   }
 
-  const result = await Restaurant.find();
+  const result = await SkiHire.find();
   return result;
 };
 
@@ -30,7 +29,7 @@ const getSingleSkiHireFromDB = async (id: string, user: JwtPayload) => {
       'You cannot view this data because your account was not found.'
     );
   }
-  const result = await Restaurant.findById(id);
+  const result = await SkiHire.findById(id);
 
   if (!result) {
     return {
@@ -57,19 +56,19 @@ const addSkiHireIntoDB = async (req: Request, res: Response) => {
   if (isExistsUser?.role !== 'Provider') {
     throw new AppError(
       StatusCodes.FORBIDDEN,
-      'You are not authorized to create a restaurant service.'
+      'You are not authorized to create a ski hire service.'
     );
   }
 
   // Now we know user is a Provider — check providerType
-  if (isExistsUser?.providerType !== 'Restaurant') {
+  if (isExistsUser?.providerType !== 'SkiHire') {
     throw new AppError(
       StatusCodes.FORBIDDEN,
-      'Only providers with providerType : Restaurant can create a restaurant service.'
+      'Only providers with providerType : SkiHire can create a ski hire service.'
     );
   }
 
-  // Upload restaurant thumbnail
+  // Upload ski hire thumbnail
   const thumbnailFile = req.files?.['thumbnail']?.[0];
   if (!thumbnailFile) {
     throw new AppError(StatusCodes.BAD_REQUEST, 'Thumbnail file not found.');
@@ -146,9 +145,9 @@ const addSkiHireIntoDB = async (req: Request, res: Response) => {
   // Calculate dayCount as fractional days
   const dayCount = Number((totalHours / 24).toFixed(2));
 
-  //Prepare restaurant data
-  const restaurantData = {
-    ...(req.body as IRestaurant),
+  //Prepare ski hire data
+  const skiHireData = {
+    ...(req.body ),
     ownerId: isExistsUser?._id,
     thumbnail: thumbnailUrl,
     totalPrice,
@@ -156,7 +155,7 @@ const addSkiHireIntoDB = async (req: Request, res: Response) => {
     menuItems: processedMenuItems,
   };
 
-  const result = await Restaurant.create(restaurantData);
+  const result = await SkiHire.create(skiHireData);
   return result;
 };
 
@@ -183,19 +182,19 @@ export const reviewSkiHire = async (
   }
 
   // Find the SkiPass product
-  const restaurant = await Restaurant.findById(id);
-  if (!restaurant) {
-    throw new AppError(StatusCodes.NOT_FOUND, 'Restaurant not found');
+  const skiHire = await SkiHire.findById(id);
+  if (!skiHire) {
+    throw new AppError(StatusCodes.NOT_FOUND, 'Ski Hire not found');
   }
 
   //  (Optional) Prevent duplicate reviews by the same user
-  const alreadyReviewed = restaurant.reviews.some(
+  const alreadyReviewed = skiHire.reviews.some(
     review => review.userId.toString() === isExistsUser._id.toString()
   );
   if (alreadyReviewed) {
     throw new AppError(
       StatusCodes.BAD_REQUEST,
-      'You have already reviewed this restaurant.'
+      'You have already reviewed this skiHire.'
     );
   }
 
@@ -207,18 +206,18 @@ export const reviewSkiHire = async (
     createdAt: new Date(),
   };
 
-  restaurant.reviews.push(newReview as IReview);
+  skiHire.reviews.push(newReview as IReview);
 
   // Recalculate average rating
-  const total = restaurant.reviews.reduce((sum, r) => sum + r.rating, 0);
-  restaurant.averageRating = parseFloat(
-    (total / restaurant.reviews.length).toFixed(1)
+  const total = skiHire.reviews.reduce((sum, r) => sum + r.rating, 0);
+  skiHire.averageRating = parseFloat(
+    (total / skiHire.reviews.length).toFixed(1)
   );
 
-  // Save updated restaurant
-  await restaurant.save();
+  // Save updated skiHire
+  await skiHire.save();
 
-  return restaurant;
+  return skiHire;
 };
 
 const updateSkiHireIntoDB = async (
@@ -229,10 +228,10 @@ const updateSkiHireIntoDB = async (
   const id = req?.params?.id;
   const user = req.user as JwtPayload;
 
-  // Check if restaurant exists
-  const isExistsRestaurant = await Restaurant.findById(id);
-  if (!isExistsRestaurant) {
-    throw new AppError(StatusCodes.NOT_FOUND, 'Restaurant not found.');
+  // Check if ski hire exists
+  const isExistsSkiHire = await SkiHire.findById(id);
+  if (!isExistsSkiHire) {
+    throw new AppError(StatusCodes.NOT_FOUND, 'Ski Hire not found.');
   }
 
   // Verify user
@@ -247,16 +246,16 @@ const updateSkiHireIntoDB = async (
   // Check provider role & type
   if (
     isExistsUser?.role !== 'Provider' ||
-    isExistsUser?.providerType !== 'Restaurant'
+    isExistsUser?.providerType !== 'SkiHire'
   ) {
     throw new AppError(
       StatusCodes.FORBIDDEN,
-      'You are not authorized to update this restaurant service.'
+      'You are not authorized to update this ski hire service.'
     );
   }
 
   // Handle thumbnail update (optional)
-  let thumbnailUrl = isExistsRestaurant.thumbnail;
+  let thumbnailUrl = isExistsSkiHire.thumbnail;
   const thumbnailFile = req.files?.['thumbnail']?.[0];
   if (thumbnailFile) {
     thumbnailUrl = await s3Services.uploadSingleFileToS3(
@@ -266,7 +265,7 @@ const updateSkiHireIntoDB = async (
   }
 
   // Parse menu items (if provided)
-  let menuItems = isExistsRestaurant.menuItems;
+  let menuItems = isExistsSkiHire.menuItems;
   if (req.body.menuItems) {
     let parsedMenuItems: any[] = [];
 
@@ -315,8 +314,8 @@ const updateSkiHireIntoDB = async (
   );
 
   // Recalculate day count (if times updated)
-  let openTime = req.body.openTime || isExistsRestaurant.openTime;
-  let closeTime = req.body.closeTime || isExistsRestaurant.closeTime;
+  let openTime = req.body.openTime || isExistsSkiHire.openTime;
+  let closeTime = req.body.closeTime || isExistsSkiHire.closeTime;
 
   function timeStrToHours(timeStr: string) {
     const [time, meridian] = timeStr.split(' ');
@@ -336,14 +335,14 @@ const updateSkiHireIntoDB = async (
   const dayCount = Number((totalHours / 24).toFixed(2));
 
   const updateData = {
-    ...(req.body as Partial<IRestaurant>),
+    ...(req.body),
     thumbnail: thumbnailUrl,
     menuItems,
     totalPrice,
     dayCount,
   };
 
-  const result = await Restaurant.findByIdAndUpdate(
+  const result = await SkiHire.findByIdAndUpdate(
     id,
     { $set: updateData },
     { new: true }
@@ -361,19 +360,19 @@ const deleteSkiHireIntoDB = async (id: string, user: JwtPayload) => {
     );
   }
 
-  const restaurant = await Restaurant.findById(id);
-  if (!restaurant) {
-    throw new AppError(StatusCodes.NOT_FOUND, 'Restaurant not found.');
+  const skiHire = await SkiHire.findById(id);
+  if (!skiHire) {
+    throw new AppError(StatusCodes.NOT_FOUND, 'Ski Hire not found.');
   }
 
-  if (restaurant?.ownerId.toString() !== isExistsUser?._id.toString()) {
+  if (skiHire?.ownerId.toString() !== isExistsUser?._id.toString()) {
     throw new AppError(
       StatusCodes.FORBIDDEN,
-      'You are not authorized to delete this restaurant.'
+      'You are not authorized to delete this ski hire.'
     );
   }
 
-  const result = await Restaurant.findByIdAndDelete(id);
+  const result = await SkiHire.findByIdAndDelete(id);
   return result;
 };
 
