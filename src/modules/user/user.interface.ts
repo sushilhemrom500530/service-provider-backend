@@ -1,11 +1,14 @@
-
+import {
+  IPaginationOptions,
+  IPaginationResult,
+} from './../../types/pagination';
 // Service subdocument (for providers)
 export interface IService {
   serviceType: string;
   category: string[];
 }
 
-// user status 
+// user status
 export enum UserStatus {
   Active = 'Active',
   Inactive = 'Inactive',
@@ -14,13 +17,12 @@ export enum UserStatus {
   Blocked = 'Blocked',
   Banned = 'Banned',
 }
-//  user role 
+//  user role
 export enum UserRoles {
   User = 'User',
   Provider = 'Provider',
-  Admin = 'Admin', 
+  Admin = 'Admin',
 }
-
 
 // User interface
 export interface IUser extends Document {
@@ -30,7 +32,7 @@ export interface IUser extends Document {
   providerType?: string;
   phoneNumber: string;
   profileUrl?: string;
-  service?: IService;  
+  service?: IService;
   status: UserStatus;
   address: string;
   role: 'User' | 'Provider' | 'Admin';
@@ -40,7 +42,6 @@ export interface IUser extends Document {
 
   comparePassword(password: string): Promise<boolean>;
 }
-
 
 export interface IUpdateData {
   fullName?: string;
@@ -52,4 +53,11 @@ export interface IUpdateData {
     category?: string[];
   };
   address?: string;
+}
+
+export interface UserModel extends Model<IUser> {
+  paginate(
+    filters?: Record<string, any>,
+    options?: IPaginationOptions
+  ): Promise<IPaginationResult<IUser>>;
 }

@@ -3,6 +3,7 @@ import mongoose, { Schema, Document, Model } from 'mongoose';
 import bcrypt from 'bcrypt';
 import { config } from '../../config';
 import { IService, IUser, UserStatus } from './user.interface';
+import paginationPlugin from './../../common/plugins/pagination.plugin';
 
 // Service schema
 const serviceSchema = new Schema<IService>(
@@ -42,6 +43,9 @@ const userSchema = new Schema<IUser>(
     timestamps: true,  
   }
 );
+
+// add pagination plugin
+userSchema.plugin(paginationPlugin);
 
 // Hash password before save
 userSchema.pre<IUser>('save', async function (next) {

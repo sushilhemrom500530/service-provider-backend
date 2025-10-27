@@ -337,7 +337,6 @@ const deleteCategory = async (
     { new: true }
   );
  
-
   return { deletedCount: existingIds.length };
 };
 
