@@ -32,13 +32,16 @@ const getSingleSkiHireFromDB = async (id: string, user: JwtPayload) => {
     );
   }
 
-  const skiHire = await SkiHire.findById(id);
+  const skiHire = await SkiHire.findById(id).populate({
+    path: 'ownerId',
+    select: '-isDeleted -agreeTermsCondition -__v',
+  });
   if (!skiHire)
     throw new AppError(StatusCodes.NOT_FOUND, 'Ski Hire not found.');
 
   // manually populate subcategory
   const categoryDoc = await Category.findOne(
-    { primaryCategoryName: 'Ski_Hire', 'subCategory._id': skiHire.category },
+    { primaryCategoryName: 'Ski_Hire', 'subCategory._id': skiHire?.category },
     { 'subCategory.$': 1 }
   );
 
@@ -149,7 +152,7 @@ const addSkiHireIntoDB = async (req: Request, res: Response) => {
   );
 
   const totalPrice = processedProductItems.reduce(
-    (sum: number, item: any) => sum + item.price * item.quantity,
+    (sum: number, item: any) => sum + item.price,
     0
   );
 
@@ -231,11 +234,7 @@ export const reviewSkiHire = async (
   return skiHire;
 };
 
-const updateSkiHireIntoDB = async (
-  req: Request,
-  res: Response,
-  payload: Partial<any | {}>
-) => {
+const updateSkiHireIntoDB = async (req: Request) => {
   const id = req?.params?.id;
   const user = req.user as JwtPayload;
 
@@ -257,7 +256,7 @@ const updateSkiHireIntoDB = async (
   // Check provider role & type
   if (
     isExistsUser?.role !== 'Provider' ||
-    isExistsUser?.providerType !== 'SkiHire'
+    isExistsUser?.providerType !== 'Ski_Hire'
   ) {
     throw new AppError(
       StatusCodes.FORBIDDEN,
@@ -265,97 +264,86 @@ const updateSkiHireIntoDB = async (
     );
   }
 
-  // Handle thumbnail update (optional)
-  let thumbnailUrl = isExistsSkiHire.thumbnail;
-  const thumbnailFile = req.files?.['thumbnail']?.[0];
-  if (thumbnailFile) {
-    thumbnailUrl = await s3Services.uploadSingleFileToS3(
+  if (req.files?.['thumbnail']?.[0]) {
+    const thumbnailFile = req.files['thumbnail'][0];
+    const thumbnailUrl = await s3Services.uploadSingleFileToS3(
       thumbnailFile,
       USER_UPLOADS_FOLDER
     );
+    req.body.thumbnail = thumbnailUrl;
   }
 
-  // Parse menu items (if provided)
-  let menuItems = isExistsSkiHire.menuItems;
-  if (req.body.menuItems) {
-    let parsedMenuItems: any[] = [];
-
-    if (typeof req.body.menuItems === 'string') {
-      parsedMenuItems = JSON.parse(req.body.menuItems);
-    } else if (Array.isArray(req.body.menuItems)) {
-      parsedMenuItems = req.body.menuItems;
+  // Update product items if provided
+  if (req.body.productItems) {
+    let productItems: any[] = [];
+    if (typeof req.body?.productItems === 'string') {
+      productItems = JSON.parse(req.body?.productItems);
+    } else if (Array.isArray(req.body?.productItems)) {
+      productItems = req.body?.productItems;
+    } else {
+      throw new AppError(
+        StatusCodes.BAD_REQUEST,
+        'Product items data is invalid.'
+      );
     }
 
-    const menuItemFiles = req.files?.['menuItems'] || [];
+    const existingLength = isExistsSkiHire?.productItems.length;
+    
+    if (productItems.length !== existingLength) {
+      throw new AppError(
+        StatusCodes.BAD_REQUEST,
+        `Product items length must match existing length (${existingLength}).`
+      );
+    }
 
-    // Map new or updated menu items
-    const processedMenuItems = await Promise.all(
-      parsedMenuItems.map(async (item: any, index: number) => {
-        const menuFile = menuItemFiles[index];
+    const productItemFiles = req.files?.['images'] || [];
 
-        let menuImageUrl = item.menuImage || '';
+    const processedProductItems = await Promise.all(
+      productItems.map(async (item: any, index: number) => {
+        // Preserve existing photo if exists
+        let productPhoto = item?.productPhoto || '';
 
-        if (menuFile) {
-          menuImageUrl = await s3Services.uploadSingleFileToS3(
-            menuFile,
-            USER_UPLOADS_FOLDER
+        // Only try to match uploaded file if _id exists
+        let productFile;
+        if (item._id) {
+          productFile = productItemFiles.find(
+            (file: any) => file.fieldname === item?._id.toString()
           );
-        } else if (!menuImageUrl) {
-          throw new AppError(
-            StatusCodes.BAD_REQUEST,
-            `Menu image missing for item ${item.name}`
+        } else {
+          // fallback: use index to match new products
+          productFile = productItemFiles[index];
+        }
+
+        if (productFile) {
+          productPhoto = await s3Services.uploadSingleFileToS3(
+            productFile,
+            USER_UPLOADS_FOLDER
           );
         }
 
         return {
-          ...item,
+          _id: item._id, // may be undefined for new products
+          productName: item.productName,
+          productPhoto,
           price: Number(item.price),
-          menuImage: menuImageUrl,
+          quantity: Number(item.quantity),
         };
       })
     );
 
-    menuItems = processedMenuItems;
+    req.body.productItems = processedProductItems;
+
+    req.body.totalPrice = processedProductItems.reduce(
+      (sum: number, item: any) => sum + item.price,
+      0
+    );
   }
-
-  //  Recalculate total price
-  const totalPrice = menuItems.reduce(
-    (sum, item) => sum + Number(item.price || 0),
-    0
-  );
-
-  // Recalculate day count (if times updated)
-  let openTime = req.body.openTime || isExistsSkiHire.openTime;
-  let closeTime = req.body.closeTime || isExistsSkiHire.closeTime;
-
-  function timeStrToHours(timeStr: string) {
-    const [time, meridian] = timeStr.split(' ');
-    let [hours, minutes] = time.split(':').map(Number);
-
-    if (meridian === 'PM' && hours !== 12) hours += 12;
-    if (meridian === 'AM' && hours === 12) hours = 0;
-
-    return hours + minutes / 60;
-  }
-
-  const openHours = timeStrToHours(openTime);
-  const closeHours = timeStrToHours(closeTime);
-
-  let totalHours = closeHours - openHours;
-  if (totalHours < 0) totalHours += 24;
-  const dayCount = Number((totalHours / 24).toFixed(2));
-
-  const updateData = {
-    ...req.body,
-    thumbnail: thumbnailUrl,
-    menuItems,
-    totalPrice,
-    dayCount,
-  };
 
   const result = await SkiHire.findByIdAndUpdate(
     id,
-    { $set: updateData },
+    {
+      ...req.body,
+    },
     { new: true }
   );
 

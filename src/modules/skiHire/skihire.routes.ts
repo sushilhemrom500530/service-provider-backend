@@ -6,6 +6,7 @@ import convertHeicToPngMiddleware from './../../shared/convertHeicToPngMiddlewar
 import { CommonValidations } from './../common/common.validation';
 import { USER_UPLOADS_FOLDER } from './skihire.constant';
 import { SkiHireController } from './skihire.controller';
+import { SkiHireValidations } from './skihire.validations';
 
 const uploads = fileUploadHandler(USER_UPLOADS_FOLDER);
 
@@ -34,7 +35,7 @@ router.post(
     { name: 'images', maxCount: 20 },
   ]),
   convertHeicToPngMiddleware(USER_UPLOADS_FOLDER),
-  // validateRequest(RestaurantValidations.createRestaurant),
+  validateRequest(SkiHireValidations.createSkiHireSchema),
   SkiHireController.addSkiHireIntoDB
 );
 
@@ -52,10 +53,10 @@ router.patch(
   auth('Admin', 'Provider'), 
   uploads.fields([
     { name: 'thumbnail', maxCount: 1 },
-    { name: 'menuItems', maxCount: 20 },
+    { name: 'images', maxCount: 20 },
   ]),
   convertHeicToPngMiddleware(USER_UPLOADS_FOLDER),
-  // validateRequest(RestaurantValidations.updateRestaurant),
+  validateRequest(SkiHireValidations.updateSkiHireSchema),
   SkiHireController.updateSkiHireIntoDB
 );
 

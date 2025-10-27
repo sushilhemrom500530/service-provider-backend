@@ -58,7 +58,7 @@ const updateSkiHireIntoDB = catchAsync(async (req: Request, res: Response) => {
   const result = await SkiHireService.updateSkiHireIntoDB(req)
   sendResponse(res, {
     code: StatusCodes.OK,
-    message: 'Ski Hire added successfully',
+    message: 'Ski Hire deleted successfully',
     data: result,
   });
 });
