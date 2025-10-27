@@ -1,15 +1,14 @@
 import { StatusCodes } from 'http-status-codes';
 import catchAsync from '../../shared/catchAsync';
-import sendResponse from '../../shared/sendResponse'; 
-import { s3Services } from '../../aws/s3Service'; 
+import sendResponse from '../../shared/sendResponse';
+import { s3Services } from '../../aws/s3Service';
 import { JwtPayload } from 'jsonwebtoken';
 import { Category } from './category.model';
 import { CategoryService } from './category.service';
 import { Request } from 'express';
 
 const getAllCategories = catchAsync(async (req, res) => {
-  
-  const result = await Category.find({ isDeleted: false, status:'Active' });
+  const result = await Category.find();
   sendResponse(res, {
     code: StatusCodes.OK,
     message: 'Categories retrieved successfully.',
@@ -43,28 +42,43 @@ const createCategory = catchAsync(async (req, res) => {
     message: 'Category create successfully.',
     data: result,
   });
-}); 
+});
+
+const addSubCategory = catchAsync(async (req, res) => {
+  const result = await CategoryService.addSubCategory(req as Request);
+  sendResponse(res, {
+    code: StatusCodes.OK,
+    message: 'Sub category create successfully.',
+    data: result,
+  });
+});
 
 const updateCategory = catchAsync(async (req, res) => {
-  const { id } = req.params; 
-  const { status } = req.body;
+  const id = req?.params?.id;
   const user = req.user as JwtPayload;
-  const result = await CategoryService.updateCategory(id, user, status);
+  const result = await CategoryService.updateCategory(
+    req as Request,
+    id as string,
+    user
+  );
   sendResponse(res, {
     code: StatusCodes.OK,
     message: 'Category updated successfully.',
     data: result,
   });
-}); 
- 
- 
+});
+
 const deleteCategory = catchAsync(async (req, res) => {
-  const { userId } = req.user;
-  await CategoryService.deleteCategory(userId);
+  const { id } = req.params;
+ const result = await CategoryService.deleteCategory(
+    id,
+    req.body.subCategoryIds,
+    req.user as JwtPayload
+  );
   sendResponse(res, {
     code: StatusCodes.OK,
-    message: 'User deleted successfully.',
-    data: {},
+    message: 'Sub category deleted successfully.',
+    data: result,
   });
 });
 
@@ -72,6 +86,7 @@ export const CategoryController = {
   getAllCategories,
   getCategoryById,
   createCategory,
-  updateCategory, 
+  addSubCategory,
+  updateCategory,
   deleteCategory,
 };

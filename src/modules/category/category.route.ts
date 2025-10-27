@@ -15,13 +15,13 @@ router.get('/all', CategoryController.getAllCategories);
 
 router.get(
   '/:id',
-  auth('Admin', 'Provider'),
+  auth('Admin'),
   CategoryController.getCategoryById
 );
 
 router.post(
   '/create',
-  auth('Admin', 'Provider', 'User'),
+  auth('Admin'),
   uploads.fields([
     { name: 'thumbnail', maxCount: 1 },
     { name: 'files', maxCount: 20 },
@@ -31,10 +31,25 @@ router.post(
   CategoryController.createCategory
 );
 
+
+router.post(
+  '/add-sub-category/:id',
+  auth('Admin'),
+  uploads.fields([  
+    { name: 'files', maxCount: 20 },
+  ]),
+  convertHeicToPngMiddleware(USER_UPLOADS_FOLDER),
+  // validateRequest(CategoryValidation.createSubCategory),
+  CategoryController.addSubCategory
+);
+
 router.patch(
-  '/:id',
-  auth('Admin', 'Provider', 'User'),
-  uploads.single('file'),
+  '/update/:id',
+  auth('Admin'),
+  uploads.fields([
+    { name: 'thumbnail', maxCount: 1 },
+    { name: 'files', maxCount: 20 },
+  ]),
   convertHeicToPngMiddleware(USER_UPLOADS_FOLDER),
   validateRequest(CategoryValidation.updateCategory),
   CategoryController.updateCategory
@@ -42,7 +57,7 @@ router.patch(
 
 router.delete(
   '/delete/:id',
-  auth('Admin', 'Provider', 'User'),
+  auth('Admin'),
   CategoryController.deleteCategory
 );
 
