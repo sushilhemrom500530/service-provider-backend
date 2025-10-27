@@ -1,37 +1,31 @@
 import mongoose, { Schema, Model } from 'mongoose';
-import { IRestaurant, IMenuItems } from './restaurant.interface';
 import { reviewSchema, refundSchema } from './../common/common.schema';
+import { IProductItems } from './skihire.interface';
+ 
 
-const menuItemsSchema = new Schema<IMenuItems>(
-  {
-    name: {
-      type: String,
-      required: true,
-      trim: true,
-    },
-    menuType: {
-      type: String,
-      required: true,
-      trim: true,
-    },
-    price: {
-      type: Number,
-      required: true,
-      min: 1, 
-    },
-    menuImage: {
-      type: String,
-      required: true,
-    },
-    description: {
-      type: String,
-      required: true,
-      trim: true,
-    },
-  }, 
-);
+const productItemsSchema = new Schema<IProductItems>({
+  prorductName: {
+    type: String,
+    required: true,
+    trim: true,
+  },
+  productPhoto: {
+    type: String,
+    required: true,
+  },
+  price: {
+    type: Number,
+    required: true,
+    min: 1,
+  },
+  quantity: {
+    type: Number,
+    required: true,
+    min: 1,
+  },
+});
 
-const restaurantSchema = new Schema<IRestaurant>(
+const skiHireSchema = new Schema<ISkiHire>(
   {
     title: {
       type: String,
@@ -48,31 +42,17 @@ const restaurantSchema = new Schema<IRestaurant>(
       ref: 'User',
       required: true,
     },
-    openTime: {
-      type: String,
-      required: true,
-    },
-    closeTime: {
-      type: String,
-      required: true,
-    },
-    serviceArea: {
-      type: String,
-      required: true,
-    },
-
     totalPrice: {
       type: Number,
       required: true,
       min: 0,
-    },
-    dayCount: {
-      type: Number,
+    }, 
+    serviceArea: {
+      type: String,
       required: true,
-      min: 0,
     },
-    menuItems: {
-      type: [menuItemsSchema],
+    productItems: {
+      type: [productItemsSchema],
       required: true,
     },
     // optional fields for later updates
@@ -96,7 +76,7 @@ const restaurantSchema = new Schema<IRestaurant>(
   }
 );
 
-restaurantSchema.pre('save', function (next) {
+skiHireSchema.pre('save', function (next) {
   if (this.reviews && this.reviews.length > 0) {
     const total = this.reviews.reduce((sum, r) => sum + r.rating, 0);
     this.averageRating = parseFloat((total / this.reviews.length).toFixed(1));
@@ -104,6 +84,5 @@ restaurantSchema.pre('save', function (next) {
   next();
 });
 
-export const Restaurant: Model<IRestaurant> =
-  mongoose.models.Restaurant ||
-  mongoose.model<IRestaurant>('Restaurant', restaurantSchema);
+export const SkiHire: Model<ISkiHire> =
+  mongoose.models.SkiHire || mongoose.model<ISkiHire>('SkiHire', skiHireSchema);

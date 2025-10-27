@@ -8,6 +8,10 @@ import { JwtPayload } from 'jsonwebtoken';
 import { Booking } from './booking.model';
 import { IBooking, BookingStatus } from './booking.interface';
 import { SkiPass } from './../skiPass/skipass.model';
+import { SkiHire } from './../skiHire/skihire.model';
+import { Transport } from './../transport/transport.model';
+import { Restaurant } from './../restaurant/restaurant.model';
+import { Massage } from './../massage/massage.model';
 
 const getAllBookingFromDB = async (user: JwtPayload) => {
   const isExistsUser = await User.findOne({ email: user?.email });
@@ -58,25 +62,61 @@ const getSingleBookingFromDB = async (id: string, user: JwtPayload) => {
 
   return result;
 };
-
 const getMyBooking = async (user: JwtPayload) => {
   const isExistsUser = await User.findOne({ email: user?.email });
   if (!isExistsUser)
     throw new AppError(StatusCodes.NOT_FOUND, 'User not found.');
 
-  const result = await Booking.find({ userId: isExistsUser._id })
+  // Get user bookings and populate related data
+  const bookings = await Booking.find({ userId: isExistsUser._id })
     .populate('userId', 'fullName email address phoneNumber')
     .populate('productId')
     .sort({ createdAt: -1 });
 
-  return result;
+  const msToTime = (ms: number) => {
+    const totalSeconds = Math.floor(ms / 1000);
+    const hours = Math.floor(totalSeconds / 3600);
+    const minutes = Math.floor((totalSeconds % 3600) / 60);
+    // const seconds = totalSeconds % 60;
+    return `${hours}h ${minutes}m`;
+  };
+
+  const now = new Date();
+
+  const bookingsWithTimeInfo = bookings.map(booking => {
+    const startTime = new Date(booking.startDateAndTime);
+    const endTime = new Date(booking.endDateAndTime);
+
+    let label: string = '';
+
+    if (now < endTime) {
+      // Booking is ongoing
+      const timeLeft = endTime.getTime() - now.getTime();
+      label = `Time Left: ${msToTime(timeLeft)}`;
+    } else {
+      // Booking expired
+      const overTime = now.getTime() - endTime.getTime();
+      label = `Over Time: ${msToTime(overTime)}`;
+    }
+
+    return {
+      ...booking.toObject(),
+      timeLabel: label,
+    };
+  });
+
+  return bookingsWithTimeInfo;
 };
 
 export const addBookingIntoDB = async (user: JwtPayload, payload: IBooking) => {
   // check user
-  const isExistsUser = await User.findById(payload?.userId);
+  const isExistsUser = await User.findOne({ email: user?.email });
   if (!isExistsUser) {
     throw new AppError(StatusCodes.NOT_FOUND, 'User not found.');
+  }
+
+  if (!isExistsUser?._id.equals(payload?.userId)) {
+    throw new AppError(StatusCodes.UNAUTHORIZED, 'User ID mismatch.');
   }
 
   if (
@@ -86,24 +126,45 @@ export const addBookingIntoDB = async (user: JwtPayload, payload: IBooking) => {
   ) {
     throw new AppError(StatusCodes.UNAUTHORIZED, 'User status is not active.');
   }
+  // for find model collection
+  const models: Record<string, any> = {
+    SkiPass,
+    SkiHire,
+    Transport,
+    Restaurant,
+    Massage,
+  };
 
-  let product;
+  let product = null;
+  let foundModelName = null;
 
   if (payload?.productId) {
-    product = await SkiPass.findById(payload?.productId);
+    for (const [name, Model] of Object.entries(models)) {
+      const found = await Model.findById(payload.productId);
+      if (found) {
+        product = found;
+        foundModelName = name;
+        break;
+      }
+    }
+
     if (!product) {
-      throw new AppError(StatusCodes.NOT_FOUND, 'Product not found.');
+      throw new AppError(
+        StatusCodes.NOT_FOUND,
+        'Product not found in any collection.'
+      );
     }
   }
 
+  // Find product owner
   const productOwner = await User.findById(product?.ownerId);
   if (!productOwner) {
     throw new AppError(StatusCodes.NOT_FOUND, 'Product owner not found.');
   }
 
-  // determine the model name based on provider type
+  // Determine the model name based on provider type
   let productModel: string;
-  switch (productOwner.providerType) {
+  switch (productOwner?.providerType) {
     case 'Ski_Pass':
       productModel = 'SkiPass';
       break;
@@ -125,7 +186,7 @@ export const addBookingIntoDB = async (user: JwtPayload, payload: IBooking) => {
 
   const bookingData = {
     ...payload,
-    category: productOwner.providerType,
+    category: productOwner?.providerType,
     productModel,
   };
 
@@ -150,7 +211,7 @@ export const updateBookingIntoDB = async (
   if (!isExistsUser) {
     throw new AppError(StatusCodes.NOT_FOUND, 'User not found.');
   }
-
+  console.log('find current user ===========>', isExistsUser);
   const existsBooking = await Booking.findById(bookingId).populate({
     path: 'productId',
     select: 'ownerId',
@@ -202,7 +263,7 @@ export const refundBookingIntoDB = async (
 
   if (!existsBooking) {
     throw new AppError(StatusCodes.NOT_FOUND, 'Booking not found.');
-  } 
+  }
 
   const result = await Booking.findByIdAndUpdate(
     bookingId,
@@ -223,10 +284,10 @@ export const refundBookingIntoDB = async (
   // Map model names to actual mongoose models
   const productModels: Record<string, any> = {
     SkiPass,
-    // SkiHire,
-    // Transport,
-    // Restaurant,
-    // Massage,
+    SkiHire,
+    Transport,
+    Restaurant,
+    Massage,
   };
 
   const ProductModel = productModels[productModel];

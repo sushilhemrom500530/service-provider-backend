@@ -29,6 +29,11 @@ const skiPassSchema = new Schema<ISkiPass>(
       enum: Object.values(ISkiPassType),
       required: true,
     },
+    benefits: {
+      perkingCount: { type: Number, required: true },
+      eventCount: { type: Number, required: true },
+      lessionCount: { type: Number, required: true },
+    },
     duration: {
       type: String,
       required: true,
@@ -36,7 +41,7 @@ const skiPassSchema = new Schema<ISkiPass>(
     time: {
       type: String,
       required: true,
-    }, 
+    },
     date: {
       type: String,
       required: true,

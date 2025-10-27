@@ -2,25 +2,22 @@ import { Document, Types } from 'mongoose';
 import { IReview } from './../massage/massage.interface';
 
 
-export interface IMenuItems {
-  name: string;
-  menuType: string;
+export interface IProductItems {
+  prorductName: string;
+  productPhoto: string; 
   price: number;
-  menuImage: string;
-  description: string;
+  quantity: number; 
 }
 
 
 
-export interface IRestaurant extends Document {
+export interface ISkiHire extends Document {
   title: string;
-  ownerId: Types.ObjectId;
   thumbnail: string;
-  openTime: string;
-  closeTime: string;
-  serviceArea: string;
+  ownerId: Types.ObjectId; 
   totalPrice: number;
-  menuItems: IMenuItems[];
+  serviceArea: string;
+  productItems: IProductItems[];
   averageRating?: number;
   reviews?: IReview[];
   refunds?: IRefund[];

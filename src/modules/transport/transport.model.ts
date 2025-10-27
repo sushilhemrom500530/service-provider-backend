@@ -29,10 +29,22 @@ const transportSchema = new Schema<ITransport>(
       ref: 'User',
       required: true,
     },
-    personCount: {
+    specific: {
+      personCount: { type: String, required: true },
+      milageCount: { type: String, required: true },
+      powerCount: { type: String, required: true },
+    },
+    extraTimePerHours: {
+      type: String,
+      required: true,
+    },
+    insuranceFee: {
       type: Number,
       required: true,
-      min: 0,
+    },
+    maintainCharge: {
+      type: Number,
+      required: true,
     },
     serviceArea: {
       type: String,
@@ -49,8 +61,8 @@ const transportSchema = new Schema<ITransport>(
       trim: true,
     },
     benefits: {
-      type: String, 
-    }, 
+      type: String,
+    },
 
     // optional fields for later updates
     averageRating: {

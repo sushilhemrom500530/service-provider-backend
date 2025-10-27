@@ -13,6 +13,7 @@ import { RestaurantRoutes } from './../modules/restaurant/restaurant.routes';
 import { MassageRoutes } from './../modules/massage/massage.routes';
 import { TransportRoutes } from './../modules/transport/transport.routes';
 import { SkiHireRoutes } from './../modules/skiHire/skihire.routes';
+import { CategoryRoutes } from './../modules/category/category.route';
 
 const router = express.Router();
 
@@ -61,6 +62,10 @@ const apiRoutes = [
   {
     path: '/ski-hire',
     route: SkiHireRoutes,
+  },
+  {
+    path: '/category',
+    route: CategoryRoutes,
   },
   // {
   //   path: '/chats',

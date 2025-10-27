@@ -1,6 +1,11 @@
 import { Document, Types } from 'mongoose';
 
-export type BookingStatus = 'Active' | 'Pending' | 'Complete' | 'Cancel' | 'Delete';
+export type BookingStatus =
+  | 'Active'
+  | 'Pending'
+  | 'Completed'
+  | 'Cancelled'
+  | 'Deleted';
 export type BookingCategory =
   | 'Ski_Pass'
   | 'Ski_Hire'
@@ -16,7 +21,7 @@ export type ProductModelName =
   | 'Massage';
 
 export interface IBookingItem {
-  productId: Types.ObjectId;
+  itemId: Types.ObjectId;
   quantity: number;
 }
 
