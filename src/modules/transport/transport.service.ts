@@ -31,14 +31,28 @@ const getSingleTransportFromDB = async (id: string, user: JwtPayload) => {
       'You cannot view this data because your account was not found.'
     );
   }
-  const result = await Transport.findById(id).populate('ownerId');
+  const transport = await Transport.findById(id).populate({
+    path: 'owner',
+    select: '-isDeleted -agreeTermsCondition -__v',
+  });
+  if (!transport)
+    throw new AppError(StatusCodes.NOT_FOUND, 'Transport not found.');
 
-  if (!result) {
-    return {
-      message: ` This transport id's ${id} data not found.`,
-    };
-  }
-  return result;
+  // manually populate subcategory
+  const categoryDoc = await Category.findOne(
+    {
+      primaryCategoryName: 'Transport',
+      'subCategory._id': transport?.category,
+    },
+    { 'subCategory.$': 1 }
+  );
+
+  const subCategoryData = categoryDoc?.subCategory?.[0] || null;
+
+  return {
+    ...transport.toObject(),
+    category: subCategoryData,
+  };
 };
 
 const addTransportIntoDB = async (req: Request, res: Response) => {
@@ -193,7 +207,7 @@ const updateTransportIntoDB = async (
       'You cannot view this data because your account was not found.'
     );
   }
- 
+
   if (req.body?.brand) {
     const category = await Category.findOne({
       primaryCategoryName: 'Transport',
@@ -218,7 +232,7 @@ const updateTransportIntoDB = async (
       );
     }
   }
- 
+
   if (req.file) {
     const fileUrl = await s3Services.uploadSingleFileToS3(
       req.file,
@@ -227,9 +241,8 @@ const updateTransportIntoDB = async (
     req.body.thumbnail = fileUrl;
   }
 
- 
   const updateData: Partial<any> = { ...req.body };
- 
+
   if (updateData?.amount !== undefined) {
     updateData.amount = Number(updateData.amount);
   }

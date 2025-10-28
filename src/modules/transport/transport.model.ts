@@ -43,10 +43,12 @@ const transportSchema = new Schema<ITransport>(
     insuranceFee: {
       type: Number,
       required: true,
+      default: 150, 
     },
     maintainCharge: {
       type: Number,
       required: true,
+      default: 75,
     },
     serviceArea: {
       type: String,
