@@ -167,7 +167,7 @@ const addRestaurantIntoDB = async (req: Request, res: Response) => {
     thumbnail: thumbnailUrl,
     totalPrice,
     menuItems: processedMenuItems,
-     status: isOpenNow ? 'Open' : 'Closed', 
+    status: isOpenNow ? 'Open' : 'Closed',
   };
 
   const result = await Restaurant.create(restaurantData);
@@ -235,13 +235,9 @@ export const reviewRestaurant = async (
   return restaurant;
 };
 
-const updateRestaurantIntoDB = async (
-  req: Request,
-  res: Response,
-  payload: Partial<any | {}>
-) => {
+const updateRestaurantIntoDB = async (req: Request) => {
   const id = req?.params?.id;
-  const user = req.user as JwtPayload;
+  const user = req.user as JwtPayload; 
 
   // Check if restaurant exists
   const isExistsRestaurant = await Restaurant.findById(id);
@@ -284,10 +280,10 @@ const updateRestaurantIntoDB = async (
   if (req.body.menuItems) {
     let parsedMenuItems: any[] = [];
 
-    if (typeof req.body.menuItems === 'string') {
-      parsedMenuItems = JSON.parse(req.body.menuItems);
-    } else if (Array.isArray(req.body.menuItems)) {
-      parsedMenuItems = req.body.menuItems;
+    if (typeof req.body?.menuItems === 'string') {
+      parsedMenuItems = JSON.parse(req.body?.menuItems);
+    } else if (Array.isArray(req.body?.menuItems)) {
+      parsedMenuItems = req.body?.menuItems;
     }
 
     const menuItemFiles = req.files?.['menuItems'] || [];
@@ -328,33 +324,14 @@ const updateRestaurantIntoDB = async (
     0
   );
 
-  // Recalculate day count (if times updated)
-  let openTime = req.body.openTime || isExistsRestaurant.openTime;
-  let closeTime = req.body.closeTime || isExistsRestaurant.closeTime;
-
-  function timeStrToHours(timeStr: string) {
-    const [time, meridian] = timeStr.split(' ');
-    let [hours, minutes] = time.split(':').map(Number);
-
-    if (meridian === 'PM' && hours !== 12) hours += 12;
-    if (meridian === 'AM' && hours === 12) hours = 0;
-
-    return hours + minutes / 60;
-  }
-
-  const openHours = timeStrToHours(openTime);
-  const closeHours = timeStrToHours(closeTime);
-
-  let totalHours = closeHours - openHours;
-  if (totalHours < 0) totalHours += 24;
-  const dayCount = Number((totalHours / 24).toFixed(2));
+  const isOpenNow = isRestaurantOpen(req.body?.openTime, req.body?.closeTime);
 
   const updateData = {
     ...(req.body as Partial<IRestaurant>),
     thumbnail: thumbnailUrl,
     menuItems,
     totalPrice,
-    dayCount,
+    status: isOpenNow ? 'Open' : 'Closed',
   };
 
   const result = await Restaurant.findByIdAndUpdate(
@@ -380,7 +357,7 @@ const deleteRestaurantIntoDB = async (id: string, user: JwtPayload) => {
     throw new AppError(StatusCodes.NOT_FOUND, 'Restaurant not found.');
   }
 
-  if (restaurant?.ownerId.toString() !== isExistsUser?._id.toString()) {
+  if (restaurant?.owner.toString() !== isExistsUser?._id.toString()) {
     throw new AppError(
       StatusCodes.FORBIDDEN,
       'You are not authorized to delete this restaurant.'
