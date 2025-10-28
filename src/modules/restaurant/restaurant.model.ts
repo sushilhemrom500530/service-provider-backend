@@ -79,7 +79,7 @@ const restaurantSchema = new Schema<IRestaurant>(
       required: true,
       min: 0,
     },
-    menuItems: {
+    items: {
       type: [menuItemsSchema],
       required: true,
     },

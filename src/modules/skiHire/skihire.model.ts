@@ -60,7 +60,7 @@ const skiHireSchema = new Schema<ISkiHire>(
       type: String,
       required: true,
     },
-    productItems: {
+    items: {
       type: [productItemsSchema],
       required: true,
     },

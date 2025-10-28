@@ -58,7 +58,7 @@ const updateRestaurantIntoDB = catchAsync(async (req: Request, res: Response) =>
   const result = await RestaurantService.updateRestaurantIntoDB(req)
   sendResponse(res, {
     code: StatusCodes.OK,
-    message: 'Restaurant added successfully',
+    message: 'Restaurant updated successfully',
     data: result,
   });
 });
@@ -69,7 +69,7 @@ const deleteRestaurantIntoDB = catchAsync(async (req: Request, res: Response) =>
   const result = await RestaurantService.deleteRestaurantIntoDB(id, user)
   sendResponse(res, {
     code: StatusCodes.OK,
-    message: 'Restaurant added successfully',
+    message: 'Restaurant deleted successfully',
     data: result,
   });
 });

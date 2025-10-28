@@ -19,7 +19,29 @@ const getAllSkiHireFromDB = async (user: JwtPayload) => {
     );
   }
 
-  const result = await SkiHire.find();
+  const skiHire = await SkiHire.find().populate({
+    path: 'owner',
+    select: '-isDeleted -agreeTermsCondition -__v -createdAt -updatedAt',
+  });
+
+  const result = await Promise.all(
+    skiHire.map(async skih => {
+      const categoryDoc = await Category.findOne(
+        {
+          primaryCategoryName: 'Ski_Hire',
+          'subCategory._id': skih.category,
+        },
+        { 'subCategory.$': 1 }
+      );
+
+      const subCategoryData = categoryDoc?.subCategory?.[0] || null;
+
+      return {
+        ...skih.toObject(),
+        category: subCategoryData,
+      };
+    })
+  );
   return result;
 };
 
@@ -164,7 +186,7 @@ const addSkiHireIntoDB = async (req: Request, res: Response) => {
     extraChargePerHour: Number(req.body.extraChargePerHour || 0) || 0,
     totalPrice,
     serviceArea: req.body.serviceArea,
-    productItems: processedProductItems,
+    items: processedProductItems,
   };
 
   const result = await SkiHire.create(skiHireData);
@@ -329,7 +351,7 @@ const updateSkiHireIntoDB = async (req: Request) => {
       })
     );
 
-    req.body.productItems = processedProductItems;
+    req.body.items = processedProductItems;
 
     req.body.totalPrice = processedProductItems.reduce(
       (sum: number, item: any) => sum + item.price,

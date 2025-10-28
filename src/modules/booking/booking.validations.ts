@@ -23,7 +23,7 @@ const bookingItemSchema = z.object({
       invalid_type_error: 'Product ID must be a string',
     })
     .min(1),
-  quantity: z
+  quantity: z.coerce
     .number({
       required_error: 'Quantity is required',
       invalid_type_error: 'Quantity must be a number',
@@ -75,13 +75,13 @@ const createBookingSchema = z.object({
     duration: z.string().optional(),
     bookingAgentText: z.string().optional(),
 
-    bookingStatus: bookingStatusEnum.optional().default('Active'),
+    bookingStatus: bookingStatusEnum.optional().default('Pending'),
   }),
 });
 
 export const updateBookingSchema = z.object({
   body: z.object({
-    bookingStatus: bookingStatusEnum
+    bookingStatus: bookingStatusEnum,
   }),
 });
 

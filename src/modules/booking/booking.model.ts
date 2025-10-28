@@ -3,18 +3,28 @@ import { IBooking } from './booking.interface';
 
 const bookingItemSchema = new Schema(
   {
-    itemId: { type: Schema.Types.ObjectId, required: true },
-    quantity: { type: Number, required: true },
+    itemId: {
+      type: Schema.Types.ObjectId,
+      required: true,
+    },
+    quantity: {
+      type: Number,
+      required: true,
+    },
   },
   { _id: false }
 );
 
 const bookingSchema = new Schema<IBooking>(
   {
-    userId: { type: Schema.Types.ObjectId, ref: 'User', required: true },
+    user: {
+      type: Schema.Types.ObjectId,
+      ref: 'User',
+      required: true,
+    },
 
     // This field references different product models dynamically
-    productId: {
+    product: {
       type: Schema.Types.ObjectId,
       required: false,
       refPath: 'productModel', // tells Mongoose which model to use
@@ -42,8 +52,7 @@ const bookingSchema = new Schema<IBooking>(
     endDateAndTime: { type: Date },
 
     items: [bookingItemSchema],
-    orderType: { type: String },
-    itemCount: { type: Number },
+
     duration: { type: String },
     bookingAgentText: { type: String },
 
@@ -51,6 +60,11 @@ const bookingSchema = new Schema<IBooking>(
       type: String,
       enum: ['Active', 'Pending', 'Completed', 'Cancelled', 'Deleted'],
       default: 'Pending',
+      required: true,
+    },
+
+    totalPrice: {
+      type: Number,
       required: true,
     },
   },

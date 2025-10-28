@@ -19,6 +19,7 @@ const menuItemSchema = z.object({
   description: z.string({
     required_error: 'Description is required',
   }),
+  
   quantity: z.coerce
     .number()
     .min(1, { message: 'Quantity must be greater than zero' })
@@ -75,7 +76,7 @@ const updateRestaurant = z.object({
       .min(0, 'Total price must be non-negative')
       .optional(),
 
-    menuItems: z
+    items: z
       .array(menuItemSchema)
       .min(1, 'At least one menu item is required')
       .optional(),

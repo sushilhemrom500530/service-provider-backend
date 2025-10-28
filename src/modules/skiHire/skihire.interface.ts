@@ -19,7 +19,7 @@ export interface ISkiHire extends Document {
   extraChargePerHour?: number;
   totalPrice: number;
   serviceArea: string;
-  productItems: IProductItems[];
+  items: IProductItems[];
   averageRating?: number;
   reviews?: IReview[];
   refunds?: IRefund[];

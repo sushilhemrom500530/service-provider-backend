@@ -26,7 +26,7 @@ const getAllBookingFromDB = async (user: JwtPayload) => {
     result = await Booking.find()
       .populate({
         path: 'productId',
-        populate: { path: 'ownerId', select: 'fullName email providerType' },
+        populate: { path: 'owner', select: 'fullName email providerType' },
       })
       .populate('userId', 'fullName email address phoneNumber')
       .sort({ createdAt: -1 });
@@ -35,14 +35,14 @@ const getAllBookingFromDB = async (user: JwtPayload) => {
     result = await Booking.find()
       .populate({
         path: 'productId',
-        populate: { path: 'ownerId', select: 'fullName email providerType' },
+        populate: { path: 'owner', select: 'fullName email providerType' },
       })
       .populate('userId', 'fullName email address phoneNumber')
       .sort({ createdAt: -1 });
 
     result = result.filter(
       (booking: any) =>
-        booking.productId?.ownerId?._id?.toString() ===
+        booking.productId?.owner?._id?.toString() ===
         isExistsUser._id.toString()
     );
   } else {
@@ -140,7 +140,7 @@ export const addBookingIntoDB = async (user: JwtPayload, payload: IBooking) => {
 
   if (payload?.productId) {
     for (const [name, Model] of Object.entries(models)) {
-      const found = await Model.findById(payload.productId);
+      const found = await Model.findById(payload?.productId);
       if (found) {
         product = found;
         foundModelName = name;
@@ -157,10 +157,81 @@ export const addBookingIntoDB = async (user: JwtPayload, payload: IBooking) => {
   }
 
   // Find product owner
-  const productOwner = await User.findById(product?.ownerId);
+  const productOwner = await User.findById(product?.owner);
   if (!productOwner) {
     throw new AppError(StatusCodes.NOT_FOUND, 'Product owner not found.');
   }
+
+  //  add validation for booking items
+  if (
+    (productOwner?.providerType === 'Restaurant' ||
+      productOwner?.providerType === 'Ski_Hire') &&
+    (!payload?.items || payload.items.length === 0)
+  ) {
+    throw new AppError(
+      StatusCodes.BAD_REQUEST,
+      'Booking items are required for this product type.'
+    );
+  }
+
+  if (!Array.isArray(product?.items)) {
+    throw new AppError(
+      StatusCodes.BAD_REQUEST,
+      'This product does not support booking items.'
+    );
+  }
+
+  // Validate booking items
+  const validatedItems = [];
+
+  for (const bookedItem of payload?.items || []) {
+    const foundItem = product?.items.find(
+      (menuItem: any) => menuItem._id.toString() === bookedItem.itemId
+    );
+
+    if (!foundItem) {
+      throw new AppError(
+        StatusCodes.BAD_REQUEST,
+        `Item with ID ${bookedItem.itemId} not found in product menu.`
+      );
+    }
+
+    if (bookedItem.quantity > foundItem.quantity) {
+      throw new AppError(
+        StatusCodes.BAD_REQUEST,
+        `Not enough quantity for item "${foundItem.name}". Only ${foundItem.quantity} available.`
+      );
+    }
+
+    // Push the validated item
+    validatedItems.push({
+      itemId: foundItem._id,
+      name: foundItem.name,
+      price: foundItem.price,
+      requestedQty: bookedItem.quantity,
+      availableQty: foundItem.quantity,
+      total: foundItem.price * bookedItem.quantity,
+    });
+  }
+
+  if (validatedItems.length === 0) {
+    throw new AppError(
+      StatusCodes.BAD_REQUEST,
+      'No valid booking items found.'
+    );
+  }
+
+  
+  for (const item of validatedItems) {
+    const index = product?.items.findIndex(
+      (i: any) => i?._id.toString() === item?.itemId.toString()
+    );
+    if (index !== -1) {
+      product.items[index].quantity -= item.requestedQty;
+    }
+  }
+
+  const totalPrice = validatedItems.reduce((sum, item) => sum + item.total, 0);
 
   // Determine the model name based on provider type
   let productModel: string;
@@ -186,19 +257,21 @@ export const addBookingIntoDB = async (user: JwtPayload, payload: IBooking) => {
 
   const bookingData = {
     ...payload,
+    totalPrice,
+    user: isExistsUser?._id,
     category: productOwner?.providerType,
     productModel,
   };
 
-  const result = await Booking.create(bookingData);
-  if (!result) {
-    throw new AppError(
-      StatusCodes.BAD_REQUEST,
-      'Something went wrong. Booking not created.'
-    );
-  }
+  // const result = await Booking.create(bookingData);
+  // if (!result) {
+  //   throw new AppError(
+  //     StatusCodes.BAD_REQUEST,
+  //     'Something went wrong. Booking not created.'
+  //   );
+  // }
 
-  return result;
+  return { bookingData, productOwner, product };
 };
 
 export const updateBookingIntoDB = async (
@@ -211,10 +284,10 @@ export const updateBookingIntoDB = async (
   if (!isExistsUser) {
     throw new AppError(StatusCodes.NOT_FOUND, 'User not found.');
   }
-  console.log('find current user ===========>', isExistsUser);
+  // console.log('find current user ===========>', isExistsUser);
   const existsBooking = await Booking.findById(bookingId).populate({
     path: 'productId',
-    select: 'ownerId',
+    select: 'owner',
   });
 
   if (!existsBooking) {
@@ -222,8 +295,8 @@ export const updateBookingIntoDB = async (
   }
 
   // Check ownership
-  const ownerId = existsBooking.productId?.ownerId;
-  if (ownerId?.toString() !== isExistsUser._id.toString()) {
+  const owner = existsBooking.productId?.owner;
+  if (owner?.toString() !== isExistsUser._id.toString()) {
     throw new AppError(
       StatusCodes.FORBIDDEN,
       'You are not the owner of this product. Cannot update booking status.'
@@ -258,7 +331,7 @@ export const refundBookingIntoDB = async (
 
   const existsBooking = await Booking.findById(bookingId).populate({
     path: 'productId',
-    select: 'ownerId',
+    select: 'owner',
   });
 
   if (!existsBooking) {
