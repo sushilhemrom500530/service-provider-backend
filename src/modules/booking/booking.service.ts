@@ -137,10 +137,11 @@ export const addBookingIntoDB = async (user: JwtPayload, payload: IBooking) => {
 
   let product = null;
   let foundModelName = null;
+  let selectedMenuType: string | null = null;
 
   if (payload?.productId) {
     for (const [name, Model] of Object.entries(models)) {
-      const found = await Model.findById(payload?.productId);
+      const found = await Model.findById(payload?.productId).populate('owner');
       if (found) {
         product = found;
         foundModelName = name;
@@ -186,33 +187,51 @@ export const addBookingIntoDB = async (user: JwtPayload, payload: IBooking) => {
 
   for (const bookedItem of payload?.items || []) {
     const foundItem = product?.items.find(
-      (menuItem: any) => menuItem._id.toString() === bookedItem.itemId
+      (menuItem: any) => menuItem?._id.toString() === bookedItem?.itemId
     );
 
     if (!foundItem) {
       throw new AppError(
         StatusCodes.BAD_REQUEST,
-        `Item with ID ${bookedItem.itemId} not found in product menu.`
+        `Item with ID ${bookedItem?.itemId} not found in product menu.`
       );
     }
 
     if (bookedItem.quantity > foundItem.quantity) {
       throw new AppError(
         StatusCodes.BAD_REQUEST,
-        `Not enough quantity for item "${foundItem.name}". Only ${foundItem.quantity} available.`
+        `Not enough quantity for item "${foundItem?.name}". Only ${foundItem?.quantity} available.`
       );
     }
 
     // Push the validated item
     validatedItems.push({
-      itemId: foundItem._id,
-      name: foundItem.name,
-      price: foundItem.price,
-      requestedQty: bookedItem.quantity,
-      availableQty: foundItem.quantity,
-      total: foundItem.price * bookedItem.quantity,
+      itemId: foundItem?._id,
+      name: foundItem?.name,
+      price: foundItem?.price,
+      requestedQty: bookedItem?.quantity,
+      availableQty: foundItem?.quantity,
+      total: foundItem?.price * bookedItem.quantity,
     });
   }
+
+  const menuTypesSet = new Set(
+    validatedItems.map(item => {
+      const foundItem = product.items.find(
+        i => i._id.toString() === item.itemId.toString()
+      );
+      return foundItem?.menuType;
+    })
+  );
+
+  if (menuTypesSet.size === 1) {
+    selectedMenuType = Array.from(menuTypesSet)[0]; // all same, store the menuType
+  } else {
+    throw new AppError(
+      StatusCodes.BAD_REQUEST,
+      'All booked items must have the same menuType.'
+    );
+  } 
 
   if (validatedItems.length === 0) {
     throw new AppError(
@@ -221,7 +240,6 @@ export const addBookingIntoDB = async (user: JwtPayload, payload: IBooking) => {
     );
   }
 
-  
   for (const item of validatedItems) {
     const index = product?.items.findIndex(
       (i: any) => i?._id.toString() === item?.itemId.toString()
@@ -261,6 +279,7 @@ export const addBookingIntoDB = async (user: JwtPayload, payload: IBooking) => {
     user: isExistsUser?._id,
     category: productOwner?.providerType,
     productModel,
+    menyType: selectedMenuType,
   };
 
   // const result = await Booking.create(bookingData);
@@ -271,7 +290,7 @@ export const addBookingIntoDB = async (user: JwtPayload, payload: IBooking) => {
   //   );
   // }
 
-  return { bookingData, productOwner, product };
+  return { bookingData, product, validatedItems };
 };
 
 export const updateBookingIntoDB = async (
