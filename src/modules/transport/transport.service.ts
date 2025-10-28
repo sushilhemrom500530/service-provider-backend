@@ -19,7 +19,30 @@ const getAllTransportFromDB = async (user: JwtPayload) => {
     );
   }
 
-  const result = await Transport.find();
+  const transport = await Transport.find().populate({
+    path: 'owner',
+    select: '-isDeleted -agreeTermsCondition -__v -createdAt -updatedAt',
+  });
+
+  const result = await Promise.all(
+    transport.map(async trans => {
+      const categoryDoc = await Category.findOne(
+        {
+          primaryCategoryName: 'Transport',
+          'subCategory._id': trans.category,
+        },
+        { 'subCategory.$': 1 }
+      );
+
+      const subCategoryData = categoryDoc?.subCategory?.[0] || null;
+
+      return {
+        ...trans.toObject(),
+        category: subCategoryData,
+      };
+    })
+  );
+
   return result;
 };
 
@@ -33,8 +56,9 @@ const getSingleTransportFromDB = async (id: string, user: JwtPayload) => {
   }
   const transport = await Transport.findById(id).populate({
     path: 'owner',
-    select: '-isDeleted -agreeTermsCondition -__v',
+    select: '-isDeleted -agreeTermsCondition -__v -createdAt -updatedAt',
   });
+
   if (!transport)
     throw new AppError(StatusCodes.NOT_FOUND, 'Transport not found.');
 
@@ -55,7 +79,7 @@ const getSingleTransportFromDB = async (id: string, user: JwtPayload) => {
   };
 };
 
-const addTransportIntoDB = async (req: Request, res: Response) => {
+const addTransportIntoDB = async (req: Request) => {
   const user = req.user as JwtPayload;
   // check user
   const isExistsUser = await User.findOne({ email: user?.email });
@@ -92,7 +116,7 @@ const addTransportIntoDB = async (req: Request, res: Response) => {
   const subCategoryItems = category?.subCategory || [];
 
   const exists = subCategoryItems.some(
-    item => item?._id.toString() === req.body?.brand.toString()
+    item => item?._id.toString() === req.body?.category.toString()
   );
 
   if (!exists) {
@@ -186,11 +210,7 @@ export const reviewTransport = async (
   return transport;
 };
 
-const updateTransportIntoDB = async (
-  req: Request,
-  res: Response,
-  payload: Partial<any | {}>
-) => {
+const updateTransportIntoDB = async (req: Request) => {
   const id = req?.params?.id;
   const user = req?.user as JwtPayload;
 
@@ -208,7 +228,7 @@ const updateTransportIntoDB = async (
     );
   }
 
-  if (req.body?.brand) {
+  if (req.body?.category) {
     const category = await Category.findOne({
       primaryCategoryName: 'Transport',
     });
@@ -222,7 +242,7 @@ const updateTransportIntoDB = async (
     const subCategoryItems = category?.subCategory || [];
 
     const brandExists = subCategoryItems.some(
-      item => item?._id.toString() === req.body?.brand.toString()
+      item => item?._id.toString() === req.body?.category.toString()
     );
 
     if (!brandExists) {

@@ -8,6 +8,7 @@ import { Massage } from './massage.model';
 import { s3Services } from './../../aws/s3Service';
 import { IReview } from './../common/common.interface';
 import { USER_UPLOADS_FOLDER } from './massage.constant';
+import { Category } from './../category/category.model';
 
 const getAllMassageFromDB = async (user: JwtPayload) => {
   const isExistsUser = await User.findOne({ email: user?.email });
@@ -18,7 +19,30 @@ const getAllMassageFromDB = async (user: JwtPayload) => {
     );
   }
 
-  const result = await Massage.find();
+  const massages = await Massage.find().populate({
+    path: 'owner',
+    select: '-isDeleted -agreeTermsCondition -__v -createdAt -updatedAt',
+  });
+
+  const result = await Promise.all(
+    massages.map(async massage => {
+      const categoryDoc = await Category.findOne(
+        {
+          primaryCategoryName: 'Massage',
+          'subCategory._id': massage.category,  
+        },
+        { 'subCategory.$': 1 }
+      );
+
+      const subCategoryData = categoryDoc?.subCategory?.[0] || null;
+
+      return {
+        ...massage.toObject(),
+        category: subCategoryData,  
+      };
+    })
+  );
+
   return result;
 };
 
@@ -30,17 +54,30 @@ const getSingleMassageFromDB = async (id: string, user: JwtPayload) => {
       'You cannot view this data because your account was not found.'
     );
   }
-  const result = await Massage.findById(id).populate('ownerId');
+  const massage = await Massage.findById(id).populate({
+    path: 'owner',
+    select: '-isDeleted -agreeTermsCondition -__v -createdAt -updatedAt',
+  });
+  if (!massage) throw new AppError(StatusCodes.NOT_FOUND, 'Massage not found.');
 
-  if (!result) {
-    return {
-      message: ` This massage id's ${id} data not found.`,
-    };
-  }
-  return result;
+  // manually populate subcategory
+  const categoryDoc = await Category.findOne(
+    {
+      primaryCategoryName: 'Massage',
+      'subCategory._id': massage?.category,
+    },
+    { 'subCategory.$': 1 }
+  );
+
+  const subCategoryData = categoryDoc?.subCategory?.[0] || null;
+
+  return {
+    ...massage.toObject(),
+    category: subCategoryData,
+  };
 };
 
-const addMassageIntoDB = async (req: Request, res: Response) => {
+const addMassageIntoDB = async (req: Request) => {
   const user = req.user as JwtPayload;
   // check user
   const isExistsUser = await User.findOne({ email: user?.email });
@@ -67,6 +104,26 @@ const addMassageIntoDB = async (req: Request, res: Response) => {
     );
   }
 
+  const category = await Category.findOne({
+    primaryCategoryName: 'Massage',
+  });
+  if (!category) {
+    throw new AppError(StatusCodes.NOT_FOUND, 'Massage Category not found.');
+  }
+
+  const subCategoryItems = category?.subCategory || [];
+
+  const exists = subCategoryItems.some(
+    item => item?._id.toString() === req.body?.category.toString()
+  );
+
+  if (!exists) {
+    throw new AppError(
+      StatusCodes.BAD_REQUEST,
+      'Invalid sub-category ID for Massage.'
+    );
+  }
+
   if (req.file) {
     const fileUrl = await s3Services.uploadSingleFileToS3(
       req.file,
@@ -79,7 +136,7 @@ const addMassageIntoDB = async (req: Request, res: Response) => {
 
   const updateData = {
     ...req?.body,
-    ownerId: isExistsUser._id as Types.ObjectId,
+    owner: isExistsUser?._id as Types.ObjectId,
   };
 
   const result = await Massage.create(updateData);
@@ -148,11 +205,7 @@ export const reviewMassage = async (
   return massage;
 };
 
-const updateMassageIntoDB = async (
-  req: Request,
-  res: Response,
-  payload: Partial<any | {}>
-) => {
+const updateMassageIntoDB = async (req: Request) => {
   const id = req.params.id;
   const user = req.user as JwtPayload;
 
@@ -171,14 +224,34 @@ const updateMassageIntoDB = async (
     );
   }
 
+  if (req.body?.category) {
+    const isExistsCategory = await Category.findOne({
+      primaryCategoryName: 'Massage',
+    });
+    if (!isExistsCategory) {
+      throw new AppError(StatusCodes.NOT_FOUND, 'Massage category not found.');
+    }
+
+    const subCategoryItems = isExistsCategory?.subCategory || [];
+
+    const brandExists = subCategoryItems.some(
+      item => item?._id.toString() === req.body?.category.toString()
+    );
+
+    if (!brandExists) {
+      throw new AppError(
+        StatusCodes.BAD_REQUEST,
+        'Invalid sub-category ID for Massage.'
+      );
+    }
+  }
+
   if (req.file) {
     const fileUrl = await s3Services.uploadSingleFileToS3(
       req.file,
       USER_UPLOADS_FOLDER
     );
     req.body.thumbnail = fileUrl;
-  } else {
-    throw new AppError(StatusCodes.BAD_REQUEST, 'Thumbnail file not found.');
   }
 
   const updateData = req?.body;
@@ -205,7 +278,7 @@ const deleteMassageIntoDB = async (id: string, user: JwtPayload) => {
     throw new AppError(StatusCodes.NOT_FOUND, 'Massage not found.');
   }
 
-  if (massage?.ownerId.toString() !== isExistsUser?._id.toString()) {
+  if (massage?.owner?.toString() !== isExistsUser?._id.toString()) {
     throw new AppError(
       StatusCodes.FORBIDDEN,
       'You are not authorized to delete this massage.'

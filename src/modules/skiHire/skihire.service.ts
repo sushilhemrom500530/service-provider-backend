@@ -34,7 +34,7 @@ const getSingleSkiHireFromDB = async (id: string, user: JwtPayload) => {
 
   const skiHire = await SkiHire.findById(id).populate({
     path: 'ownerId',
-    select: '-isDeleted -agreeTermsCondition -__v',
+    select: '-isDeleted -agreeTermsCondition -__v -createdAt -updatedAt',
   });
   if (!skiHire)
     throw new AppError(StatusCodes.NOT_FOUND, 'Ski Hire not found.');

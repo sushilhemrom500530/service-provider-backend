@@ -2,7 +2,7 @@ import { z } from 'zod';
 
 const createTransport = z.object({
   body: z.object({ 
-    brand: z.string().trim().min(1, 'Brand ID is required'),
+    category: z.string().trim().min(1, 'Category Brand ID is required'),
     title: z.string().trim().min(1, 'Title is required'),
     serviceArea: z.string().trim().min(1, 'Service area is required'),
     extraChargePerHours: z.coerce
@@ -28,7 +28,7 @@ const createTransport = z.object({
 
 const updateTransport = z.object({
   body: z.object({
-    brand: z.string().trim().min(1).optional(),
+    category: z.string().trim().min(1).optional(),
     title: z.string().trim().min(1).optional(),
     serviceArea: z.string().trim().min(1).optional(),
     extraChargePerHours: z.coerce.number().min(1).optional(),

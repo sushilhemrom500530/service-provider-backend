@@ -9,7 +9,7 @@ const transportSchema = new Schema<ITransport>(
       ref: 'User',
       required: true,
     },
-    brand: {
+    category: {
       type: Schema.Types.ObjectId,
       ref: 'Category',
       required: true,

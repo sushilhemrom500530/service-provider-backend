@@ -2,7 +2,7 @@ import { Document, Types } from 'mongoose';
 import { IReview, IRefund } from './../common/common.interface';
 
 export interface ITransport extends Document {
-  brand: Types.ObjectId;
+  category: Types.ObjectId;
   owner: Types.ObjectId;
   thumbnail: string;
   title: string;

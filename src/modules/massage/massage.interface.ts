@@ -1,20 +1,15 @@
 import { Document, Types } from 'mongoose';
 import { IReview, IRefund } from './../common/common.interface';
  
- 
-export interface IDurationByAmount {
-  duration: string;
-  amount: number;
-}
-
 export interface IMassage extends Document {
+  category: Types.ObjectId;
+  owner: Types.ObjectId;
+  thumbnail: string;
   title: string;
-  description?: string;
-  thumbnail: string; 
-  ownerId: Types.ObjectId;
-  serviceArea: string;
-  amount: number;
-  durationByAmount: IDurationByAmount[];
+  openTime: string;
+  closeTime: string;
+  serviceArea: string; 
+  amount: number; 
   benefits: string;
   ourRecommendations: string;
   averageRating?: number;

@@ -34,7 +34,7 @@ const getSingleRestaurantFromDB = async (id: string, user: JwtPayload) => {
   }
   const restaurant = await Restaurant.findById(id).populate({
     path: 'owner',
-    select: '-isDeleted -agreeTermsCondition -__v',
+    select: '-isDeleted -agreeTermsCondition -__v -createdAt -updatedAt',
   });
   if (!restaurant)
     throw new AppError(StatusCodes.NOT_FOUND, 'Restaurant not found.');
