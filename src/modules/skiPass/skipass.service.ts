@@ -30,7 +30,10 @@ const getSingleSkipPassFromDB = async (id: string, user: JwtPayload) => {
       'You cannot view this data because your account was not found.'
     );
   }
-  const result = await SkiPass.findById(id).populate('ownerId');
+  const result = await SkiPass.findById(id).populate(
+    'owner',
+    '_id email profileUrl phoneNumber'
+  );
 
   if (!result) {
     return {
@@ -77,17 +80,14 @@ const addSkiPassIntoDB = async (req: Request, res: Response) => {
     throw new AppError(StatusCodes.BAD_REQUEST, 'Thumbnail file not found.');
   }
 
-
-  const updateData = {
+  const formData = {
     ...req?.body,
-    ownerId: isExistsUser?._id,
+    owner: isExistsUser?._id,
   };
 
-  // console.log("req data ===================> :", updateData);
+  const result = await SkiPass.create(formData);
 
-  const result = await SkiPass.create(updateData);
-
-  return result ;
+  return result;
 };
 
 export const reviewSkiPass = async (
@@ -151,26 +151,38 @@ export const reviewSkiPass = async (
   return skiPass;
 };
 
-const updateSkiPassIntoDB = async (
-  req: Request,
-  res: Response,
-  payload: Partial<any | {}>
-) => {
-  const id = req.params.id;
+const updateSkiPassIntoDB = async (req: Request) => {
+  const { id: skiPassId } = req.params;
   const user = req.user as JwtPayload;
 
-  const isExistsSkiPass = await SkiPass.findById(id);
-
+  const isExistsSkiPass = await SkiPass.findById(skiPassId);
   if (!isExistsSkiPass) {
     throw new AppError(StatusCodes.NOT_FOUND, 'Ski pass not found.');
   }
 
-  // check user
-  const existsUser = await User.findById(req?.body?.ownerId);
-  if (!existsUser) {
+  const isExistsUser = await User.findOne({ email: user?.email });
+  if (!isExistsUser) {
     throw new AppError(
       StatusCodes.NOT_FOUND,
       'You cannot view this data because your account was not found.'
+    );
+  } 
+  
+  // Check provider role & type
+  if (
+    isExistsUser?.role !== 'Provider' ||
+    isExistsUser?.providerType !== 'Ski_Pass'
+  ) {
+    throw new AppError(
+      StatusCodes.FORBIDDEN,
+      'You are not authorized to update this restaurant service.'
+    );
+  }
+
+  if (isExistsSkiPass?.owner?.toString() !== isExistsUser._id.toString()) {
+    throw new AppError(
+      StatusCodes.FORBIDDEN,
+      'You are not the owner of this product. Cannot update booking status.'
     );
   }
 
@@ -187,7 +199,7 @@ const updateSkiPassIntoDB = async (
   const updateData = req?.body;
 
   const result = await SkiPass.findByIdAndUpdate(
-    id,
+    skiPassId,
     { $set: updateData },
     { new: true }
   );
