@@ -7,25 +7,20 @@ export enum ISkiPassType {
   PREMIUM = 'Premium',
 }
 
-export interface IBenefits {
-  perkingCount: number;
-  eventCount: number;
-  lessionCount: number;
+export interface IServices {
+  title: string;
+  description: string;
 }
 
 export interface ISkiPass extends Document {
   title: string;
-  description: string;
-  ownerId: Types.ObjectId;
   thumbnail: string;
+  owner: Types.ObjectId;
   skiPassType: ISkiPassType;
-  benefits: IBenefits;
-  duration: string;
-  time: string;
-  date: string;
-  extraTimePerHours: string;
+  services: IServices;
   serviceArea: string;
   amount: number;
+  description: string;
   averageRating?: number;
   reviews?: IReview[];
   refunds?: IRefund[];

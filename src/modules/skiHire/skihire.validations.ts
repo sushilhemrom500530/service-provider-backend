@@ -35,7 +35,7 @@ const createSkiHireSchema = z.object({
 
     extraChargePerHour: z.coerce
       .number()
-      .min(1, { message: 'Extra Charge Per Hour must be greater than zero' }),
+      .min(1, { message: 'Extra Charge Per Hour must be greater than zero' }).optional(),
 
     serviceArea: z.string({
       required_error: 'Service area is required',
@@ -55,7 +55,7 @@ const updateSkiHireSchema = z.object({
 
     title: z.string().min(1, 'Title cannot be empty').optional(),
 
-    ownerId: z.string().optional(),
+    owner: z.string().optional(),
 
     thumbnail: z.string().optional(),
 

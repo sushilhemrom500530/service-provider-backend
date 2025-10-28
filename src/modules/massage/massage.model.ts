@@ -2,34 +2,51 @@ import mongoose, { Schema, Model } from 'mongoose';
 import { IMassage } from './massage.interface';
 import { reviewSchema, refundSchema } from './../common/common.schema';
 
-const durationSchema = new Schema(
-  {
-    duration: { type: String, required: true },
-    amount: { type: Number, required: true },
+const priceByDurationSchema = new mongoose.Schema({
+  duration: {
+    type: String,
+    required: true,
   },
-  { _id: false }
-);
+  amount: {
+    type: Number,
+    required: true,
+  },
+});
 
 const massageSchema = new Schema<IMassage>(
   {
-    title: {
-      type: String,
+    category: {
+      type: Schema.Types.ObjectId,
+      ref: 'Category',
       required: true,
-      trim: true,
     },
-    description: {
-      type: String,
+    owner: {
+      type: Schema.Types.ObjectId,
+      ref: 'User',
       required: true,
-      trim: true,
     },
     thumbnail: {
       type: String,
       required: true,
       trim: true,
     },
-    ownerId: {
-      type: Schema.Types.ObjectId,
-      ref: 'User',
+    title: {
+      type: String,
+      required: true,
+      trim: true,
+    },
+    openTime: {
+      type: String,
+      required: true,
+      trim: true,
+    },
+    closeTime: {
+      type: String,
+      required: true,
+      trim: true,
+    },
+    priceByDuration: {
+      type: [priceByDurationSchema],
       required: true,
     },
     serviceArea: {
@@ -40,10 +57,6 @@ const massageSchema = new Schema<IMassage>(
       type: Number,
       required: true,
       min: 0,
-    },
-    durationByAmount: {
-      type: [durationSchema],
-      required: true,
     },
     benefits: {
       type: String,

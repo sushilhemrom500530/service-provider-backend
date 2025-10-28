@@ -20,7 +20,30 @@ const getAllRestaurantFromDB = async (user: JwtPayload) => {
     );
   }
 
-  const result = await Restaurant.find();
+  const restaurant = await Restaurant.find().populate({
+    path: 'owner',
+    select: '-isDeleted -agreeTermsCondition -__v -createdAt -updatedAt',
+  });
+
+  const result = await Promise.all(
+    restaurant.map(async restuar => {
+      const categoryDoc = await Category.findOne(
+        {
+          primaryCategoryName: 'Restaurant',
+          'subCategory._id': restuar.category,
+        },
+        { 'subCategory.$': 1 }
+      );
+
+      const subCategoryData = categoryDoc?.subCategory?.[0] || null;
+
+      return {
+        ...restuar.toObject(),
+        category: subCategoryData,
+      };
+    })
+  );
+
   return result;
 };
 
@@ -34,7 +57,7 @@ const getSingleRestaurantFromDB = async (id: string, user: JwtPayload) => {
   }
   const restaurant = await Restaurant.findById(id).populate({
     path: 'owner',
-    select: '-isDeleted -agreeTermsCondition -__v',
+    select: '-isDeleted -agreeTermsCondition -__v -createdAt -updatedAt',
   });
   if (!restaurant)
     throw new AppError(StatusCodes.NOT_FOUND, 'Restaurant not found.');
@@ -129,7 +152,7 @@ const addRestaurantIntoDB = async (req: Request, res: Response) => {
   }
 
   // Upload menu item images
-  const menuItemFiles = req.files?.['menuItems'] || [];
+  const menuItemFiles = req.files?.['files'] || [];
   const processedMenuItems = await Promise.all(
     menuItems.map(async (item: any, index: number) => {
       const menuFile = menuItemFiles[index];
@@ -166,8 +189,8 @@ const addRestaurantIntoDB = async (req: Request, res: Response) => {
     owner: isExistsUser?._id,
     thumbnail: thumbnailUrl,
     totalPrice,
-    menuItems: processedMenuItems,
-     status: isOpenNow ? 'Open' : 'Closed', 
+    items: processedMenuItems,
+    status: isOpenNow ? 'Open' : 'Closed',
   };
 
   const result = await Restaurant.create(restaurantData);
@@ -235,11 +258,7 @@ export const reviewRestaurant = async (
   return restaurant;
 };
 
-const updateRestaurantIntoDB = async (
-  req: Request,
-  res: Response,
-  payload: Partial<any | {}>
-) => {
+const updateRestaurantIntoDB = async (req: Request) => {
   const id = req?.params?.id;
   const user = req.user as JwtPayload;
 
@@ -269,9 +288,10 @@ const updateRestaurantIntoDB = async (
     );
   }
 
-  // Handle thumbnail update (optional)
-  let thumbnailUrl = isExistsRestaurant.thumbnail;
+  let thumbnailUrl = isExistsRestaurant?.thumbnail;
   const thumbnailFile = req.files?.['thumbnail']?.[0];
+  const menuItemFiles = req.files?.['files'] || [];
+
   if (thumbnailFile) {
     thumbnailUrl = await s3Services.uploadSingleFileToS3(
       thumbnailFile,
@@ -280,41 +300,58 @@ const updateRestaurantIntoDB = async (
   }
 
   // Parse menu items (if provided)
-  let menuItems = isExistsRestaurant.menuItems;
+  let menuItems = isExistsRestaurant?.items || [];
+
   if (req.body.menuItems) {
     let parsedMenuItems: any[] = [];
 
     if (typeof req.body.menuItems === 'string') {
-      parsedMenuItems = JSON.parse(req.body.menuItems);
+      try {
+        parsedMenuItems = JSON.parse(req.body.menuItems);
+      } catch (err) {
+        throw new AppError(
+          StatusCodes.BAD_REQUEST,
+          'Invalid JSON format for menuItems.'
+        );
+      }
     } else if (Array.isArray(req.body.menuItems)) {
       parsedMenuItems = req.body.menuItems;
     }
 
-    const menuItemFiles = req.files?.['menuItems'] || [];
-
-    // Map new or updated menu items
     const processedMenuItems = await Promise.all(
       parsedMenuItems.map(async (item: any, index: number) => {
         const menuFile = menuItemFiles[index];
+        let menuImageUrl = item?.menuPhoto || item?.menuImage || '';
 
-        let menuImageUrl = item.menuImage || '';
-
+        // Upload new file if available
         if (menuFile) {
           menuImageUrl = await s3Services.uploadSingleFileToS3(
             menuFile,
             USER_UPLOADS_FOLDER
           );
-        } else if (!menuImageUrl) {
+        }
+
+        // Validate image presence
+        if (!menuImageUrl) {
           throw new AppError(
             StatusCodes.BAD_REQUEST,
-            `Menu image missing for item ${item.name}`
+            `Menu image missing for item "${item.name || 'Unnamed'}".`
+          );
+        }
+
+        // Validate price
+        const price = Number(item.price);
+        if (isNaN(price) || price <= 0) {
+          throw new AppError(
+            StatusCodes.BAD_REQUEST,
+            `Invalid or missing price for menu item "${item.name}".`
           );
         }
 
         return {
           ...item,
-          price: Number(item.price),
-          menuImage: menuImageUrl,
+          price,
+          menuPhoto: menuImageUrl,
         };
       })
     );
@@ -322,39 +359,20 @@ const updateRestaurantIntoDB = async (
     menuItems = processedMenuItems;
   }
 
-  //  Recalculate total price
-  const totalPrice = menuItems.reduce(
-    (sum, item) => sum + Number(item.price || 0),
-    0
-  );
+  // Calculate total price
+  req.body.totalPrice = menuItems.reduce((sum, item) => {
+    if (!item || typeof item.price === 'undefined') return sum;
+    const price = Number(item.price);
+    return sum + (isNaN(price) ? 0 : price);
+  }, 0);
 
-  // Recalculate day count (if times updated)
-  let openTime = req.body.openTime || isExistsRestaurant.openTime;
-  let closeTime = req.body.closeTime || isExistsRestaurant.closeTime;
-
-  function timeStrToHours(timeStr: string) {
-    const [time, meridian] = timeStr.split(' ');
-    let [hours, minutes] = time.split(':').map(Number);
-
-    if (meridian === 'PM' && hours !== 12) hours += 12;
-    if (meridian === 'AM' && hours === 12) hours = 0;
-
-    return hours + minutes / 60;
-  }
-
-  const openHours = timeStrToHours(openTime);
-  const closeHours = timeStrToHours(closeTime);
-
-  let totalHours = closeHours - openHours;
-  if (totalHours < 0) totalHours += 24;
-  const dayCount = Number((totalHours / 24).toFixed(2));
+  const isOpenNow = isRestaurantOpen(req.body?.openTime, req.body?.closeTime);
 
   const updateData = {
     ...(req.body as Partial<IRestaurant>),
     thumbnail: thumbnailUrl,
-    menuItems,
-    totalPrice,
-    dayCount,
+    items: menuItems,
+    status: isOpenNow ? 'Open' : 'Closed',
   };
 
   const result = await Restaurant.findByIdAndUpdate(
@@ -380,7 +398,7 @@ const deleteRestaurantIntoDB = async (id: string, user: JwtPayload) => {
     throw new AppError(StatusCodes.NOT_FOUND, 'Restaurant not found.');
   }
 
-  if (restaurant?.ownerId.toString() !== isExistsUser?._id.toString()) {
+  if (restaurant?.owner.toString() !== isExistsUser?._id.toString()) {
     throw new AppError(
       StatusCodes.FORBIDDEN,
       'You are not authorized to delete this restaurant.'

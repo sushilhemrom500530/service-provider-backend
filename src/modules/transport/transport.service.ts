@@ -8,6 +8,7 @@ import { s3Services } from './../../aws/s3Service';
 import { IReview } from './../common/common.interface';
 import { Transport } from './transport.model';
 import { USER_UPLOADS_FOLDER } from './transport.constant';
+import { Category } from './../category/category.model';
 
 const getAllTransportFromDB = async (user: JwtPayload) => {
   const isExistsUser = await User.findOne({ email: user?.email });
@@ -18,7 +19,30 @@ const getAllTransportFromDB = async (user: JwtPayload) => {
     );
   }
 
-  const result = await Transport.find();
+  const transport = await Transport.find().populate({
+    path: 'owner',
+    select: '-isDeleted -agreeTermsCondition -__v -createdAt -updatedAt',
+  });
+
+  const result = await Promise.all(
+    transport.map(async trans => {
+      const categoryDoc = await Category.findOne(
+        {
+          primaryCategoryName: 'Transport',
+          'subCategory._id': trans.category,
+        },
+        { 'subCategory.$': 1 }
+      );
+
+      const subCategoryData = categoryDoc?.subCategory?.[0] || null;
+
+      return {
+        ...trans.toObject(),
+        category: subCategoryData,
+      };
+    })
+  );
+
   return result;
 };
 
@@ -30,17 +54,32 @@ const getSingleTransportFromDB = async (id: string, user: JwtPayload) => {
       'You cannot view this data because your account was not found.'
     );
   }
-  const result = await Transport.findById(id).populate('ownerId');
+  const transport = await Transport.findById(id).populate({
+    path: 'owner',
+    select: '-isDeleted -agreeTermsCondition -__v -createdAt -updatedAt',
+  });
 
-  if (!result) {
-    return {
-      message: ` This transport id's ${id} data not found.`,
-    };
-  }
-  return result;
+  if (!transport)
+    throw new AppError(StatusCodes.NOT_FOUND, 'Transport not found.');
+
+  // manually populate subcategory
+  const categoryDoc = await Category.findOne(
+    {
+      primaryCategoryName: 'Transport',
+      'subCategory._id': transport?.category,
+    },
+    { 'subCategory.$': 1 }
+  );
+
+  const subCategoryData = categoryDoc?.subCategory?.[0] || null;
+
+  return {
+    ...transport.toObject(),
+    category: subCategoryData,
+  };
 };
 
-const addTransportIntoDB = async (req: Request, res: Response) => {
+const addTransportIntoDB = async (req: Request) => {
   const user = req.user as JwtPayload;
   // check user
   const isExistsUser = await User.findOne({ email: user?.email });
@@ -67,45 +106,45 @@ const addTransportIntoDB = async (req: Request, res: Response) => {
     );
   }
 
-  const files = req.files as { [fieldname: string]: Express.Multer.File[] };
-  const brandPhotoFile = files?.['brandPhoto']?.[0];
-  const thumbnailFile = files?.['thumbnail']?.[0];
+  const category = await Category.findOne({
+    primaryCategoryName: 'Transport',
+  });
+  if (!category) {
+    throw new AppError(StatusCodes.NOT_FOUND, 'Transport Brand not found.');
+  }
 
-  if (!brandPhotoFile || !thumbnailFile) {
+  const subCategoryItems = category?.subCategory || [];
+
+  const exists = subCategoryItems.some(
+    item => item?._id.toString() === req.body?.category.toString()
+  );
+
+  if (!exists) {
     throw new AppError(
       StatusCodes.BAD_REQUEST,
-      'Both brandPhoto and thumbnail files are required.'
+      'Invalid sub-category brand ID for Transport.'
     );
   }
 
-  // Upload files to S3
-  const [brandPhotoUrl, thumbnailUrl] = await Promise.all([
-    s3Services.uploadSingleFileToS3(brandPhotoFile, USER_UPLOADS_FOLDER),
-    s3Services.uploadSingleFileToS3(thumbnailFile, USER_UPLOADS_FOLDER),
-  ]);
-  
+  if (req.file) {
+    const fileUrl = await s3Services.uploadSingleFileToS3(
+      req.file,
+      USER_UPLOADS_FOLDER
+    );
+    req.body.thumbnail = fileUrl;
+  } else {
+    throw new Error('File not found');
+  }
+
   // Prepare transport data
   const transportData = {
     ...req.body,
-    ownerId: isExistsUser?._id,
-    brandPhoto: brandPhotoUrl,
-    thumbnail: thumbnailUrl,
+    owner: isExistsUser?._id,
   };
 
-  // Ensure numeric fields are properly typed
-  // transportData?.specific?.milageCount = Number(
-  //   transportData?.specific?.milageCount
-  // );
-  // transportData?.specific?.powerCount = Number(
-  //   transportData?.specific?.powerCount
-  // );
-  // transportData?.specific?.personCount = Number(
-  //   transportData?.specific?.personCount
-  // );
   transportData?.amount = Number(transportData?.amount);
+  transportData?.personCount = Number(transportData?.personCount);
 
-  // console.log('response data ==============>', transportData);
-  // Create transport document
   const result = await Transport.create(transportData);
   return result;
 };
@@ -171,11 +210,7 @@ export const reviewTransport = async (
   return transport;
 };
 
-const updateTransportIntoDB = async (
-  req: Request,
-  res: Response,
-  payload: Partial<any | {}>
-) => {
+const updateTransportIntoDB = async (req: Request) => {
   const id = req?.params?.id;
   const user = req?.user as JwtPayload;
 
@@ -193,50 +228,48 @@ const updateTransportIntoDB = async (
     );
   }
 
-  const files = req.files as
-    | { [fieldname: string]: Express.Multer.File[] }
-    | undefined;
-  let brandPhotoUrl = isExistsTransport?.brandPhoto;
-  let thumbnailUrl = isExistsTransport?.thumbnail;
+  if (req.body?.category) {
+    const category = await Category.findOne({
+      primaryCategoryName: 'Transport',
+    });
+    if (!category) {
+      throw new AppError(
+        StatusCodes.NOT_FOUND,
+        'Transport brand category not found.'
+      );
+    }
 
-  if (files?.['brandPhoto']?.[0]) {
-    brandPhotoUrl = await s3Services.uploadSingleFileToS3(
-      files['brandPhoto'][0],
+    const subCategoryItems = category?.subCategory || [];
+
+    const brandExists = subCategoryItems.some(
+      item => item?._id.toString() === req.body?.category.toString()
+    );
+
+    if (!brandExists) {
+      throw new AppError(
+        StatusCodes.BAD_REQUEST,
+        'Invalid sub-category brand ID for Transport.'
+      );
+    }
+  }
+
+  if (req.file) {
+    const fileUrl = await s3Services.uploadSingleFileToS3(
+      req.file,
       USER_UPLOADS_FOLDER
     );
+    req.body.thumbnail = fileUrl;
   }
 
-  if (files?.['thumbnail']?.[0]) {
-    thumbnailUrl = await s3Services.uploadSingleFileToS3(
-      files['thumbnail'][0],
-      USER_UPLOADS_FOLDER
-    );
+  const updateData: Partial<any> = { ...req.body };
+
+  if (updateData?.amount !== undefined) {
+    updateData.amount = Number(updateData.amount);
+  }
+  if (updateData?.personCount !== undefined) {
+    updateData.personCount = Number(updateData.personCount);
   }
 
-  const updateData = {
-    ...req.body,
-    brandPhoto: brandPhotoUrl,
-    thumbnail: thumbnailUrl,
-  };
-
-  // Convert numeric fields
-  // if (updateData?.specific?.milageCount) {
-  //   updateData?.specific?.milageCount = Number(
-  //     updateData?.specific?.milageCount
-  //   );
-  // }
-  // if (updateData?.specific?.powerCount) {
-  //   updateData?.specific?.powerCount = Number(updateData?.specific?.powerCount);
-  // }
-  // if (updateData?.specific?.powerCount) {
-  //   updateData?.specific?.personCount = Number(
-  //     updateData?.specific?.personCount
-  //   );
-  // }
-  if (updateData?.amount) {
-    updateData?.amount = Number(updateData?.amount);
-  }
-  
   const result = await Transport.findByIdAndUpdate(
     id,
     { $set: updateData },

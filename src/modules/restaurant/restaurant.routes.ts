@@ -32,7 +32,7 @@ router.post(
   auth('Admin', 'Provider'), 
   uploads.fields([
     { name: 'thumbnail', maxCount: 1 },
-    { name: 'menuItems', maxCount: 20 },
+    { name: 'files', maxCount: 20 },
   ]),
   convertHeicToPngMiddleware(USER_UPLOADS_FOLDER),
   validateRequest(RestaurantValidations.createRestaurant),
@@ -53,7 +53,7 @@ router.patch(
   auth('Admin', 'Provider'), 
   uploads.fields([
     { name: 'thumbnail', maxCount: 1 },
-    { name: 'menuItems', maxCount: 20 },
+    { name: 'files', maxCount: 20 },
   ]),
   convertHeicToPngMiddleware(USER_UPLOADS_FOLDER),
   validateRequest(RestaurantValidations.updateRestaurant),

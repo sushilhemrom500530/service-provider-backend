@@ -19,7 +19,29 @@ const getAllSkiHireFromDB = async (user: JwtPayload) => {
     );
   }
 
-  const result = await SkiHire.find();
+  const skiHire = await SkiHire.find().populate({
+    path: 'owner',
+    select: '-isDeleted -agreeTermsCondition -__v -createdAt -updatedAt',
+  });
+
+  const result = await Promise.all(
+    skiHire.map(async skih => {
+      const categoryDoc = await Category.findOne(
+        {
+          primaryCategoryName: 'Ski_Hire',
+          'subCategory._id': skih.category,
+        },
+        { 'subCategory.$': 1 }
+      );
+
+      const subCategoryData = categoryDoc?.subCategory?.[0] || null;
+
+      return {
+        ...skih.toObject(),
+        category: subCategoryData,
+      };
+    })
+  );
   return result;
 };
 
@@ -33,8 +55,8 @@ const getSingleSkiHireFromDB = async (id: string, user: JwtPayload) => {
   }
 
   const skiHire = await SkiHire.findById(id).populate({
-    path: 'ownerId',
-    select: '-isDeleted -agreeTermsCondition -__v',
+    path: 'owner',
+    select: '-isDeleted -agreeTermsCondition -__v -createdAt -updatedAt',
   });
   if (!skiHire)
     throw new AppError(StatusCodes.NOT_FOUND, 'Ski Hire not found.');
@@ -157,16 +179,14 @@ const addSkiHireIntoDB = async (req: Request, res: Response) => {
   );
 
   const skiHireData = {
-    category:
-      new mongoose.Types.ObjectId(categoryId) ||
-      new mongoose.Types.ObjectId(req.body.category),
+    category: categoryId || req.body.category,
     title: req.body.title,
     thumbnail: thumbnailUrl,
-    ownerId: isExistsUser._id,
-    extraChargePerHour: Number(req.body.extraChargePerHour) || 0,
+    owner: isExistsUser._id,
+    extraChargePerHour: Number(req.body.extraChargePerHour || 0) || 0,
     totalPrice,
     serviceArea: req.body.serviceArea,
-    productItems: processedProductItems,
+    items: processedProductItems,
   };
 
   const result = await SkiHire.create(skiHireData);
@@ -288,7 +308,7 @@ const updateSkiHireIntoDB = async (req: Request) => {
     }
 
     const existingLength = isExistsSkiHire?.productItems.length;
-    
+
     if (productItems.length !== existingLength) {
       throw new AppError(
         StatusCodes.BAD_REQUEST,
@@ -331,7 +351,7 @@ const updateSkiHireIntoDB = async (req: Request) => {
       })
     );
 
-    req.body.productItems = processedProductItems;
+    req.body.items = processedProductItems;
 
     req.body.totalPrice = processedProductItems.reduce(
       (sum: number, item: any) => sum + item.price,
@@ -364,7 +384,7 @@ const deleteSkiHireIntoDB = async (id: string, user: JwtPayload) => {
     throw new AppError(StatusCodes.NOT_FOUND, 'Ski Hire not found.');
   }
 
-  if (skiHire?.ownerId.toString() !== isExistsUser?._id.toString()) {
+  if (skiHire?.owner.toString() !== isExistsUser?._id.toString()) {
     throw new AppError(
       StatusCodes.FORBIDDEN,
       'You are not authorized to delete this ski hire.'

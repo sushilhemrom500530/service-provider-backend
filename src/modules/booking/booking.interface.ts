@@ -6,7 +6,9 @@ export type BookingStatus =
   | 'Completed'
   | 'Cancelled'
   | 'Deleted';
-export type BookingCategory =
+
+
+  export type BookingCategory =
   | 'Ski_Pass'
   | 'Ski_Hire'
   | 'Transport'
@@ -20,14 +22,15 @@ export type ProductModelName =
   | 'Restaurant'
   | 'Massage';
 
-export interface IBookingItem {
+
+  export interface IBookingItem {
   itemId: Types.ObjectId;
   quantity: number;
 }
 
 export interface IBooking extends Document {
-  userId: Types.ObjectId;
-  productId?: Types.ObjectId;
+  user: Types.ObjectId;
+  product: Types.ObjectId;
   productModel: ProductModelName;
   category: BookingCategory;
 
@@ -39,12 +42,13 @@ export interface IBooking extends Document {
   endDateAndTime?: Date;
 
   items?: IBookingItem[];
-  orderType?: string;
-  itemCount?: number;
   duration?: string;
-  bookingAgentText?: string;
+  bookinRequestText?: string;
+  menyType?: string;
 
   bookingStatus: BookingStatus;
+
+  totalPrice: number;
 
   createdAt?: Date;
   updatedAt?: Date;

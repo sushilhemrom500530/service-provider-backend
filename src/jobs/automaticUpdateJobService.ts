@@ -4,7 +4,6 @@ import { Restaurant } from './../modules/restaurant/restaurant.model';
 import moment from 'moment';
 import { isRestaurantOpen } from './../utils/restaurentTimeConvert';
 
-
 const startBookingStatusJob = () => {
   // runs every 5 minutes
   cron.schedule('*/5 * * * *', async () => {
@@ -16,18 +15,12 @@ const startBookingStatusJob = () => {
     console.log('Auto booking status updated.');
   });
 
-  console.log('=====> Booking auto-update cron job started.');
+  // console.log('=====> Booking auto-update cron job started.');
 };
 
 const startRestaurantStatusJob = () => {
   cron.schedule('*/5 * * * *', async () => {
     try {
-      console.log(
-        `[${moment().format(
-          'hh:mm A'
-        )}] Running restaurant status update job...`
-      );
-
       const restaurants = await Restaurant.find();
 
       for (const restaurant of restaurants) {
@@ -36,21 +29,20 @@ const startRestaurantStatusJob = () => {
         const isOpen = isRestaurantOpen(openTime, closeTime);
 
         if (isOpen && restaurant.status !== 'Open') {
-          restaurant?.status = 'Open';
-          await restaurant.save();
-        } else if (!isOpen && restaurant?.status !== 'Closed') {
-          restaurant?.status = 'Closed';
-          await restaurant.save();
+          restaurant.status = 'Open';
+          await restaurant.save({ validateBeforeSave: false });
+        } else if (!isOpen && restaurant.status !== 'Closed') {
+          restaurant.status = 'Closed';
+          await restaurant.save({ validateBeforeSave: false });
         }
-      }
-
+      } 
       console.log('====> Restaurant statuses updated successfully.');
     } catch (err) {
       console.error('Error updating restaurant statuses:', err);
     }
   });
 
-  console.log('=====> Restaurant status cron job started.');
+  // console.log('=====> Restaurant status cron job started.');
 };
 
 export const startAllCronJobs = () => {

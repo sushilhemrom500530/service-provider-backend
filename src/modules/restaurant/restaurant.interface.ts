@@ -23,7 +23,7 @@ export interface IRestaurant extends Document {
   serviceArea: string;
   totalPrice: number;
   status: string;
-  menuItems: IMenuItems[];
+  items: IMenuItems[];
   extraChargePerHour: string;
   averageRating?: number;
   reviews?: IReview[];

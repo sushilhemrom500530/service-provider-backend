@@ -2,6 +2,20 @@ import mongoose, { Schema, Model } from 'mongoose';
 import { ISkiPass, ISkiPassType } from './skiPass.interface';
 import { reviewSchema, refundSchema } from './../common/common.schema';
 
+const serviceSchema = new mongoose.Schema(
+  {
+    title: {
+      type: String,
+      required: true,
+    },
+    description: {
+      type: String,
+      required: true,
+    },
+  },
+  { _id: false }
+);
+
 const skiPassSchema = new Schema<ISkiPass>(
   {
     title: {
@@ -9,17 +23,13 @@ const skiPassSchema = new Schema<ISkiPass>(
       required: true,
       trim: true,
     },
-    description: {
-      type: String,
-      required: true,
-      trim: true,
-    },
+
     thumbnail: {
       type: String,
       required: true,
       trim: true,
     },
-    ownerId: {
+    owner: {
       type: Schema.Types.ObjectId,
       ref: 'User',
       required: true,
@@ -29,25 +39,9 @@ const skiPassSchema = new Schema<ISkiPass>(
       enum: Object.values(ISkiPassType),
       required: true,
     },
-    benefits: {
-      perkingCount: { type: Number, required: true },
-      eventCount: { type: Number, required: true },
-      lessionCount: { type: Number, required: true },
-    },
-    duration: {
-      type: String,
-      required: true,
-    },
-    time: {
-      type: String,
-      required: true,
-    },
-    date: {
-      type: String,
-      required: true,
-    },
-    extraTimePerHours: {
-      type: String,
+    services: {
+      type: [serviceSchema],
+      validate: [arr => arr.length > 0, 'At least one service is required'],
       required: true,
     },
     serviceArea: {
@@ -59,6 +53,11 @@ const skiPassSchema = new Schema<ISkiPass>(
       type: Number,
       required: true,
       min: 0,
+    },
+    description: {
+      type: String,
+      required: true,
+      trim: true,
     },
     // optional fields for later updates
     averageRating: {

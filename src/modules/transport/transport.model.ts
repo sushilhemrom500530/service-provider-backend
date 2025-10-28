@@ -4,15 +4,15 @@ import { ITransport } from './transport.interface';
 
 const transportSchema = new Schema<ITransport>(
   {
-    brandName: {
-      type: String,
+    owner: {
+      type: Schema.Types.ObjectId,
+      ref: 'User',
       required: true,
-      trim: true,
     },
-    brandPhoto: {
-      type: String,
+    category: {
+      type: Schema.Types.ObjectId,
+      ref: 'Category',
       required: true,
-      trim: true,
     },
     thumbnail: {
       type: String,
@@ -24,27 +24,31 @@ const transportSchema = new Schema<ITransport>(
       required: true,
       trim: true,
     },
-    ownerId: {
-      type: Schema.Types.ObjectId,
-      ref: 'User',
+    personCount: {
+      type: String,
       required: true,
     },
-    specific: {
-      personCount: { type: String, required: true },
-      milageCount: { type: String, required: true },
-      powerCount: { type: String, required: true },
+    milage: {
+      type: String,
+      required: true,
     },
-    extraTimePerHours: {
+    power: {
+      type: String,
+      required: true,
+    },
+    extraChargePerHours: {
       type: String,
       required: true,
     },
     insuranceFee: {
       type: Number,
       required: true,
+      default: 150, 
     },
     maintainCharge: {
       type: Number,
       required: true,
+      default: 75,
     },
     serviceArea: {
       type: String,
@@ -59,11 +63,7 @@ const transportSchema = new Schema<ITransport>(
       type: String,
       required: true,
       trim: true,
-    },
-    benefits: {
-      type: String,
-    },
-
+    },  
     // optional fields for later updates
     averageRating: {
       type: Number,
