@@ -30,10 +30,7 @@ router.get(
 router.post(
   '/create',
   auth('Admin', 'Provider'),
-  uploads.fields([
-    { name: 'brandPhoto', maxCount: 1 },
-    { name: 'thumbnail', maxCount: 1 },
-  ]),
+  uploads.single('file'),
   convertHeicToPngMiddleware(USER_UPLOADS_FOLDER),
   validateRequest(TransportValidations.createTransport),
   TransportController.addTransportIntoDB
@@ -51,10 +48,7 @@ router.post(
 router.patch(
   '/update/:id',
   auth('User', 'Admin', 'Provider'),
-  uploads.fields([
-    { name: 'brandPhoto', maxCount: 1 },
-    { name: 'thumbnail', maxCount: 1 },
-  ]),
+  uploads.single('file'),
   convertHeicToPngMiddleware(USER_UPLOADS_FOLDER),
   validateRequest(TransportValidations.updateTransport),
   TransportController.updateTransportIntoDB

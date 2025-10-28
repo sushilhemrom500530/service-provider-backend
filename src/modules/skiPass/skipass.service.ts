@@ -167,7 +167,7 @@ const updateSkiPassIntoDB = async (req: Request) => {
       'You cannot view this data because your account was not found.'
     );
   } 
-  
+
   // Check provider role & type
   if (
     isExistsUser?.role !== 'Provider' ||
@@ -221,7 +221,7 @@ const deleteSkiPassIntoDB = async (id: string, user: JwtPayload) => {
     throw new AppError(StatusCodes.NOT_FOUND, 'Ski pass not found.');
   }
 
-  if (skiPass.ownerId.toString() !== isExistsUser._id.toString()) {
+  if (skiPass?.owner.toString() !== isExistsUser._id.toString()) {
     throw new AppError(
       StatusCodes.FORBIDDEN,
       'You are not authorized to delete this ski pass.'
