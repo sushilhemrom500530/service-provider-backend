@@ -9,6 +9,7 @@ import { Restaurant } from './restaurant.model';
 import { USER_UPLOADS_FOLDER } from './restaurant.constant';
 import { IRestaurant } from './restaurant.interface';
 import { Category } from './../category/category.model';
+import { isRestaurantOpen } from './../../utils/restaurentTimeConvert';
 
 const getAllRestaurantFromDB = async (user: JwtPayload) => {
   const isExistsUser = await User.findOne({ email: user?.email });
@@ -40,7 +41,10 @@ const getSingleRestaurantFromDB = async (id: string, user: JwtPayload) => {
 
   // manually populate subcategory
   const categoryDoc = await Category.findOne(
-    { primaryCategoryName: 'Restaurant', 'subCategory._id': restaurant?.category },
+    {
+      primaryCategoryName: 'Restaurant',
+      'subCategory._id': restaurant?.category,
+    },
     { 'subCategory.$': 1 }
   );
 
@@ -154,28 +158,7 @@ const addRestaurantIntoDB = async (req: Request, res: Response) => {
     (sum: number, item: any) => sum + Number(item.price || 0),
     0
   );
-
-  // day count calculation
-  function timeStrToHours(timeStr: string) {
-    const [time, meridian] = timeStr.split(' ');
-    let [hours, minutes] = time.split(':').map(Number);
-
-    if (meridian === 'PM' && hours !== 12) hours += 12;
-    if (meridian === 'AM' && hours === 12) hours = 0;
-
-    return hours + minutes / 60;
-  }
-
-  // Convert openTime and closeTime to hours
-  const openHours = timeStrToHours(openTime);
-  const closeHours = timeStrToHours(closeTime);
-
-  // Calculate total hours difference
-  let totalHours = closeHours - openHours;
-  if (totalHours < 0) totalHours += 24; // handle overnight shifts
-
-  // Calculate dayCount as fractional days
-  const dayCount = Number((totalHours / 24).toFixed(2));
+  const isOpenNow = isRestaurantOpen(openTime, closeTime);
 
   //Prepare restaurant data
   const restaurantData = {
@@ -183,8 +166,8 @@ const addRestaurantIntoDB = async (req: Request, res: Response) => {
     owner: isExistsUser?._id,
     thumbnail: thumbnailUrl,
     totalPrice,
-    dayCount,
     menuItems: processedMenuItems,
+     status: isOpenNow ? 'Open' : 'Closed', 
   };
 
   const result = await Restaurant.create(restaurantData);
