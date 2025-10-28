@@ -22,6 +22,7 @@ export interface IRestaurant extends Document {
   closeTime: string;
   serviceArea: string;
   totalPrice: number;
+  status: string;
   menuItems: IMenuItems[];
   extraChargePerHour: string;
   averageRating?: number;

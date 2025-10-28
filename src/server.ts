@@ -5,7 +5,7 @@ import app from './app';
 import { errorLogger, logger } from './shared/logger';
 import { config } from './config';
 import { socketHelper } from './socket/socket';
-import { startAllCronJobs } from './jobs/bookingStatusJob';
+import { startAllCronJobs } from './jobs/automaticUpdateJobService';
 
 // Type for server instance
 let server: any;
@@ -30,7 +30,7 @@ const connectToDatabase = async (): Promise<void> => {
 
     logger.info('🚀 Database connected successfully');
 
-    // Start the booking status cron job after DB connection
+    // Start the all cron job after DB connection
     startAllCronJobs();
 
     // Set up mongoose connection event listeners

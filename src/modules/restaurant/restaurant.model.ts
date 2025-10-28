@@ -74,8 +74,8 @@ const restaurantSchema = new Schema<IRestaurant>(
       required: true,
       min: 0,
     },
-    dayCount: {
-      type: Number,
+    status: {
+      type: String,
       required: true,
       min: 0,
     },
