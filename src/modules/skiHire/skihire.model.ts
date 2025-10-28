@@ -41,15 +41,15 @@ const skiHireSchema = new Schema<ISkiHire>(
       required: true,
       trim: true,
     },
-    ownerId: {
+    owner: {
       type: Schema.Types.ObjectId,
       ref: 'User',
       required: true,
     },
     extraChargePerHour: {
       type: Number,
-      required: true,
-      min: 0,
+      required: false,
+      default: 0 , 
     },
     totalPrice: {
       type: Number,

@@ -13,10 +13,10 @@ export interface IProductItems {
 
 export interface ISkiHire extends Document {
   category: Types.ObjectId;
+  owner: Types.ObjectId; 
   title: string;
   thumbnail: string;
-  ownerId: Types.ObjectId; 
-  extraChargePerHour: number;
+  extraChargePerHour?: number;
   totalPrice: number;
   serviceArea: string;
   productItems: IProductItems[];

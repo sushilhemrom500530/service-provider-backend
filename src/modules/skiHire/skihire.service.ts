@@ -33,7 +33,7 @@ const getSingleSkiHireFromDB = async (id: string, user: JwtPayload) => {
   }
 
   const skiHire = await SkiHire.findById(id).populate({
-    path: 'ownerId',
+    path: 'owner',
     select: '-isDeleted -agreeTermsCondition -__v -createdAt -updatedAt',
   });
   if (!skiHire)
@@ -157,13 +157,11 @@ const addSkiHireIntoDB = async (req: Request, res: Response) => {
   );
 
   const skiHireData = {
-    category:
-      new mongoose.Types.ObjectId(categoryId) ||
-      new mongoose.Types.ObjectId(req.body.category),
+    category: categoryId || req.body.category,
     title: req.body.title,
     thumbnail: thumbnailUrl,
-    ownerId: isExistsUser._id,
-    extraChargePerHour: Number(req.body.extraChargePerHour) || 0,
+    owner: isExistsUser._id,
+    extraChargePerHour: Number(req.body.extraChargePerHour || 0) || 0,
     totalPrice,
     serviceArea: req.body.serviceArea,
     productItems: processedProductItems,
@@ -288,7 +286,7 @@ const updateSkiHireIntoDB = async (req: Request) => {
     }
 
     const existingLength = isExistsSkiHire?.productItems.length;
-    
+
     if (productItems.length !== existingLength) {
       throw new AppError(
         StatusCodes.BAD_REQUEST,
@@ -364,7 +362,7 @@ const deleteSkiHireIntoDB = async (id: string, user: JwtPayload) => {
     throw new AppError(StatusCodes.NOT_FOUND, 'Ski Hire not found.');
   }
 
-  if (skiHire?.ownerId.toString() !== isExistsUser?._id.toString()) {
+  if (skiHire?.owner.toString() !== isExistsUser?._id.toString()) {
     throw new AppError(
       StatusCodes.FORBIDDEN,
       'You are not authorized to delete this ski hire.'
