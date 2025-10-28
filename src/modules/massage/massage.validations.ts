@@ -1,11 +1,9 @@
 import { z } from 'zod';
 
-//  const durationByAmountSchema = z.object({
-//   duration: z.string({ required_error: 'Duration is required' }),
-//   amount: z.coerce
-//       .number()
-//       .min(1, { message: 'Amount must be greater than zero' }),
-// });
+const priceByDurationSchema = z.object({
+  duration: z.string().min(1, 'Duration is required'),
+  amount: z.coerce.number().min(1, 'Amount must be greater than zero'),
+});
 
 const createMassage = z.object({
   body: z.object({
@@ -13,12 +11,14 @@ const createMassage = z.object({
     title: z.string({ required_error: 'Title is required' }),
     openTime: z.string({ required_error: 'Open Time is required' }),
     closeTime: z.string({ required_error: 'Close Time is required' }),
-
+    priceByDuration: z
+      .array(priceByDurationSchema)
+      .min(1, 'At least one price option is required'),
     serviceArea: z.string({ required_error: 'Service area is required' }),
     amount: z.coerce
       .number()
-      .min(1, { message: 'Amount must be greater than zero' }), 
-     
+      .min(1, { message: 'Amount must be greater than zero' }),
+
     benefits: z.string({ required_error: 'Benefits are required' }),
     ourRecommendations: z.string({
       required_error: 'Our recommendations are required',
@@ -31,9 +31,13 @@ const updateMassage = z.object({
     category: z.string().min(1, 'Category ID cannot be empty').optional(),
     title: z.string().min(1, 'Title cannot be empty').optional(),
     openTime: z.string().optional(),
-    closeTime: z.string().optional(), 
+    closeTime: z.string().optional(),
+    priceByDuration: z
+      .array(priceByDurationSchema)
+      .min(1, 'At least one price option is required')
+      .optional(),
     serviceArea: z.string().optional(),
-    amount: z.string().optional(), 
+    amount: z.string().optional(),
     benefits: z.string().optional(),
     ourRecommendations: z.string().optional(),
   }),

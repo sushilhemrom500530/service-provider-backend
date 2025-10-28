@@ -21,7 +21,8 @@ const menuItemSchema = z.object({
   }),
   quantity: z.coerce
     .number()
-    .min(1, { message: 'Quantity must be greater than zero' }),
+    .min(1, { message: 'Quantity must be greater than zero' })
+    .max(25, { message: 'Quantity must be less than or equal to 25' }),
 });
 
 const createRestaurant = z.object({

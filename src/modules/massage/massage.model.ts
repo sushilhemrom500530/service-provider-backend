@@ -1,7 +1,18 @@
 import mongoose, { Schema, Model } from 'mongoose';
 import { IMassage } from './massage.interface';
 import { reviewSchema, refundSchema } from './../common/common.schema';
- 
+
+const priceByDurationSchema = new mongoose.Schema({
+  duration: {
+    type: String,
+    required: true,
+  },
+  amount: {
+    type: Number,
+    required: true,
+  },
+});
+
 const massageSchema = new Schema<IMassage>(
   {
     category: {
@@ -33,7 +44,11 @@ const massageSchema = new Schema<IMassage>(
       type: String,
       required: true,
       trim: true,
-    }, 
+    },
+    priceByDuration: {
+      type: [priceByDurationSchema],
+      required: true,
+    },
     serviceArea: {
       type: String,
       required: true,
@@ -42,7 +57,7 @@ const massageSchema = new Schema<IMassage>(
       type: Number,
       required: true,
       min: 0,
-    }, 
+    },
     benefits: {
       type: String,
       required: true,
