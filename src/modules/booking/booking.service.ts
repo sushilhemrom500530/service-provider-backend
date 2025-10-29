@@ -12,6 +12,7 @@ import { SkiHire } from './../skiHire/skihire.model';
 import { Transport } from './../transport/transport.model';
 import { Restaurant } from './../restaurant/restaurant.model';
 import { Massage } from './../massage/massage.model';
+import { processToPayment } from './../common/common.payment';
 
 const getAllBookingFromDB = async (user: JwtPayload) => {
   const isExistsUser = await User.findOne({ email: user?.email });
@@ -151,7 +152,6 @@ const getMyBooking = async (user: JwtPayload) => {
       bookingItems: enrichedBookingItems,
     };
 
-    
     if (label) bookingObj?.timeLabel = label;
 
     return bookingObj;
@@ -159,7 +159,6 @@ const getMyBooking = async (user: JwtPayload) => {
 
   return bookingsWithTimeInfo;
 };
-
 
 export const addBookingIntoDB = async (user: JwtPayload, payload: IBooking) => {
   // check user
@@ -344,7 +343,14 @@ export const addBookingIntoDB = async (user: JwtPayload, payload: IBooking) => {
     );
   }
 
-  return result;
+  const paymentRequest = await processToPayment({
+    bookingId: result?._id,
+    userId: isExistsUser?._id,
+    amount: result.totalPrice,
+    category:result?.category
+  });
+
+  return paymentRequest;
 };
 
 export const updateBookingIntoDB = async (
@@ -387,10 +393,9 @@ export const updateBookingIntoDB = async (
   return result;
 };
 
-
 export const updatePermitBookingIntoDB = async (
   user: JwtPayload,
-  isPermitted: boolean, 
+  isPermitted: boolean,
   bookingId: string
 ) => {
   // Check user

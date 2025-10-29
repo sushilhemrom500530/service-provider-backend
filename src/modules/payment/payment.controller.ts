@@ -7,18 +7,18 @@ import pick from '../../shared/pick';
 import { PaymentService } from './payment.service';
 
 // Process PayPal payment
-const processToPayment = catchAsync(async (req: Request, res: Response) => {
+const getAllPayment = catchAsync(async (req: Request, res: Response) => {
   // const { bookingId, paypalOrderId, transactionId } = req.body;
   
-  const result = await PaymentService.processToPayment(req.body);
+  const result = await PaymentService.getAllPayment();
   
   sendResponse(res, {
     code: StatusCodes.OK,
-    message: 'Payment processed successfully',
+    message: 'Payment Retrieved successfully',
     data: result,
   });
 });
  
 export const PaymentController = {
-  processToPayment, 
+  getAllPayment, 
 };

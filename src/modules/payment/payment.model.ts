@@ -1,9 +1,9 @@
 import mongoose, { Schema } from 'mongoose';
-import paginationPlugin from '../../common/plugins/pagination.plugin';
 import {
   IPayment,
   IPaymentModel,
   TransactionStatus,
+  PaymentGateway
 } from './payment.interface';
 
 const paymentSchema = new Schema<IPayment>(
@@ -19,8 +19,6 @@ const paymentSchema = new Schema<IPayment>(
       ref: 'User',
       required: true,
     },
-
-    // Payment information
     amount: {
       type: Number,
       required: true,
@@ -30,14 +28,12 @@ const paymentSchema = new Schema<IPayment>(
       type: String,
       default: 'USD',
     },
-    paymentMethod: {
+    paymentMethodType: {
       type: String,
       enum: ['Card'],
       required: true,
-      default: 'Card',  
+      default: 'Card',
     },
-
-    // Gateway-specific fields
     transactionId: {
       type: String,
       required: true,
@@ -48,12 +44,16 @@ const paymentSchema = new Schema<IPayment>(
       required: true,
       unique: true,
     },
-
-    // Status tracking
     status: {
       type: String,
       enum: Object.values(TransactionStatus),
       default: TransactionStatus.UNPAID,
+    },
+    gateway: {
+      type: String,
+      enum: Object.values(PaymentGateway), 
+      required: true,
+      default: PaymentGateway.STRIPE, 
     },
   },
   {
@@ -61,31 +61,5 @@ const paymentSchema = new Schema<IPayment>(
   }
 );
 
-// ✅ Indexes (use correct field names)
-paymentSchema.index({ booking: 1, status: 1 });
-paymentSchema.index({ user: 1, status: 1 });
-paymentSchema.index({ paymentMethod: 1, status: 1 });
-
-// ✅ REMOVE conflicting virtuals — or rename them
-// Instead of redefining 'booking' and 'user', rename them if needed
-
-paymentSchema.virtual('bookingDetails', {
-  ref: 'Booking',
-  localField: 'booking',
-  foreignField: '_id',
-  justOne: true,
-});
-
-paymentSchema.virtual('userDetails', {
-  ref: 'User',
-  localField: 'user',
-  foreignField: '_id',
-  justOne: true,
-});
-
-// ✅ Add pagination plugin
-paymentSchema.plugin(paginationPlugin);
-
-const Payment = mongoose.model<IPayment, IPaymentModel>('Payment', paymentSchema);
-
-export default Payment;
+export const Payment: Model<IPayment> =
+  mongoose.models.Payment || mongoose.model<IPayment>('Payment', paymentSchema);

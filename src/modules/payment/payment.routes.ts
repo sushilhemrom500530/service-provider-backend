@@ -7,11 +7,10 @@ import { paymentValidations } from './payment.validations';
 const router = Router();
 
 // Process PayPal payment
-router.post(
-  '/payment-request',
-  auth('User'),
-  // validateRequest(paymentValidations.processToPayment),
-  PaymentController.processToPayment
+router.get(
+  '/all',
+  auth('User'), 
+  PaymentController.getAllPayment
 );
  
 export const PaymentRoutes = router;

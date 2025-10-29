@@ -1,15 +1,9 @@
 import { Model, Types } from 'mongoose';
-import {
-  IPaginationOptions,
-  IPaginationResult,
-} from './../../types/pagination';
 
 export enum TransactionStatus {
-  PENDING = 'pending',
+  PENDING = 'Pending',
   PAID = 'Paid',
   UNPAID = 'Unpaid',
-  FAILED = 'failed',
-  REFUNDED = 'refunded',
 }
 
 export enum PaymentGateway {
@@ -17,35 +11,25 @@ export enum PaymentGateway {
   PAYPAL = 'paypal',
 }
 
-
 export interface IPayment {
-  _id?: string;
+  booking: Types.ObjectId;
+  user: Types.ObjectId;
 
-  // Transaction details
-  bookingId: Types.ObjectId;
-  userId: Types.ObjectId;
-
-  // Payment information
   amount: number;
   currency: string;
-  paymentMethod: [string] | ['Card'];
 
-  // Gateway-specific fields
-  transactionId?: string; // PayPal transaction ID
-  paypalOrderId?: string; // PayPal order ID
-  zelleReference?: string; // Zelle reference number
+  paymentMethodType: 'Card';
 
-  // Status tracking
+  transactionId: string;
+  sessionId: string;
+
   status: TransactionStatus;
 
-  // Metadata
+  gateway: PaymentGateway;  
+
   createdAt?: Date;
   updatedAt?: Date;
 }
 
-export interface IPaymentModel extends Model<IPayment> {
-  paginate(
-    filters: Record<string, any>,
-    options: IPaginationOptions
-  ): Promise<IPaginationResult<IPayment>>;
-}
+// ✅ Properly typed model
+export type IPaymentModel = Model<IPayment>;
