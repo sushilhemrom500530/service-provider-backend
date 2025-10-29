@@ -347,7 +347,8 @@ export const addBookingIntoDB = async (user: JwtPayload, payload: IBooking) => {
     bookingId: result?._id,
     userId: isExistsUser?._id,
     amount: result.totalPrice,
-    category:result?.category
+    category:result?.category,
+    ownerId: productOwner?._id
   });
 
   return paymentRequest;

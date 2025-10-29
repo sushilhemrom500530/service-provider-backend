@@ -3,6 +3,7 @@ import stripe from './../../utils/stripe';
 import { config } from './../../config/index';
 import { Types } from 'mongoose';
 import { Payment } from './../payment/payment.model';
+import { updateOrCreateWallet } from './../wallet/wallet.service';
 import {
   TransactionStatus,
   PaymentGateway,
@@ -15,63 +16,73 @@ interface IProcessPaymentPayload {
   amount: number;
   currency?: string;
   category?: string;
+  ownerId?: string;
 }
 
 export const processToPayment = async (payload: IProcessPaymentPayload) => {
-  const { bookingId, userId, amount, currency = 'usd', category } = payload;
+  const {
+    bookingId,
+    userId,
+    amount,
+    currency = 'usd',
+    category,
+    ownerId,
+  } = payload;
 
   // Generate unique transaction ID
   const transactionId = generateTransactionId();
 
   // Create a Stripe Checkout session
-  const session = await stripe.checkout.sessions.create({
-    payment_method_types: ['card'],
-    line_items: [
-      {
-        price_data: {
-          currency,
-          product_data: {
-            name: category || 'Booking Payment',
-            description: `Booking ID: ${bookingId}`,
+  try {
+    const session = await stripe.checkout.sessions.create({
+      payment_method_types: ['card'],
+      line_items: [
+        {
+          price_data: {
+            currency,
+            product_data: {
+              name: category || 'Booking Payment',
+              description: `Booking ID: ${bookingId}`,
+            },
+            unit_amount: Math.round(amount * 100), // Stripe expects cents
           },
-          unit_amount: Math.round(amount * 100), // Stripe expects cents
+          quantity: 1,
         },
-        quantity: 1,
+      ],
+      mode: 'payment',
+      success_url: `${config.client.url}/payment/success?session_id={CHECKOUT_SESSION_ID}`,
+      cancel_url: `${config.client.url}/payment/cancel`,
+      metadata: {
+        bookingId: bookingId.toString(),
+        userId: userId.toString(),
+        transactionId: transactionId.toString(),
+        amount: amount.toString(),
+        currency: currency.toString(),
       },
-    ],
-    mode: 'payment',
-    success_url: `${config.client.url}/payment/success?session_id={CHECKOUT_SESSION_ID}`,
-    cancel_url: `${config.client.url}/payment/cancel`,
-    metadata: {
-      bookingId: bookingId.toString(),
-      userId: userId.toString(),
-      transactionId: transactionId.toString(),
-      amount: amount.toString(),
-      currency: currency.toString(),
-    },
-  });
+    });
 
-  const paymentPayload: IPayment = {
-    booking: new Types.ObjectId(bookingId),
-    user: new Types.ObjectId(userId),
-    amount,
-    currency,
-    transactionId,
-    sessionId: session.id,
-    status: TransactionStatus.PENDING,
-    gateway: PaymentGateway.STRIPE,
-    paymentMethodType: 'Card',
-  };
+    const paymentPayload: IPayment = {
+      booking: new Types.ObjectId(bookingId),
+      user: new Types.ObjectId(userId),
+      amount,
+      currency,
+      transactionId,
+      sessionId: session.id,
+      status: TransactionStatus.PENDING,
+      gateway: PaymentGateway.STRIPE,
+      paymentMethodType: 'Card',
+    };
 
-  if(session?.id){
-      await Payment.create(paymentPayload);
+    await Payment.create(paymentPayload);
 
+    // for wallet 
+    await updateOrCreateWallet(ownerId, amount);
+
+    return {
+      sessionId: session.id,
+      sessionUrl: session.url,
+    };
+  } catch (error) {
+    throw new Error(error);
   }
-
-
-  return {
-    sessionId: session.id,
-    sessionUrl: session.url,
-    session,
-  };
 };
