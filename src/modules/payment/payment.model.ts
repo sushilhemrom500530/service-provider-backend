@@ -1,24 +1,24 @@
 import mongoose, { Schema } from 'mongoose';
-import paginationPlugin from '../../common/plugins/pagination.plugin';
-import { IPayment, IPaymentModel, PaymentGateway, TransactionStatus } from './payment.interface';
+import {
+  IPayment,
+  IPaymentModel,
+  TransactionStatus,
+  PaymentGateway
+} from './payment.interface';
 
-const paymentSchema = new Schema(
+const paymentSchema = new Schema<IPayment>(
   {
     // Transaction details
-    bookingId: {
+    booking: {
       type: mongoose.Schema.Types.ObjectId,
       ref: 'Booking',
       required: true,
-
     },
-    userId: {
+    user: {
       type: mongoose.Schema.Types.ObjectId,
       ref: 'User',
       required: true,
-
     },
-    
-    // Payment information
     amount: {
       type: Number,
       required: true,
@@ -28,63 +28,38 @@ const paymentSchema = new Schema(
       type: String,
       default: 'USD',
     },
-    paymentMethod: {
+    paymentMethodType: {
       type: String,
-      enum: Object.values(PaymentGateway),
+      enum: ['Card'],
       required: true,
+      default: 'Card',
     },
-    
-    // Gateway-specific fields
     transactionId: {
       type: String,
+      required: true,
+      unique: true,
     },
-    paypalOrderId: {
+    sessionId: {
       type: String,
+      required: true,
+      unique: true,
     },
-    zelleReference: {
-      type: String,
-    },
-    
-    // Status tracking
     status: {
       type: String,
       enum: Object.values(TransactionStatus),
-      default: TransactionStatus.PENDING,
-
+      default: TransactionStatus.UNPAID,
+    },
+    gateway: {
+      type: String,
+      enum: Object.values(PaymentGateway), 
+      required: true,
+      default: PaymentGateway.STRIPE, 
     },
   },
   {
     timestamps: true,
-    toJSON: {
-      virtuals: true,
-    },
   }
 );
 
-// Indexes for better query performance
-paymentSchema.index({ bookingId: 1, status: 1 });
-paymentSchema.index({ userId: 1, status: 1 });
-paymentSchema.index({ paymentMethod: 1, status: 1 });
-
-// Virtual for booking details
-paymentSchema.virtual('booking', {
-  ref: 'Booking',
-  localField: 'bookingId',
-  foreignField: '_id',
-  justOne: true,
-});
-
-// Virtual for user details
-paymentSchema.virtual('user', {
-  ref: 'User',
-  localField: 'userId',
-  foreignField: '_id',
-  justOne: true,
-});
-
-// Add pagination plugin
-paymentSchema.plugin(paginationPlugin);
-
-const Payment = mongoose.model<IPayment, IPaymentModel>('Payment', paymentSchema);
-
-export default Payment;
+export const Payment: Model<IPayment> =
+  mongoose.models.Payment || mongoose.model<IPayment>('Payment', paymentSchema);

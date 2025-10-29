@@ -69,7 +69,7 @@ const createBookingSchema = z.object({
       .preprocess(arg => (arg ? new Date(arg as string) : undefined), z.date())
       .optional(),
 
-    items: z.array(bookingItemSchema).optional(),
+    bookingItems: z.array(bookingItemSchema).optional(),
     orderType: z.string().optional(),
     itemCount: z.number().optional(),
     duration: z.string().optional(),
@@ -84,8 +84,17 @@ export const updateBookingSchema = z.object({
     bookingStatus: bookingStatusEnum,
   }),
 });
+export const updatePermitBookingSchema = z.object({
+  body: z.object({
+    isPermitted: z.boolean({
+      required_error: 'Permitted is required',
+      invalid_type_error: 'Permitted must be a boolean',
+    }),
+  }),
+});
 
 export const BookingRoutesValidations = {
   createBookingSchema,
   updateBookingSchema,
+  updatePermitBookingSchema
 };

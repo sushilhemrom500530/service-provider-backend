@@ -12,6 +12,7 @@ import { SkiHire } from './../skiHire/skihire.model';
 import { Transport } from './../transport/transport.model';
 import { Restaurant } from './../restaurant/restaurant.model';
 import { Massage } from './../massage/massage.model';
+import { processToPayment } from './../common/common.payment';
 
 const getAllBookingFromDB = async (user: JwtPayload) => {
   const isExistsUser = await User.findOne({ email: user?.email });
@@ -19,35 +20,26 @@ const getAllBookingFromDB = async (user: JwtPayload) => {
     throw new AppError(StatusCodes.NOT_FOUND, 'User not found.');
   }
 
-  let result;
+  // Fetch all bookings first
+  const result = await Booking.find()
+    .populate({
+      path: 'product',
+      select:
+        '-items -owner -totalPrice -serviceArea -__v -reviews -refunds -averageRating -createdAt -updatedAt',
+    })
+    .populate('user', 'fullName email address phoneNumber')
+    .sort({ createdAt: -1 });
 
-  if (isExistsUser.role === 'Admin') {
-    // Admin sees all bookings
-    result = await Booking.find()
-      .populate({
-        path: 'productId',
-        populate: { path: 'owner', select: 'fullName email providerType' },
-      })
-      .populate('userId', 'fullName email address phoneNumber')
-      .sort({ createdAt: -1 });
-  } else if (isExistsUser.role === 'Provider') {
-    //  Only see bookings for their own products
-    result = await Booking.find()
-      .populate({
-        path: 'productId',
-        populate: { path: 'owner', select: 'fullName email providerType' },
-      })
-      .populate('userId', 'fullName email address phoneNumber')
-      .sort({ createdAt: -1 });
-
+  // Filter by provider (if needed)
+  if (isExistsUser.role === 'Provider') {
     result = result.filter(
       (booking: any) =>
-        booking.productId?.owner?._id?.toString() ===
-        isExistsUser._id.toString()
+        booking.product?.owner?._id?.toString() === isExistsUser._id.toString()
     );
-  } else {
+  } else if (isExistsUser.role !== 'Admin') {
     throw new AppError(StatusCodes.FORBIDDEN, 'Invalid role.');
   }
+
   return result;
 };
 
@@ -56,11 +48,43 @@ const getSingleBookingFromDB = async (id: string, user: JwtPayload) => {
   if (!isExistsUser)
     throw new AppError(StatusCodes.NOT_FOUND, 'User not found.');
 
-  const result = await Booking.findById(id)
-    .populate('userId', 'fullName email address phoneNumber')
-    .populate('productId');
+  const booking = await Booking.findById(id)
+    .populate({
+      path: 'product',
+      select:
+        '-owner -totalPrice -__v -reviews -refunds -averageRating -createdAt -updatedAt',
+    })
+    .populate(
+      'user',
+      '_id fullName email profileUrl address phoneNumber status'
+    )
+    .lean();
 
-  return result;
+  if (!booking) {
+    throw new AppError(StatusCodes.NOT_FOUND, 'Booking not found.');
+  }
+
+  const product = booking.product;
+  const productItems = product?.items || [];
+
+  const enrichedBookingItems = booking.bookingItems.map((bi: any) => {
+    const matchedItem = productItems.find(
+      (itm: any) => itm._id.toString() === bi.itemId.toString()
+    );
+
+    return {
+      ...bi,
+      item: matchedItem ? { ...matchedItem } : null,
+    };
+  });
+
+  delete product.items;
+
+  return {
+    ...booking,
+    product,
+    bookingItems: enrichedBookingItems,
+  };
 };
 const getMyBooking = async (user: JwtPayload) => {
   const isExistsUser = await User.findOne({ email: user?.email });
@@ -68,41 +92,69 @@ const getMyBooking = async (user: JwtPayload) => {
     throw new AppError(StatusCodes.NOT_FOUND, 'User not found.');
 
   // Get user bookings and populate related data
-  const bookings = await Booking.find({ userId: isExistsUser._id })
-    .populate('userId', 'fullName email address phoneNumber')
-    .populate('productId')
+  const bookings = await Booking.find({ user: isExistsUser._id })
+    .populate('user', 'fullName email address phoneNumber')
+    .populate(
+      'product',
+      '-owner -totalPrice -__v -reviews -refunds -averageRating -createdAt -updatedAt'
+    )
     .sort({ createdAt: -1 });
 
   const msToTime = (ms: number) => {
     const totalSeconds = Math.floor(ms / 1000);
     const hours = Math.floor(totalSeconds / 3600);
     const minutes = Math.floor((totalSeconds % 3600) / 60);
-    // const seconds = totalSeconds % 60;
     return `${hours}h ${minutes}m`;
   };
 
   const now = new Date();
 
-  const bookingsWithTimeInfo = bookings.map(booking => {
-    const startTime = new Date(booking.startDateAndTime);
-    const endTime = new Date(booking.endDateAndTime);
+  const bookingsWithTimeInfo = bookings?.map(booking => {
+    const startTime = new Date(booking?.startDateAndTime);
+    const endTime = new Date(booking?.endDateAndTime);
 
-    let label: string = '';
+    let label: string | undefined;
 
-    if (now < endTime) {
-      // Booking is ongoing
-      const timeLeft = endTime.getTime() - now.getTime();
-      label = `Time Left: ${msToTime(timeLeft)}`;
-    } else {
-      // Booking expired
-      const overTime = now.getTime() - endTime.getTime();
-      label = `Over Time: ${msToTime(overTime)}`;
+    // Only calculate time info for Ski_Hire or Transport
+    if (['Ski_Hire', 'Transport'].includes(booking?.category)) {
+      if (now < endTime) {
+        // Booking is ongoing
+        const timeLeft = endTime.getTime() - now.getTime();
+        label = `Time Left: ${msToTime(timeLeft)}`;
+      } else {
+        // Booking expired
+        const overTime = now.getTime() - endTime.getTime();
+        label = `Over Time: ${msToTime(overTime)}`;
+      }
     }
 
-    return {
+    // Enrich booking items with product item details
+    const product = booking.product?.toObject?.() || booking.product;
+    const productItems = product?.items || [];
+
+    const enrichedBookingItems = booking.bookingItems.map((bi: any) => {
+      const matchedItem = productItems.find(
+        (itm: any) => itm._id.toString() === bi.itemId.toString()
+      );
+
+      return {
+        ...(bi.toObject?.() || bi),
+        item: matchedItem ? { ...matchedItem } : null,
+      };
+    });
+
+    // Remove full product items array to avoid duplication
+    delete product.items;
+
+    const bookingObj: any = {
       ...booking.toObject(),
-      timeLabel: label,
+      product,
+      bookingItems: enrichedBookingItems,
     };
+
+    if (label) bookingObj?.timeLabel = label;
+
+    return bookingObj;
   });
 
   return bookingsWithTimeInfo;
@@ -167,7 +219,7 @@ export const addBookingIntoDB = async (user: JwtPayload, payload: IBooking) => {
   if (
     (productOwner?.providerType === 'Restaurant' ||
       productOwner?.providerType === 'Ski_Hire') &&
-    (!payload?.items || payload.items.length === 0)
+    (!payload?.bookingItems || payload.bookingItems.length === 0)
   ) {
     throw new AppError(
       StatusCodes.BAD_REQUEST,
@@ -185,7 +237,7 @@ export const addBookingIntoDB = async (user: JwtPayload, payload: IBooking) => {
   // Validate booking items
   const validatedItems = [];
 
-  for (const bookedItem of payload?.items || []) {
+  for (const bookedItem of payload?.bookingItems || []) {
     const foundItem = product?.items.find(
       (menuItem: any) => menuItem?._id.toString() === bookedItem?.itemId
     );
@@ -231,7 +283,7 @@ export const addBookingIntoDB = async (user: JwtPayload, payload: IBooking) => {
       StatusCodes.BAD_REQUEST,
       'All booked items must have the same menuType.'
     );
-  } 
+  }
 
   if (validatedItems.length === 0) {
     throw new AppError(
@@ -276,21 +328,29 @@ export const addBookingIntoDB = async (user: JwtPayload, payload: IBooking) => {
   const bookingData = {
     ...payload,
     totalPrice,
+    product: payload?.productId,
     user: isExistsUser?._id,
     category: productOwner?.providerType,
     productModel,
     menyType: selectedMenuType,
   };
 
-  // const result = await Booking.create(bookingData);
-  // if (!result) {
-  //   throw new AppError(
-  //     StatusCodes.BAD_REQUEST,
-  //     'Something went wrong. Booking not created.'
-  //   );
-  // }
+  const result = await Booking.create(bookingData);
+  if (!result) {
+    throw new AppError(
+      StatusCodes.BAD_REQUEST,
+      'Something went wrong. Booking not created.'
+    );
+  }
 
-  return { bookingData, product, validatedItems };
+  const paymentRequest = await processToPayment({
+    bookingId: result?._id,
+    userId: isExistsUser?._id,
+    amount: result.totalPrice,
+    category:result?.category
+  });
+
+  return paymentRequest;
 };
 
 export const updateBookingIntoDB = async (
@@ -305,7 +365,7 @@ export const updateBookingIntoDB = async (
   }
   // console.log('find current user ===========>', isExistsUser);
   const existsBooking = await Booking.findById(bookingId).populate({
-    path: 'productId',
+    path: 'product',
     select: 'owner',
   });
 
@@ -314,7 +374,7 @@ export const updateBookingIntoDB = async (
   }
 
   // Check ownership
-  const owner = existsBooking.productId?.owner;
+  const owner = existsBooking?.product?.owner;
   if (owner?.toString() !== isExistsUser._id.toString()) {
     throw new AppError(
       StatusCodes.FORBIDDEN,
@@ -327,8 +387,48 @@ export const updateBookingIntoDB = async (
     { $set: { bookingStatus: payload } },
     { new: true }
   )
-    .populate('userId', 'fullName email')
-    .populate('productId');
+    .populate('user', 'fullName email')
+    .populate('product');
+
+  return result;
+};
+
+export const updatePermitBookingIntoDB = async (
+  user: JwtPayload,
+  isPermitted: boolean,
+  bookingId: string
+) => {
+  // Check user
+  const isExistsUser = await User.findOne({ email: user?.email });
+  if (!isExistsUser) {
+    throw new AppError(StatusCodes.NOT_FOUND, 'User not found.');
+  }
+  // console.log('find current user ===========>', isExistsUser);
+  const existsBooking = await Booking.findById(bookingId).populate({
+    path: 'product',
+    select: 'owner',
+  });
+
+  if (!existsBooking) {
+    throw new AppError(StatusCodes.NOT_FOUND, 'Booking not found.');
+  }
+
+  // Check ownership
+  const owner = existsBooking?.product?.owner;
+  if (owner?.toString() !== isExistsUser._id.toString()) {
+    throw new AppError(
+      StatusCodes.FORBIDDEN,
+      'You are not the owner of this product. Cannot update booking status.'
+    );
+  }
+
+  const result = await Booking.findByIdAndUpdate(
+    bookingId,
+    { $set: { isPermitted } },
+    { new: true }
+  )
+    .populate('user', 'fullName email')
+    .populate('product');
 
   return result;
 };
@@ -349,7 +449,7 @@ export const refundBookingIntoDB = async (
   }
 
   const existsBooking = await Booking.findById(bookingId).populate({
-    path: 'productId',
+    path: 'product',
     select: 'owner',
   });
 
@@ -362,11 +462,11 @@ export const refundBookingIntoDB = async (
     { $set: { bookingStatus: 'Cancel' } },
     { new: true }
   )
-    .populate('userId', 'fullName email')
-    .populate('productId');
+    .populate('user', 'fullName email')
+    .populate('product');
 
   // Identify the correct product model dynamically
-  const productId = existsBooking?.productId;
+  const productId = existsBooking?.product;
   const productModel = existsBooking?.productModel; // e.g. "SkiPass" or "Restaurant"
 
   if (!productId || !productModel) {
@@ -426,7 +526,7 @@ export const refundBookingIntoDB = async (
 
 export const deleteBookingIntoDB = async (id: string, user: JwtPayload) => {
   // check user
-  const isExistsUser = await User.findById(user?.userId);
+  const isExistsUser = await User.findOne({ email: user?.email });
   if (!isExistsUser) {
     throw new AppError(StatusCodes.NOT_FOUND, 'User not found.');
   }
@@ -467,6 +567,7 @@ export const BookingService = {
   getSingleBookingFromDB,
   addBookingIntoDB,
   updateBookingIntoDB,
+  updatePermitBookingIntoDB,
   refundBookingIntoDB,
   deleteBookingIntoDB,
   getMyBooking,

@@ -41,7 +41,7 @@ export interface IBooking extends Document {
   startDateAndTime?: Date;
   endDateAndTime?: Date;
 
-  items?: IBookingItem[];
+  bookingItems?: IBookingItem[];
   duration?: string;
   bookinRequestText?: string;
   menyType?: string;
@@ -49,6 +49,8 @@ export interface IBooking extends Document {
   bookingStatus: BookingStatus;
 
   totalPrice: number;
+  
+  isPermitted: boolean | false;
 
   createdAt?: Date;
   updatedAt?: Date;

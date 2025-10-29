@@ -47,6 +47,14 @@ router.patch(
   BookingController.updateBookingStatus
 );
 
+// update permission
+router.patch(
+  '/update-permit/:id',
+  auth('Provider'),
+  validateRequest(BookingRoutesValidations.updatePermitBookingSchema),
+  BookingController.updatePermitBookingStatus
+);
+
 // refund
 router.patch(
   '/refund/:id',

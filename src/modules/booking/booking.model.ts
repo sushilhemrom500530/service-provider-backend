@@ -5,6 +5,7 @@ const bookingItemSchema = new Schema(
   {
     itemId: {
       type: Schema.Types.ObjectId,
+      ref: 'items',
       required: true,
     },
     quantity: {
@@ -26,7 +27,7 @@ const bookingSchema = new Schema<IBooking>(
     // This field references different product models dynamically
     product: {
       type: Schema.Types.ObjectId,
-      required: false,
+      required: true,
       refPath: 'productModel', // tells Mongoose which model to use
     },
 
@@ -51,7 +52,7 @@ const bookingSchema = new Schema<IBooking>(
     startDateAndTime: { type: Date },
     endDateAndTime: { type: Date },
 
-    items: [bookingItemSchema],
+    bookingItems: [bookingItemSchema],
 
     duration: { type: String },
     bookingAgentText: { type: String },
@@ -67,6 +68,11 @@ const bookingSchema = new Schema<IBooking>(
     totalPrice: {
       type: Number,
       required: true,
+    },
+
+    isPermitted : {
+      type: Boolean,
+      default: false,
     },
   },
   {
