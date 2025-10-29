@@ -19,7 +19,6 @@ const getAllBookingFromDB = async (user: JwtPayload) => {
     throw new AppError(StatusCodes.NOT_FOUND, 'User not found.');
   }
 
-  
   // Fetch all bookings first
   const result = await Booking.find()
     .populate({
@@ -39,7 +38,6 @@ const getAllBookingFromDB = async (user: JwtPayload) => {
   } else if (isExistsUser.role !== 'Admin') {
     throw new AppError(StatusCodes.FORBIDDEN, 'Invalid role.');
   }
- 
 
   return result;
 };
@@ -55,7 +53,10 @@ const getSingleBookingFromDB = async (id: string, user: JwtPayload) => {
       select:
         '-owner -totalPrice -__v -reviews -refunds -averageRating -createdAt -updatedAt',
     })
-    .populate('user', '_id fullName email profileUrl address phoneNumber status')
+    .populate(
+      'user',
+      '_id fullName email profileUrl address phoneNumber status'
+    )
     .lean();
 
   if (!booking) {
@@ -72,12 +73,12 @@ const getSingleBookingFromDB = async (id: string, user: JwtPayload) => {
 
     return {
       ...bi,
-      itemDetails: matchedItem ? { ...matchedItem } : null,
+      item: matchedItem ? { ...matchedItem } : null,
     };
   });
 
   delete product.items;
- 
+
   return {
     ...booking,
     product,
@@ -90,45 +91,75 @@ const getMyBooking = async (user: JwtPayload) => {
     throw new AppError(StatusCodes.NOT_FOUND, 'User not found.');
 
   // Get user bookings and populate related data
-  const bookings = await Booking.find({ userId: isExistsUser._id })
+  const bookings = await Booking.find({ user: isExistsUser._id })
     .populate('user', 'fullName email address phoneNumber')
-    .populate('product')
+    .populate(
+      'product',
+      '-owner -totalPrice -__v -reviews -refunds -averageRating -createdAt -updatedAt'
+    )
     .sort({ createdAt: -1 });
 
   const msToTime = (ms: number) => {
     const totalSeconds = Math.floor(ms / 1000);
     const hours = Math.floor(totalSeconds / 3600);
     const minutes = Math.floor((totalSeconds % 3600) / 60);
-    // const seconds = totalSeconds % 60;
     return `${hours}h ${minutes}m`;
   };
 
   const now = new Date();
 
-  const bookingsWithTimeInfo = bookings.map(booking => {
-    const startTime = new Date(booking.startDateAndTime);
-    const endTime = new Date(booking.endDateAndTime);
+  const bookingsWithTimeInfo = bookings?.map(booking => {
+    const startTime = new Date(booking?.startDateAndTime);
+    const endTime = new Date(booking?.endDateAndTime);
 
-    let label: string = '';
+    let label: string | undefined;
 
-    if (now < endTime) {
-      // Booking is ongoing
-      const timeLeft = endTime.getTime() - now.getTime();
-      label = `Time Left: ${msToTime(timeLeft)}`;
-    } else {
-      // Booking expired
-      const overTime = now.getTime() - endTime.getTime();
-      label = `Over Time: ${msToTime(overTime)}`;
+    // Only calculate time info for Ski_Hire or Transport
+    if (['Ski_Hire', 'Transport'].includes(booking?.category)) {
+      if (now < endTime) {
+        // Booking is ongoing
+        const timeLeft = endTime.getTime() - now.getTime();
+        label = `Time Left: ${msToTime(timeLeft)}`;
+      } else {
+        // Booking expired
+        const overTime = now.getTime() - endTime.getTime();
+        label = `Over Time: ${msToTime(overTime)}`;
+      }
     }
 
-    return {
+    // Enrich booking items with product item details
+    const product = booking.product?.toObject?.() || booking.product;
+    const productItems = product?.items || [];
+
+    const enrichedBookingItems = booking.bookingItems.map((bi: any) => {
+      const matchedItem = productItems.find(
+        (itm: any) => itm._id.toString() === bi.itemId.toString()
+      );
+
+      return {
+        ...(bi.toObject?.() || bi),
+        item: matchedItem ? { ...matchedItem } : null,
+      };
+    });
+
+    // Remove full product items array to avoid duplication
+    delete product.items;
+
+    const bookingObj: any = {
       ...booking.toObject(),
-      timeLabel: label,
+      product,
+      bookingItems: enrichedBookingItems,
     };
+
+    
+    if (label) bookingObj?.timeLabel = label;
+
+    return bookingObj;
   });
 
   return bookingsWithTimeInfo;
 };
+
 
 export const addBookingIntoDB = async (user: JwtPayload, payload: IBooking) => {
   // check user
