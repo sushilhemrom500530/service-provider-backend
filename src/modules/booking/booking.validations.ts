@@ -69,7 +69,7 @@ const createBookingSchema = z.object({
       .preprocess(arg => (arg ? new Date(arg as string) : undefined), z.date())
       .optional(),
 
-    items: z.array(bookingItemSchema).optional(),
+    bookingItems: z.array(bookingItemSchema).optional(),
     orderType: z.string().optional(),
     itemCount: z.number().optional(),
     duration: z.string().optional(),
