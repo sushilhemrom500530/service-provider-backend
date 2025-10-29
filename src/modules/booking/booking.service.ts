@@ -359,7 +359,7 @@ export const updateBookingIntoDB = async (
   }
   // console.log('find current user ===========>', isExistsUser);
   const existsBooking = await Booking.findById(bookingId).populate({
-    path: 'productId',
+    path: 'product',
     select: 'owner',
   });
 
@@ -368,7 +368,7 @@ export const updateBookingIntoDB = async (
   }
 
   // Check ownership
-  const owner = existsBooking.productId?.owner;
+  const owner = existsBooking?.product?.owner;
   if (owner?.toString() !== isExistsUser._id.toString()) {
     throw new AppError(
       StatusCodes.FORBIDDEN,
@@ -381,8 +381,49 @@ export const updateBookingIntoDB = async (
     { $set: { bookingStatus: payload } },
     { new: true }
   )
-    .populate('userId', 'fullName email')
-    .populate('productId');
+    .populate('user', 'fullName email')
+    .populate('product');
+
+  return result;
+};
+
+
+export const updatePermitBookingIntoDB = async (
+  user: JwtPayload,
+  isPermitted: boolean, 
+  bookingId: string
+) => {
+  // Check user
+  const isExistsUser = await User.findOne({ email: user?.email });
+  if (!isExistsUser) {
+    throw new AppError(StatusCodes.NOT_FOUND, 'User not found.');
+  }
+  // console.log('find current user ===========>', isExistsUser);
+  const existsBooking = await Booking.findById(bookingId).populate({
+    path: 'product',
+    select: 'owner',
+  });
+
+  if (!existsBooking) {
+    throw new AppError(StatusCodes.NOT_FOUND, 'Booking not found.');
+  }
+
+  // Check ownership
+  const owner = existsBooking?.product?.owner;
+  if (owner?.toString() !== isExistsUser._id.toString()) {
+    throw new AppError(
+      StatusCodes.FORBIDDEN,
+      'You are not the owner of this product. Cannot update booking status.'
+    );
+  }
+
+  const result = await Booking.findByIdAndUpdate(
+    bookingId,
+    { $set: { isPermitted } },
+    { new: true }
+  )
+    .populate('user', 'fullName email')
+    .populate('product');
 
   return result;
 };
@@ -403,7 +444,7 @@ export const refundBookingIntoDB = async (
   }
 
   const existsBooking = await Booking.findById(bookingId).populate({
-    path: 'productId',
+    path: 'product',
     select: 'owner',
   });
 
@@ -416,11 +457,11 @@ export const refundBookingIntoDB = async (
     { $set: { bookingStatus: 'Cancel' } },
     { new: true }
   )
-    .populate('userId', 'fullName email')
-    .populate('productId');
+    .populate('user', 'fullName email')
+    .populate('product');
 
   // Identify the correct product model dynamically
-  const productId = existsBooking?.productId;
+  const productId = existsBooking?.product;
   const productModel = existsBooking?.productModel; // e.g. "SkiPass" or "Restaurant"
 
   if (!productId || !productModel) {
@@ -480,7 +521,7 @@ export const refundBookingIntoDB = async (
 
 export const deleteBookingIntoDB = async (id: string, user: JwtPayload) => {
   // check user
-  const isExistsUser = await User.findById(user?.userId);
+  const isExistsUser = await User.findOne({ email: user?.email });
   if (!isExistsUser) {
     throw new AppError(StatusCodes.NOT_FOUND, 'User not found.');
   }
@@ -521,6 +562,7 @@ export const BookingService = {
   getSingleBookingFromDB,
   addBookingIntoDB,
   updateBookingIntoDB,
+  updatePermitBookingIntoDB,
   refundBookingIntoDB,
   deleteBookingIntoDB,
   getMyBooking,

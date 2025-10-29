@@ -84,8 +84,17 @@ export const updateBookingSchema = z.object({
     bookingStatus: bookingStatusEnum,
   }),
 });
+export const updatePermitBookingSchema = z.object({
+  body: z.object({
+    isPermitted: z.boolean({
+      required_error: 'Permitted is required',
+      invalid_type_error: 'Permitted must be a boolean',
+    }),
+  }),
+});
 
 export const BookingRoutesValidations = {
   createBookingSchema,
   updateBookingSchema,
+  updatePermitBookingSchema
 };
