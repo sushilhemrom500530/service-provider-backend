@@ -1,23 +1,25 @@
 import mongoose, { Schema } from 'mongoose';
 import paginationPlugin from '../../common/plugins/pagination.plugin';
-import { IPayment, IPaymentModel, PaymentGateway, TransactionStatus } from './payment.interface';
+import {
+  IPayment,
+  IPaymentModel,
+  TransactionStatus,
+} from './payment.interface';
 
-const paymentSchema = new Schema(
+const paymentSchema = new Schema<IPayment>(
   {
     // Transaction details
-    bookingId: {
+    booking: {
       type: mongoose.Schema.Types.ObjectId,
       ref: 'Booking',
       required: true,
-
     },
-    userId: {
+    user: {
       type: mongoose.Schema.Types.ObjectId,
       ref: 'User',
       required: true,
-
     },
-    
+
     // Payment information
     amount: {
       type: Number,
@@ -30,59 +32,58 @@ const paymentSchema = new Schema(
     },
     paymentMethod: {
       type: String,
-      enum: Object.values(PaymentGateway),
+      enum: ['Card'],
       required: true,
+      default: 'Card',  
     },
-    
+
     // Gateway-specific fields
     transactionId: {
       type: String,
+      required: true,
+      unique: true,
     },
-    paypalOrderId: {
+    sessionId: {
       type: String,
+      required: true,
+      unique: true,
     },
-    zelleReference: {
-      type: String,
-    },
-    
+
     // Status tracking
     status: {
       type: String,
       enum: Object.values(TransactionStatus),
-      default: TransactionStatus.PENDING,
-
+      default: TransactionStatus.UNPAID,
     },
   },
   {
     timestamps: true,
-    toJSON: {
-      virtuals: true,
-    },
   }
 );
 
-// Indexes for better query performance
-paymentSchema.index({ bookingId: 1, status: 1 });
-paymentSchema.index({ userId: 1, status: 1 });
+// ✅ Indexes (use correct field names)
+paymentSchema.index({ booking: 1, status: 1 });
+paymentSchema.index({ user: 1, status: 1 });
 paymentSchema.index({ paymentMethod: 1, status: 1 });
 
-// Virtual for booking details
-paymentSchema.virtual('booking', {
+// ✅ REMOVE conflicting virtuals — or rename them
+// Instead of redefining 'booking' and 'user', rename them if needed
+
+paymentSchema.virtual('bookingDetails', {
   ref: 'Booking',
-  localField: 'bookingId',
+  localField: 'booking',
   foreignField: '_id',
   justOne: true,
 });
 
-// Virtual for user details
-paymentSchema.virtual('user', {
+paymentSchema.virtual('userDetails', {
   ref: 'User',
-  localField: 'userId',
+  localField: 'user',
   foreignField: '_id',
   justOne: true,
 });
 
-// Add pagination plugin
+// ✅ Add pagination plugin
 paymentSchema.plugin(paginationPlugin);
 
 const Payment = mongoose.model<IPayment, IPaymentModel>('Payment', paymentSchema);

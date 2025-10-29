@@ -15,6 +15,7 @@ import { TransportRoutes } from './../modules/transport/transport.routes';
 import { SkiHireRoutes } from './../modules/skiHire/skihire.routes';
 import { CategoryRoutes } from './../modules/category/category.route';
 import { CommonRoutes } from './../modules/common/common.routes';
+import { PaymentRoutes } from './../modules/payment/payment.routes';
 
 const router = express.Router();
 
@@ -81,10 +82,10 @@ const apiRoutes = [
   //   route: MessageRoutes,
   // },
 
-  // {
-  //   path: '/payments',
-  //   route: PaymentRoutes,
-  // }
+  {
+    path: '/payment',
+    route: PaymentRoutes,
+  }
 ];
 
 apiRoutes.forEach(route => router.use(route.path, route.route));
