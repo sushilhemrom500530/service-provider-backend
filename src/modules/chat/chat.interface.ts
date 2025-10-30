@@ -7,7 +7,6 @@ export enum ChatType {
 }
 
 export interface IChat {
-  _id?: string;
   chatType: ChatType;
   participants: Types.ObjectId[];
   chatName?: string;
@@ -24,9 +23,11 @@ export interface IChat {
   updatedAt?: Date;
 }
 
-export interface IChatModel extends Model<IChat> {
-  paginate(
-    filter: Record<string, any>,
-    options: IPaginationOptions
-  ): Promise<IPaginationResult<IChat>>;
-}
+
+
+// export interface IChatModel extends Model<IChat> {
+//   paginate(
+//     filter: Record<string, any>,
+//     options: IPaginationOptions
+//   ): Promise<IPaginationResult<IChat>>;
+// }

@@ -1,5 +1,5 @@
 
-export function generateTransactionId(prefix: string = "stripe-trans"): string {
+export function generateTransactionId(prefix: string = "TRANS"): string {
   // Create a random 8-character alphanumeric string
   const randomPart = Math.random().toString(36).substring(2, 10).toUpperCase();
 

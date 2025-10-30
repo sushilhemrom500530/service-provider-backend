@@ -9,6 +9,7 @@ import { IPaginationOptions, IPaginationResult } from '../../types/pagination';
 import AppError from '../../errors/AppErro';
 
 // View all messages by receiver ID (aligned with GET /:receiverId)
+
 const getAllMessagesByReceiverId = async (
   filter: Record<string, any>,
   options: IPaginationOptions
@@ -21,7 +22,7 @@ const getAllMessagesByReceiverId = async (
     isDeleted: false,
   };
 
-  // Update messages to mark them as seen by the receiver
+  // Mark messages as seen for the receiver
   await Message.updateMany(
     {
       $or: [
@@ -30,22 +31,29 @@ const getAllMessagesByReceiverId = async (
           receiverId: new Types.ObjectId(filter.senderId),
         },
       ],
-      seenBy: { $nin: [new Types.ObjectId(filter.senderId)] },
+      'seenBy.userId': { $nin: [new Types.ObjectId(filter.senderId)] },
       deliveryStatus: { $ne: 'seen' },
     },
     {
-      $addToSet: { seenBy: new Types.ObjectId(filter?.senderId) },
-      deliveryStatus: 'seen',
+      $push: {
+        seenBy: {
+          userId: new Types.ObjectId(filter.senderId),
+          seenAt: new Date(),
+        },
+      },
+      $set: { deliveryStatus: 'seen' },
     }
   );
+
+  // Populate actual fields that exist in User schema
   options.populate = [
     {
       path: 'receiverId',
-      select: 'profile email',
-      populate: {
-        path: 'profile',
-        select: 'fullName profileUrl',
-      },
+      select: 'fullName email profileImage', // Use fields that exist in your User schema
+    },
+    {
+      path: 'senderId',
+      select: 'fullName email profileImage',
     },
     {
       path: 'replyTo',
@@ -56,11 +64,15 @@ const getAllMessagesByReceiverId = async (
       select: 'content senderId',
     },
   ];
+
+  // Default sorting
   options.sortBy = options.sortBy || 'createdAt';
+
+  // Fetch paginated messages
   const result = await Message.paginate(query, options);
+
   return result;
 };
-
 // View all messages in a chat
 const viewAllMessages = async (chatId: string, receiverId: string) => {
   const result = await Message.updateMany(
@@ -73,15 +85,7 @@ const viewAllMessages = async (chatId: string, receiverId: string) => {
     { seenBy: [receiverId], deliveryStatus: 'seen' },
     { new: true }
   );
-  
-  // Emit socket event to update message status
-  if (global.io) {
-    global.io.to(receiverId).emit('messages:viewed', {
-      chatId,
-      receiverId,
-    });
-  }
-  
+
   return result;
 };
 
@@ -105,76 +109,92 @@ const sendMessage = async (payload: Partial<IMessage>) => {
   if (!payload?.senderId || !payload?.receiverId || !payload?.content) {
     throw new AppError(StatusCodes.BAD_REQUEST, 'Missing required fields');
   }
-  let chatId: string = '';
-  // Check if an existing chat exists
-  const existingChat = await ChatService.checkSenderIdExistInChat(
-    payload?.senderId.toString(),
-    payload?.receiverId.toString()
-  );
-  if (existingChat) {
-    chatId = existingChat._id;
-  } else {
-    // Create a new chat if none exists
-    const newChat = await ChatService.createSingleChat(
-      payload.senderId.toString(),
-      payload.receiverId.toString()
-    );
-    if (!newChat) {
-      throw new AppError(StatusCodes.BAD_REQUEST, 'Chat Not Found');
-    }
-    chatId = newChat._id as string;
-  }
+  // let chatId: string = '';
+  // // Check if an existing chat exists
+  // const existingChat = await ChatService.checkSenderIdExistInChat(
+  //   payload?.senderId.toString(),
+  //   payload?.receiverId.toString()
+  // );
+  // if (existingChat) {
+  //   chatId = existingChat._id;
+  // } else {
+  //   // Create a new chat if none exists
+  //   const newChat = await ChatService.createSingleChat(
+  //     payload.senderId.toString(),
+  //     payload.receiverId.toString()
+  //   );
+  //   if (!newChat) {
+  //     throw new AppError(StatusCodes.BAD_REQUEST, 'Chat Not Found');
+  //   }
+  //   chatId = newChat._id as string;
+  // }
 
   // Set chatId in payload
-  payload.chatId = new Types.ObjectId(chatId);
+  // payload.chatId = new Types.ObjectId(chatId);
   const newMessage = await Message.create(payload);
-  // Update last message in chat
-  const chat = await Chat.findById(payload.chatId);
-  if (chat) {
-    chat.lastMessage = newMessage?.id;
-    chat.updatedAt = newMessage?.createdAt;
-    await chat.save();
-  }
 
-  // update message
-  const message = await Message.findById(newMessage.id)
-    .populate('senderId', 'profile.email profile.fullName profile.profileUrl')
-    .populate('receiverId', 'profile.email profile.fullName profile.profileUrl')
-    .populate('lastMessage');
+  // // Update last message in chat
+  // const chat = await Chat.findById(payload.chatId);
+  // if (chat) {
+  //   chat.lastMessage = newMessage?.id;
+  //   chat.updatedAt = newMessage?.createdAt;
+  //   await chat.save();
+  // }
+
+  // Update message with populated data
+  const message = await Message.findById(newMessage?.id)
+    .populate('senderId', 'profile.email profile.fullName profile.profileImage')
+    .populate(
+      'receiverId',
+      'profile.email profile.fullName profile.profileImage'
+    );
 
   // Emit socket event to notify both sender and receiver about the new message
   if (global.io) {
+    // Prepare message data for emission
+    const messageToEmit = {
+      _id: message?._id,
+      // chatId: message?.chatId,
+      senderId: message?.senderId,
+      receiverId: message?.receiverId,
+      content: message?.content,
+      createdAt: message?.createdAt,
+      deliveryStatus: message?.deliveryStatus,
+      seenBy: message?.seenBy,
+      reactions: message?.reactions,
+    };
+
     // Emit to sender's personal room
-    global.io.to(payload.senderId.toString()).emit('message:received', {
-      message,
-      chatId: chatId,
+    global.io.to(payload.senderId.toString()).emit('new-message-received', {
+      ...messageToEmit,
+      // chatId: chatId,
     });
 
     // Emit to receiver's personal room
-    global.io.to(payload.receiverId.toString()).emit('message:received', {
-      message,
-      chatId: chatId,
+    global.io.to(payload.receiverId.toString()).emit('new-message-received', {
+      ...messageToEmit,
+      // chatId: chatId,
     });
 
     // Update conversation list for both parties
-    global.io.to(payload.senderId.toString()).emit('conversation:list:update', {
-      conversation: chat,
-      message,
-    });
+    const conversationUpdateData = {
+      lastMessage: messageToEmit,
+      // chatId: chatId,
+      timestamp: new Date(),
+    };
 
-    global.io.to(payload.receiverId.toString()).emit('conversation:list:update', {
-      conversation: chat,
-      message,
-    });
-
-    // Mark message as seen if receiver is online
-    if (global.io.isUserOnline && global.io.isUserOnline(payload.receiverId.toString())) {
-      await markMessageSeen(message._id as string);
-      global.io.to(payload.senderId.toString()).emit('message:seen', {
-        messageId: message._id,
-        userId: payload.receiverId,
-      });
-    }
+    global.io
+      .to(payload.senderId.toString())
+      .emit(
+        `conversation-list-updated::${payload.senderId}`,
+        conversationUpdateData
+      );
+    global.io
+      .to(payload.receiverId.toString())
+      .emit(
+        `conversation-list-updated::${payload.receiverId}`,
+        conversationUpdateData
+      );
   }
 
   return message;
@@ -192,7 +212,7 @@ const updateMessage = async (
   if (!message) {
     throw new AppError(StatusCodes.NOT_FOUND, 'Message not found');
   }
-  
+
   // Add to edit history before updating
   if (!message.editHistory) {
     message.editHistory = [];
@@ -202,10 +222,10 @@ const updateMessage = async (
     editedAt: new Date(),
     editedBy: message.senderId,
   });
-  
+
   message.content.text = text;
   await message.save();
-  
+
   // Emit socket event to notify about message update
   if (global.io) {
     // Emit to both sender and receiver
@@ -239,19 +259,19 @@ const deleteMessage = async (
       'You are not allowed to delete this message'
     );
   }
-  
+
   // Add to deletedBy array instead of hard delete for conversation history
   const deletedByEntry = {
     userId: new Types.ObjectId(userId),
     deletedAt: new Date(),
     deleteType: 'soft' as const, // Only soft delete for now
   };
-  
+
   message.deletedBy = message.deletedBy || [];
   message.deletedBy.push(deletedByEntry);
   message.isDeleted = true;
   await message.save();
-  
+
   // Emit socket event to notify about message deletion
   if (global.io) {
     // Emit to both sender and receiver
@@ -277,25 +297,25 @@ const markMessageSeen = async (messageId: string): Promise<IMessage | null> => {
 
   if (message) {
     message.deliveryStatus = 'seen';
-    
+
     // Add to seenBy array if not already seen by this user
     if (!message.seenBy) {
       message.seenBy = [];
     }
-    
+
     const alreadySeen = message.seenBy.some(
       (seen: any) => seen.userId.toString() === message.receiverId.toString()
     );
-    
+
     if (!alreadySeen) {
       message.seenBy.push({
         userId: message.receiverId,
         seenAt: new Date(),
       });
     }
-    
+
     await message.save();
-    
+
     // Emit socket event to notify sender that message was seen
     if (global.io) {
       global.io.to(message.senderId.toString()).emit('message:seen', {
@@ -318,7 +338,7 @@ const updateDeliveryStatus = async (
     { deliveryStatus: status },
     { new: true }
   );
-  
+
   // Emit socket event to update delivery status
   if (global.io && message) {
     global.io.to(message.senderId.toString()).emit('message:delivery:status', {
@@ -340,12 +360,16 @@ const addReaction = async (
     messageId,
     {
       $push: {
-        reactions: { userId: new Types.ObjectId(userId), emoji, reactedAt: new Date() },
+        reactions: {
+          userId: new Types.ObjectId(userId),
+          emoji,
+          reactedAt: new Date(),
+        },
       },
     },
     { new: true }
   );
-  
+
   // Emit socket event to notify about reaction
   if (global.io && message) {
     // Emit to both sender and receiver
@@ -378,7 +402,7 @@ const removeReaction = async (
     },
     { new: true }
   );
-  
+
   // Emit socket event to notify about reaction removal
   if (global.io && message) {
     // Emit to both sender and receiver
@@ -386,10 +410,12 @@ const removeReaction = async (
       messageId: message._id,
       userId,
     });
-    global.io.to(message.receiverId.toString()).emit('message:reaction:removed', {
-      messageId: message._id,
-      userId,
-    });
+    global.io
+      .to(message.receiverId.toString())
+      .emit('message:reaction:removed', {
+        messageId: message._id,
+        userId,
+      });
   }
 
   return message;
@@ -418,7 +444,7 @@ const replyToMessage = async (
       await chat.save();
     }
   }
-  
+
   // Emit socket event to notify about reply
   if (global.io) {
     // Emit to both sender and receiver
@@ -464,7 +490,7 @@ const forwardMessage = async (
 
     forwardedMessages.push(newMessage);
   }
-  
+
   // Emit socket event to notify about forwarding
   if (global.io) {
     for (const chatId of chatIds) {
@@ -493,7 +519,7 @@ const pinMessage = async (
     await Chat.findByIdAndUpdate(chatId, {
       $addToSet: { pinnedMessages: new Types.ObjectId(messageId) },
     });
-    
+
     // Emit socket event about pinned message
     if (global.io) {
       global.io.to(chatId).emit('message:pinned', {
@@ -521,7 +547,7 @@ const unpinMessage = async (
     await Chat.findByIdAndUpdate(chatId, {
       $pull: { pinnedMessages: new Types.ObjectId(messageId) },
     });
-    
+
     // Emit socket event about unpinned message
     if (global.io) {
       global.io.to(chatId).emit('message:unpinned', {
@@ -549,11 +575,11 @@ const searchMessages = async (
   options.populate = [
     {
       path: 'senderId',
-      select: 'fullName profileUrl email',
+      select: 'firstName lastName profileImage email',
     },
     {
       path: 'receiverId',
-      select: 'fullName profileUrl email',
+      select: 'firstName lastName profileImage email',
     },
   ];
   options.sortBy = options.sortBy || 'createdAt';

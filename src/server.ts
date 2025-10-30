@@ -3,9 +3,9 @@ import mongoose from 'mongoose';
 import { Server } from 'socket.io';
 import app from './app';
 import { errorLogger, logger } from './shared/logger';
-import { config } from './config';
-import { socketHelper } from './socket/socket';
+import { config } from './config'; 
 import { startAllCronJobs } from './jobs/automaticUpdateJobService';
+import { socketHelper } from './socket/index';
 
 // Type for server instance
 let server: any;

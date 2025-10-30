@@ -16,6 +16,8 @@ import { SkiHireRoutes } from './../modules/skiHire/skihire.routes';
 import { CategoryRoutes } from './../modules/category/category.route';
 import { CommonRoutes } from './../modules/common/common.routes';
 import { PaymentRoutes } from './../modules/payment/payment.routes';
+import { WalletRoutes } from './../modules/wallet/wallet.routes';
+import { MessageRoutes } from './../modules/message/message.routes';
 
 const router = express.Router();
 
@@ -73,14 +75,14 @@ const apiRoutes = [
     path: '/common/category',
     route: CommonRoutes,
   },
-  // {
-  //   path: '/chats',
-  //   route: ChatRoutes,
-  // },
-  // {
-  //   path: '/messages',
-  //   route: MessageRoutes,
-  // },
+  {
+    path: '/wallet',
+    route: WalletRoutes,
+  },
+  {
+    path: '/message',
+    route: MessageRoutes,
+  },
 
   {
     path: '/payment',

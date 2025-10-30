@@ -2,6 +2,7 @@ import bcrypt from 'bcrypt';
 import dotenv from 'dotenv';
 import mongoose from 'mongoose';
 import { User } from '../modules/user/user.model';
+import { Wallet } from './../modules/wallet/wallet.model';
 
 // Load environment variables
 dotenv.config();
@@ -27,23 +28,10 @@ const seedUsers = async () => {
   try {
     const usersData = [
       {
-        email: 'sushil500530@gmail.com',
+        email: 'admin@demo.com',
         password: '12345678',
         role: 'Admin',
         status: 'Active',
-      },
-      {
-        email: 'sushilhemrom262@gmail.com',
-        password: '12345678',
-        role: 'Provider',
-        status: 'Active',
-        address: '123 Main Street, Springfield, IL 62704',
-        fullName: 'Sushil Hemrom',
-        phoneNumber: '01767122497',
-        service: {
-          serviceType: 'Plumbing',
-          category: ['Home Maintenance', 'Car', 'CNG'],
-        },
       },
     ];
 
@@ -52,14 +40,24 @@ const seedUsers = async () => {
       user.password = await hashPassword(user.password);
     }
 
-    await User.deleteMany({});
-    await User.insertMany(usersData);
+    await User.deleteOne({ email: adminData.email });
+
+    // insert the single admin user
+    const result = await User.create(adminData);
+
+    // Create a wallet for the user
+    await Wallet.create({
+      user: result?._id,
+      balance: 0,
+    });
+
     console.log('Users seeded successfully!');
   } catch (err) {
     console.error('Error seeding users:', err);
   }
 };
 
+ 
 // Connect to MongoDB
 const connectToDatabase = async () => {
   try {
