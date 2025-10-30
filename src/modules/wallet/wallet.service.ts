@@ -16,7 +16,7 @@ export const updateOrCreateWallet = async (
     throw new AppError('Admin user not found', StatusCodes.NOT_FOUND);
   }
 
-  // Calculate profit (20%) 
+  // Calculate profit (20%)
   // const profitPercent = config.adminPayment.profit || 20;
   // const profitRate = profitPercent / 100;
   // const profitAmount = amount * profitRate;
@@ -53,7 +53,7 @@ export const updateOrCreateWallet = async (
   if (!providerWallet) {
     providerWallet = await Wallet.create({
       user: new Types.ObjectId(ownerId),
-      balance: amount,  
+      balance: amount,
       transactions: [
         {
           user: new Types.ObjectId(senderId),
@@ -73,4 +73,30 @@ export const updateOrCreateWallet = async (
   }
 
   return { adminWallet, providerWallet };
+};
+
+const updateProfit = async (user, payload: number) => {
+  console.log('req data :', payload);
+
+  const isExistsAdmin = await User.findOne({ role: user?.role });
+  if (!isExistsAdmin) {
+    throw new AppError(StatusCodes.NOT_FOUND, 'Admin user not found');
+  }
+
+  const adminWallet = await Wallet.findOne({ user: isExistsAdmin._id });
+  if (!adminWallet) {
+    throw new AppError(StatusCodes.NOT_FOUND, 'Admin wallet not found');
+  }
+
+  const updateWalletProfit = await Wallet.findOneAndUpdate(
+    { user: isExistsAdmin._id },
+    { $set: { profitCharge: payload } },
+    { new: true }
+  ).select('-transactions -__v');
+
+  return updateWalletProfit;
+};
+
+export const WalletService = {
+  updateProfit,
 };

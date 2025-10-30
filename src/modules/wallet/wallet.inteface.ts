@@ -16,6 +16,7 @@ export interface IWalletTransaction {
 export interface IWallet {
   user: Types.ObjectId;
   balance: number;
+  profitCharge: number;
   transactions: IWalletTransaction[]; 
   createdAt?: Date;
   updatedAt?: Date;

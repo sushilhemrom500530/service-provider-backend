@@ -32,6 +32,10 @@ const WalletSchema = new Schema<IWallet>(
       type: Number,
       default: 0,
     },
+    profitCharge: {
+      type: Number,
+      default: 0,
+    },
     transactions: {
       type: [WalletTransactionSchema],
       required: false,
