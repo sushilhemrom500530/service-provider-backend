@@ -269,14 +269,14 @@ export const addBookingIntoDB = async (user: JwtPayload, payload: IBooking) => {
 
   const menuTypesSet = new Set(
     validatedItems.map(item => {
-      const foundItem = product.items.find(
-        i => i._id.toString() === item.itemId.toString()
+      const foundItem = product?.items.find(
+        i => i?._id.toString() === item?.itemId.toString()
       );
       return foundItem?.menuType;
     })
   );
 
-  if (menuTypesSet.size === 1) {
+  if (menuTypesSet?.size === 1) {
     selectedMenuType = Array.from(menuTypesSet)[0]; // all same, store the menuType
   } else {
     throw new AppError(

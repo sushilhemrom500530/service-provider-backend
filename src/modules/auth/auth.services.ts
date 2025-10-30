@@ -11,6 +11,7 @@ import { OtpService } from '../otp/otp.services';
 import { TokenService } from '../token/token.services';
 import { IRegisterData, IVerifyOtpData } from './auth.interface';
 import { User } from './../user/user.model';
+import { Wallet } from './../wallet/wallet.model';
 
 // Move validateUserStatus here to avoid circular dependency
 const validateUserStatus = (user: IUser) => {
@@ -28,8 +29,7 @@ const validateUserStatus = (user: IUser) => {
 };
 
 const registerUser = async (userData: Partial<IUser>) => {
-
-  if(userData?.role === "Provider" && !userData?.providerType){
+  if (userData?.role === 'Provider' && !userData?.providerType) {
     throw new AppError(StatusCodes.BAD_REQUEST, 'Provider type is required.');
   }
 
@@ -55,15 +55,22 @@ const registerUser = async (userData: Partial<IUser>) => {
   }
   const newUser = await User.create(userData);
 
+  if (newUser?.role === 'Provider') {
+    await Wallet.create({
+      user: newUser?._id,
+      balance: 0,
+    });
+  }
+
   const resResult = {
-    _id: newUser?._id, 
+    _id: newUser?._id,
     email: newUser?.email,
     role: newUser?.role,
     status: newUser?.status,
     isDeleted: newUser?.isDeleted,
     createdAt: newUser?.createdAt,
     updatedAt: newUser?.updatedAt,
-  }; 
+  };
 
   // console.log("creating user info is :", newUser);
 
@@ -100,8 +107,6 @@ const updateUserProfile = async (email: string, updates: Partial<IUser>) => {
 
   return updatedUser;
 };
-
-  
 
 const verifyOtp = async (payload: IVerifyOtpData) => {
   const user = await User.findOne({ email: payload.email });
@@ -305,7 +310,7 @@ const refreshAuth = async (refreshToken: string) => {
 
 export const AuthService = {
   registerUser,
-  updateUserProfile, 
+  updateUserProfile,
   verifyOtp,
   resetPassword,
   forgotPassword,

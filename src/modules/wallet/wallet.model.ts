@@ -32,7 +32,11 @@ const WalletSchema = new Schema<IWallet>(
       type: Number,
       default: 0,
     },
-    transactions: [WalletTransactionSchema],
+    transactions: {
+      type: [WalletTransactionSchema],
+      required: false,
+      default: [],  
+    },
   },
   { timestamps: true }
 );

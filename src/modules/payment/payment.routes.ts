@@ -5,12 +5,12 @@ import validateRequest from '../../shared/validateRequest';
 import { paymentValidations } from './payment.validations';
 
 const router = Router();
-
-// Process PayPal payment
+ 
 router.get(
   '/all',
   auth('User'), 
   PaymentController.getAllPayment
 );
+
  
 export const PaymentRoutes = router;

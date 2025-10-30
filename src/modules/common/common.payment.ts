@@ -1,9 +1,9 @@
 import { generateTransactionId } from './../../utils/generateTransactionId';
 import stripe from './../../utils/stripe';
 import { config } from './../../config/index';
+import { updateOrCreateWallet } from './../wallet/wallet.service';
 import { Types } from 'mongoose';
 import { Payment } from './../payment/payment.model';
-import { updateOrCreateWallet } from './../wallet/wallet.service';
 import {
   TransactionStatus,
   PaymentGateway,
@@ -72,11 +72,11 @@ export const processToPayment = async (payload: IProcessPaymentPayload) => {
       gateway: PaymentGateway.STRIPE,
       paymentMethodType: 'Card',
     };
-
+    // create payment
     await Payment.create(paymentPayload);
 
-    // for wallet 
-    await updateOrCreateWallet(ownerId, amount);
+    // create wallet or update
+    await updateOrCreateWallet(ownerId, userId, amount);
 
     return {
       sessionId: session.id,
