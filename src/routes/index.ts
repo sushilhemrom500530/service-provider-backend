@@ -80,7 +80,7 @@ const apiRoutes = [
     route: WalletRoutes,
   },
   {
-    path: '/messages',
+    path: '/message',
     route: MessageRoutes,
   },
 
