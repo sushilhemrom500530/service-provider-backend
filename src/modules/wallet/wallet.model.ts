@@ -42,8 +42,7 @@ const WalletAccountSchema = new Schema<IWalletAccount>(
       type: Date,
       default: Date.now,
     },
-  },
-  { _id: false }
+  }, 
 );
 
 const WalletSchema = new Schema<IWallet>(

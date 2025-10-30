@@ -24,5 +24,5 @@ const addWallet = z.object({
 
 
 export const WalletValidations = {
-    
+    addWallet   
 }

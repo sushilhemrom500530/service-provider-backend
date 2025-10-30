@@ -104,19 +104,26 @@ const addWallet = async (user, payload: IWalletAccount) => {
     throw new AppError('Provider user not found', StatusCodes.NOT_FOUND);
   }
 
-  // find provider wallet
-  const providerWallet = await Wallet.findOne({ user: isExistsProvider._id });
-  if (!providerWallet) {
-    throw new AppError('Provider wallet not found', StatusCodes.NOT_FOUND);
+  // Find the wallet
+  let wallet = await Wallet.findOne({ user: "68f8c4c078c729eb1d9dc598" });
+  // let wallet = await Wallet.findOne({ user: user._id });
+
+   
+  if (!wallet) {
+    throw new AppError(StatusCodes.NOT_FOUND, 'Wallet not found');
   }
 
-  const updatedWallet = await Wallet.findOneAndUpdate(
-    { user: isExistsProvider._id },
-    { $push: { walletAccount: payload } },
-    { new: true }
-  ).select('-transactions -__v');
+  // Add the new wallet account
+  wallet.walletAccounts.push({
+    accountType: payload.accountType,
+    cardNumber: payload.cardNumber,
+    cardHolderName: payload.cardHolderName,
+  });
 
-  return updatedWallet;
+  // Save the wallet
+  await wallet.save();
+
+  return wallet;
 };
 
 export const WalletService = {

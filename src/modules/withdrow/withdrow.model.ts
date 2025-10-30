@@ -45,4 +45,4 @@ const WalletSchema = new Schema<IWallet>(
   { timestamps: true }
 );
 
-export const Wallet = model<IWallet>('Wallet', WalletSchema);
+export const Withdrow = model<IWallet>('Withdrow', WalletSchema);

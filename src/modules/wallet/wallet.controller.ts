@@ -4,6 +4,7 @@ import { Request, Response } from 'express';
 import sendResponse from './../../shared/sendResponse';
 import { StatusCodes } from 'http-status-codes';
 import { WalletService } from './wallet.service';
+import { IWalletAccount } from './wallet.inteface';
 
 const updateWalletProfit = catchAsync(async (req: Request, res: Response) => {
   const user = req.user as JwtPayload;
@@ -20,9 +21,9 @@ const updateWalletProfit = catchAsync(async (req: Request, res: Response) => {
 
 const addWallet = catchAsync(async (req: Request, res: Response) => {
   const user = req.user as JwtPayload;
-  const { profit } = req.body;
+  const payload = req.body as IWalletAccount;
 
-  const result = await WalletService.addWallet(user, profit as number);
+  const result = await WalletService.addWallet(user, payload);
 
   sendResponse(res, {
     code: StatusCodes.OK,
