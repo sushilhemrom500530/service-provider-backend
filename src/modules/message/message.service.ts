@@ -9,6 +9,7 @@ import { IPaginationOptions, IPaginationResult } from '../../types/pagination';
 import AppError from '../../errors/AppErro';
 
 // View all messages by receiver ID (aligned with GET /:receiverId)
+
 const getAllMessagesByReceiverId = async (
   filter: Record<string, any>,
   options: IPaginationOptions
@@ -21,7 +22,7 @@ const getAllMessagesByReceiverId = async (
     isDeleted: false,
   };
 
-  // Update messages to mark them as seen by the receiver
+  // Mark messages as seen for the receiver
   await Message.updateMany(
     {
       $or: [
@@ -30,22 +31,29 @@ const getAllMessagesByReceiverId = async (
           receiverId: new Types.ObjectId(filter.senderId),
         },
       ],
-      seenBy: { $nin: [new Types.ObjectId(filter.senderId)] },
+      'seenBy.userId': { $nin: [new Types.ObjectId(filter.senderId)] },
       deliveryStatus: { $ne: 'seen' },
     },
     {
-      $addToSet: { seenBy: new Types.ObjectId(filter?.senderId) },
-      deliveryStatus: 'seen',
+      $push: {
+        seenBy: {
+          userId: new Types.ObjectId(filter.senderId),
+          seenAt: new Date(),
+        },
+      },
+      $set: { deliveryStatus: 'seen' },
     }
   );
+
+  // Populate actual fields that exist in User schema
   options.populate = [
     {
       path: 'receiverId',
-      select: 'profile email',
-      populate: {
-        path: 'profile',
-        select: 'fullName profileImage',
-      },
+      select: 'fullName email profileImage', // Use fields that exist in your User schema
+    },
+    {
+      path: 'senderId',
+      select: 'fullName email profileImage',
     },
     {
       path: 'replyTo',
@@ -56,11 +64,15 @@ const getAllMessagesByReceiverId = async (
       select: 'content senderId',
     },
   ];
+
+  // Default sorting
   options.sortBy = options.sortBy || 'createdAt';
+
+  // Fetch paginated messages
   const result = await Message.paginate(query, options);
+
   return result;
 };
-
 // View all messages in a chat
 const viewAllMessages = async (chatId: string, receiverId: string) => {
   const result = await Message.updateMany(
@@ -97,52 +109,52 @@ const sendMessage = async (payload: Partial<IMessage>) => {
   if (!payload?.senderId || !payload?.receiverId || !payload?.content) {
     throw new AppError(StatusCodes.BAD_REQUEST, 'Missing required fields');
   }
-  let chatId: string = '';
-  // Check if an existing chat exists
-  const existingChat = await ChatService.checkSenderIdExistInChat(
-    payload?.senderId.toString(),
-    payload?.receiverId.toString()
-  );
-  if (existingChat) {
-    chatId = existingChat._id;
-  } else {
-    // Create a new chat if none exists
-    const newChat = await ChatService.createSingleChat(
-      payload.senderId.toString(),
-      payload.receiverId.toString()
-    );
-    if (!newChat) {
-      throw new AppError(StatusCodes.BAD_REQUEST, 'Chat Not Found');
-    }
-    chatId = newChat._id as string;
-  }
+  // let chatId: string = '';
+  // // Check if an existing chat exists
+  // const existingChat = await ChatService.checkSenderIdExistInChat(
+  //   payload?.senderId.toString(),
+  //   payload?.receiverId.toString()
+  // );
+  // if (existingChat) {
+  //   chatId = existingChat._id;
+  // } else {
+  //   // Create a new chat if none exists
+  //   const newChat = await ChatService.createSingleChat(
+  //     payload.senderId.toString(),
+  //     payload.receiverId.toString()
+  //   );
+  //   if (!newChat) {
+  //     throw new AppError(StatusCodes.BAD_REQUEST, 'Chat Not Found');
+  //   }
+  //   chatId = newChat._id as string;
+  // }
 
   // Set chatId in payload
-  payload.chatId = new Types.ObjectId(chatId);
+  // payload.chatId = new Types.ObjectId(chatId);
   const newMessage = await Message.create(payload);
 
-  // Update last message in chat
-  const chat = await Chat.findById(payload.chatId);
-  if (chat) {
-    chat.lastMessage = newMessage?.id;
-    chat.updatedAt = newMessage?.createdAt;
-    await chat.save();
-  }
+  // // Update last message in chat
+  // const chat = await Chat.findById(payload.chatId);
+  // if (chat) {
+  //   chat.lastMessage = newMessage?.id;
+  //   chat.updatedAt = newMessage?.createdAt;
+  //   await chat.save();
+  // }
 
   // Update message with populated data
-  const message = await Message.findById(newMessage.id)
+  const message = await Message.findById(newMessage?.id)
     .populate('senderId', 'profile.email profile.fullName profile.profileImage')
     .populate(
       'receiverId',
       'profile.email profile.fullName profile.profileImage'
-    )
+    );
 
   // Emit socket event to notify both sender and receiver about the new message
   if (global.io) {
     // Prepare message data for emission
     const messageToEmit = {
       _id: message?._id,
-      chatId: message?.chatId,
+      // chatId: message?.chatId,
       senderId: message?.senderId,
       receiverId: message?.receiverId,
       content: message?.content,
@@ -155,19 +167,19 @@ const sendMessage = async (payload: Partial<IMessage>) => {
     // Emit to sender's personal room
     global.io.to(payload.senderId.toString()).emit('new-message-received', {
       ...messageToEmit,
-      chatId: chatId,
+      // chatId: chatId,
     });
 
     // Emit to receiver's personal room
     global.io.to(payload.receiverId.toString()).emit('new-message-received', {
       ...messageToEmit,
-      chatId: chatId,
+      // chatId: chatId,
     });
 
     // Update conversation list for both parties
     const conversationUpdateData = {
       lastMessage: messageToEmit,
-      chatId: chatId,
+      // chatId: chatId,
       timestamp: new Date(),
     };
 

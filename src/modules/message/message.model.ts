@@ -4,23 +4,21 @@ import { IMessage, IMessageModel, MessageType } from './message.interface';
 
 const messageSchema = new Schema<IMessage>(
   {
-    chatId: {
-      type: mongoose.Schema.Types.ObjectId,
-      ref: 'Chat',
-      required: [true, 'Chat ID is required'],
+    // chatId: {
+    //   type: mongoose.Schema.Types.ObjectId,
+    //   ref: 'Chat',
+    //   required: [true, 'Chat ID is required'],
 
-    },
+    // },
     senderId: {
       type: mongoose.Schema.Types.ObjectId,
       ref: 'User',
       required: [true, 'Sender ID is required'],
-
     },
     receiverId: {
       type: mongoose.Schema.Types.ObjectId,
       ref: 'User',
       required: [true, 'Receiver ID is required'],
-
     },
     content: {
       messageType: {
@@ -68,7 +66,6 @@ const messageSchema = new Schema<IMessage>(
       type: String,
       enum: ['sent', 'delivered', 'seen'],
       default: 'sent',
-
     },
     seenBy: [
       {
@@ -120,7 +117,6 @@ const messageSchema = new Schema<IMessage>(
     replyTo: {
       type: mongoose.Schema.Types.ObjectId,
       ref: 'Message',
-
     },
     forwardedFrom: {
       type: mongoose.Schema.Types.ObjectId,
@@ -131,12 +127,10 @@ const messageSchema = new Schema<IMessage>(
     isPinned: {
       type: Boolean,
       default: false,
-
     },
     isDeleted: {
       type: Boolean,
       default: false,
-
     },
     deletedBy: [
       {
@@ -183,7 +177,6 @@ const messageSchema = new Schema<IMessage>(
     // Message expiration (for disappearing messages)
     expiresAt: {
       type: Date,
-
     },
 
     // Message priority (for urgent messages)

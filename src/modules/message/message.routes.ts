@@ -13,7 +13,7 @@ const router = Router();
 // unviewed message count
 router.get(
   '/unviewed-count',
-  auth('Common'),
+  auth('Admin', 'Provider', 'User'),
   validateRequest(messageValidations.unviewedMessagesCount),
   MessageController.unviewedMessagesCount
 );
@@ -22,7 +22,7 @@ router.get(
 router
   .route('/send-message')
   .post(
-    auth('Common'),
+   auth('Admin', 'Provider', 'User'),
     upload.array('files', 10),
     convertHeicToPngMiddleware(MESSAGE_UPLOADS_FOLDER),
     validateRequest(messageValidations.sendMessage),
@@ -32,7 +32,7 @@ router
 // get all messages by receiverId
 router.get(
   '/get-all-messages/:receiverId',
-  auth('Common'),
+ auth('Admin', 'Provider', 'User'),
   validateRequest(messageValidations.getAllMessagesByReceiverId),
   MessageController.getAllMessagesByReceiverId
 );
@@ -41,17 +41,17 @@ router.get(
 router
   .route('/:messageId')
   .put(
-    auth('Common'),
+   auth('Admin', 'Provider', 'User'),
     validateRequest(messageValidations.updateMessage),
     MessageController.updateMessage
   )
   .patch(
-    auth('Common'),
+   auth('Admin', 'Provider', 'User'),
     validateRequest(messageValidations.markMessageSeen),
     MessageController.markMessageSeen
   )
   .delete(
-    auth('Common'),
+   auth('Admin', 'Provider', 'User'),
     validateRequest(messageValidations.deleteMessage),
     MessageController.deleteMessage
   );
@@ -59,25 +59,27 @@ router
 // Additional routes for new features
 router.patch(
   '/view-all-messages/:chatId',
-  auth('Common'),
+ auth('Admin', 'Provider', 'User'),
   validateRequest(messageValidations.viewAllMessages),
   MessageController.viewAllMessages
 );
 router.post(
   '/reaction/:messageId',
-  auth('Common'),
+ auth('Admin', 'Provider', 'User'),
   validateRequest(messageValidations.addReaction),
   MessageController.addReaction
 );
 router.delete(
   '/reaction/:messageId',
-  auth('Common'),
+ auth('Admin', 'Provider', 'User'),
   validateRequest(messageValidations.removeReaction),
   MessageController.removeReaction
 );
+
+
 router.post(
   '/reply',
-  auth('Common'),
+ auth('Admin', 'Provider', 'User'),
   upload.array('files', 10),
   convertHeicToPngMiddleware(MESSAGE_UPLOADS_FOLDER),
   validateRequest(messageValidations.replyToMessage),
@@ -86,39 +88,39 @@ router.post(
 
 router.post(
   '/:messageId/forward',
-  auth('Common'),
+ auth('Admin', 'Provider', 'User'),
   validateRequest(messageValidations.forwardMessage),
   MessageController.forwardMessage
 );
 router.post(
   '/:messageId/pin/:chatId',
-  auth('Common'),
+ auth('Admin', 'Provider', 'User'),
   validateRequest(messageValidations.pinMessage),
   MessageController.pinMessage
 );
 router.post(
   '/:messageId/unpin/:chatId',
-  auth('Common'),
+ auth('Admin', 'Provider', 'User'),
   validateRequest(messageValidations.unpinMessage),
   MessageController.unpinMessage
 );
 
 router.get(
   '/:chatId/search',
-  auth('Common'),
+ auth('Admin', 'Provider', 'User'),
   validateRequest(messageValidations.searchMessages),
   MessageController.searchMessages
 );
 
 router.post(
   '/:chatId/typing',
-  auth('Common'),
+ auth('Admin', 'Provider', 'User'),
   validateRequest(messageValidations.sendTypingIndicator),
   MessageController.sendTypingIndicator
 );
 router.post(
   '/:chatId/stop-typing',
-  auth('Common'),
+ auth('Admin', 'Provider', 'User'),
   validateRequest(messageValidations.stopTypingIndicator),
   MessageController.stopTypingIndicator
 );

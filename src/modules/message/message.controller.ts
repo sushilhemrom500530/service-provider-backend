@@ -9,7 +9,7 @@ import { MESSAGE_UPLOADS_FOLDER } from './message.constant';
 import { Types } from 'mongoose';
 
 const sendMessage = catchAsync(async (req, res) => {
-  const senderId = req.user.userId;
+  const senderId = req?.user?.userId;
   const { message, receiverId } = req.body;
   // Prepare message content
   const content: IContent = {
