@@ -64,5 +64,8 @@ const chatSchema = new Schema<IChat>(
 
 chatSchema.plugin(paginationPlugin);
 
-const Chat = mongoose.model<IChat, IChatModel>('Chat', chatSchema);
-export default Chat;
+export const Chat: Model<IChat> =
+  mongoose.models.SkiPass || mongoose.model<IChat>('Chat', chatSchema);
+
+// const Chat = mongoose.model<IChat, IChatModel>('Chat', chatSchema);
+// export default Chat;

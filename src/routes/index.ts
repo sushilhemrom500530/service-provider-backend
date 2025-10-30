@@ -17,6 +17,7 @@ import { CategoryRoutes } from './../modules/category/category.route';
 import { CommonRoutes } from './../modules/common/common.routes';
 import { PaymentRoutes } from './../modules/payment/payment.routes';
 import { WalletRoutes } from './../modules/wallet/wallet.routes';
+import { MessageRoutes } from './../modules/message/message.routes';
 
 const router = express.Router();
 
@@ -78,14 +79,10 @@ const apiRoutes = [
     path: '/wallet',
     route: WalletRoutes,
   },
-  // {
-  //   path: '/chats',
-  //   route: ChatRoutes,
-  // },
-  // {
-  //   path: '/messages',
-  //   route: MessageRoutes,
-  // },
+  {
+    path: '/messages',
+    route: MessageRoutes,
+  },
 
   {
     path: '/payment',

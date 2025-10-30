@@ -1,25 +1,6 @@
 import { Schema, model, Types } from 'mongoose';
 import { IWallet, IWalletTransaction } from './wallet.interface';
-
-const WalletTransactionSchema = new Schema<IWalletTransaction>(
-  {
-    user: {
-      type: Types.ObjectId,
-      ref: 'User',
-      required: true,
-    },
-    balance: {
-      type: Number,
-      default: 0,
-    },
-    createdAt: {
-      type: Date,
-      default: Date.now,
-    },
-  },
-  { _id: false }
-);
-
+ 
 const WalletSchema = new Schema<IWallet>(
   {
     user: {
@@ -28,18 +9,14 @@ const WalletSchema = new Schema<IWallet>(
       required: true,
       unique: true,
     },
-    balance: {
+    amount: {
       type: Number,
       default: 0,
-    },
-    profitCharge: {
-      type: Number,
-      default: 0,
-    },
-    transactions: {
-      type: [WalletTransactionSchema],
+    }, 
+    status: {
+      type: String,
       required: false,
-      default: [],  
+      default: "Pending",  
     },
   },
   { timestamps: true }
