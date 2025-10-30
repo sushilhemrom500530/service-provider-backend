@@ -4,6 +4,7 @@ import { User } from './../user/user.model';
 import AppError from './../../errors/AppErro';
 import { StatusCodes } from 'http-status-codes';
 import { config } from './../../config/index';
+import { IWalletAccount } from './wallet.inteface';
 
 export const updateOrCreateWallet = async (
   ownerId: string, // provider
@@ -97,6 +98,28 @@ const updateProfit = async (user, payload: number) => {
   return updateWalletProfit;
 };
 
+const addWallet = async (user, payload: IWalletAccount) => {
+  const isExistsProvider = await User.findOne({ role: user?.role });
+  if (!isExistsProvider) {
+    throw new AppError('Provider user not found', StatusCodes.NOT_FOUND);
+  }
+
+  // find provider wallet
+  const providerWallet = await Wallet.findOne({ user: isExistsProvider._id });
+  if (!providerWallet) {
+    throw new AppError('Provider wallet not found', StatusCodes.NOT_FOUND);
+  }
+
+  const updatedWallet = await Wallet.findOneAndUpdate(
+    { user: isExistsProvider._id },
+    { $push: { walletAccount: payload } },
+    { new: true }
+  ).select('-transactions -__v');
+
+  return updatedWallet;
+};
+
 export const WalletService = {
   updateProfit,
+  addWallet,
 };

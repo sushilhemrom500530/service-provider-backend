@@ -1,5 +1,9 @@
 import { Schema, model, Types } from 'mongoose';
-import { IWallet, IWalletTransaction } from './wallet.interface';
+import {
+  IWallet,
+  IWalletTransaction,
+  IWalletAccount,
+} from './wallet.interface';
 
 const WalletTransactionSchema = new Schema<IWalletTransaction>(
   {
@@ -11,6 +15,28 @@ const WalletTransactionSchema = new Schema<IWalletTransaction>(
     balance: {
       type: Number,
       default: 0,
+    },
+    createdAt: {
+      type: Date,
+      default: Date.now,
+    },
+  },
+  { _id: false }
+);
+
+const WalletAccountSchema = new Schema<IWalletAccount>(
+  {
+    accountType: {
+      type: String,
+      required: true,
+    },
+    cardNumber: {
+      type: Number,
+      required: true,
+    },
+    cardHolderName: {
+      type: String,
+      required: true,
     },
     createdAt: {
       type: Date,
@@ -39,7 +65,12 @@ const WalletSchema = new Schema<IWallet>(
     transactions: {
       type: [WalletTransactionSchema],
       required: false,
-      default: [],  
+      default: [],
+    },
+    walletAccounts: {
+      type: [WalletAccountSchema],
+      required: false,
+      default: [],
     },
   },
   { timestamps: true }

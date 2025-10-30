@@ -25,7 +25,7 @@ const createSkiHireSchema = z.object({
         required_error: 'Category is required',
         invalid_type_error: 'Category must be a string',
       })
-      .min(1, 'Title cannot be empty'),
+      .min(1, 'Category cannot be empty'),
     title: z
       .string({
         required_error: 'Title is required',
