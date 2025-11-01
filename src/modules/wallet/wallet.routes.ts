@@ -15,7 +15,7 @@ router.patch(
 
 router.get(
   '/get-balance',
-  auth('Admin','Provider', 'User'), 
+  auth('Admin','Provider'), 
   WalletController.getBalanceById
 );
 
