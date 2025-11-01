@@ -92,8 +92,7 @@ export const updateOrCreateWallet = async (
   return { adminWallet, providerWallet };
 };
 
-const updateProfit = async (user: JwtPayload, payload: number) => {
-  console.log('req data :', payload);
+const updateProfit = async (user: JwtPayload, payload: number) => { 
 
   const isExistsAdmin = await User.findOne({ role: user?.role });
   if (!isExistsAdmin) {
@@ -105,13 +104,9 @@ const updateProfit = async (user: JwtPayload, payload: number) => {
     throw new AppError(StatusCodes.NOT_FOUND, 'Admin wallet not found');
   }
 
-  const updateWalletProfit = await Wallet.findOneAndUpdate(
-    { user: isExistsAdmin._id },
-    { $set: { profitCharge: payload } },
-    { new: true }
-  ).select('-transactions -__v');
+  await Wallet.updateMany({}, { $set: { profitCharge: payload } });
 
-  return updateWalletProfit;
+  return { messaga: 'success' };
 };
 
 const addWallet = async (user, payload: IWalletAccount) => {
