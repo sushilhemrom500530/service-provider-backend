@@ -5,17 +5,17 @@ import auth from './../../middlewares/auth';
 import { WithdrawController } from './Withdraw.controller';
  
 const router = Router();
- 
-// router.patch(
-//   '/update-profit',
-//   auth('Admin'), 
-//   WalletController.updateWalletProfit
-// );
- 
+  
 router.get(
   '/all',
   auth('Admin'), 
   WithdrawController.getAllFromDB
+);
+  
+router.post(
+  '/send-request',
+  auth('Provider'), 
+  WithdrawController.sendWithdrawRequest
 );
 
  

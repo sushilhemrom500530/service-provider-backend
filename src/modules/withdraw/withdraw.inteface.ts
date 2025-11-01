@@ -1,23 +1,19 @@
 import { Types } from 'mongoose';
 
-export enum WalletTransactionType {
-  EARN = 'earn',
-  WITHDRAW = 'withdraw',
-}
-
-
-
-export interface IWalletTransaction {
-  user: Types.ObjectId;
-  balance: number;
+export interface IWithdrawRequest {
+  cardId: Types.ObjectId;
+  amount: number;
   createdAt?: Date;
 }
 
-export interface IWallet {
+export interface IWithdraw {
   user: Types.ObjectId;
-  balance: number;
-  profitCharge: number;
-  transactions: IWalletTransaction[]; 
+  wallet: Types.ObjectId;
+  cardId: string;
+  amount: number;
+  status: 'Pending' | 'Paid' | 'Unpaid' | 'Rejected' | 'Completed';
+  transactionId?: string;
+  note?: string;
   createdAt?: Date;
   updatedAt?: Date;
 }

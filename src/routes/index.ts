@@ -17,7 +17,7 @@ import { CategoryRoutes } from './../modules/category/category.route';
 import { CommonRoutes } from './../modules/common/common.routes';
 import { PaymentRoutes } from './../modules/payment/payment.routes';
 import { WalletRoutes } from './../modules/wallet/wallet.routes';
-import { MessageRoutes } from './../modules/message/message.routes';  
+import { MessageRoutes } from './../modules/message/message.routes';
 import { WithdrawRoutes } from './../modules/withdraw/withdraw.routes';
 
 const router = express.Router();
@@ -76,10 +76,7 @@ const apiRoutes = [
     path: '/common/category',
     route: CommonRoutes,
   },
-  {
-    path: '/wallet',
-    route: WalletRoutes,
-  },
+
   {
     path: '/message',
     route: MessageRoutes,
@@ -90,9 +87,13 @@ const apiRoutes = [
     route: PaymentRoutes,
   },
   {
+    path: '/wallet',
+    route: WalletRoutes,
+  },
+  {
     path: '/Withdraw',
     route: WithdrawRoutes,
-  }
+  },
 ];
 
 apiRoutes.forEach(route => router.use(route.path, route.route));

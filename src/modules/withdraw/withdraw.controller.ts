@@ -4,9 +4,9 @@ import { Request, Response } from 'express';
 import sendResponse from './../../shared/sendResponse';
 import { StatusCodes } from 'http-status-codes'; 
 import { WithdrawService } from './Withdraw.service';
+import { IWithdrawRequest } from './withdraw.inteface';
 
-
-
+ 
 const getAllFromDB = catchAsync(async (req: Request, res: Response) => {
     const user = req.user as JwtPayload;
     const {profit} = req.body;
@@ -20,21 +20,23 @@ const getAllFromDB = catchAsync(async (req: Request, res: Response) => {
   });
 });
 
-// const updateWalletProfit = catchAsync(async (req: Request, res: Response) => {
-//     const user = req.user as JwtPayload;
-//     const {profit} = req.body;
 
-//   const result = await WithdrawService.updateProfit(user, profit as number);
+const sendWithdrawRequest = catchAsync(async (req: Request, res: Response) => {
+    const user = req.user as JwtPayload;
+    const formData= req.body;
 
-//   sendResponse(res, {
-//     code: StatusCodes.OK,
-//     message: 'Profit updated successfully',
-//     data: result,
-//   });
-// });
+  const result = await WithdrawService.sendWithdrawRequest(user, formData as IWithdrawRequest);
+
+  sendResponse(res, {
+    code: StatusCodes.OK,
+    message: 'Withdraw Retrieved successfully',
+    data: result,
+  });
+});
+ 
 
 
-export const WithdrawController = {
-  // updateWalletProfit,
-  getAllFromDB
+export const WithdrawController = { 
+  getAllFromDB,
+  sendWithdrawRequest
 };
