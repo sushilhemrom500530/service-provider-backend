@@ -19,6 +19,18 @@ const updateWalletProfit = catchAsync(async (req: Request, res: Response) => {
   });
 });
 
+const getBalanceById = catchAsync(async (req: Request, res: Response) => {
+  const user = req.user as JwtPayload; 
+
+  const result = await WalletService.getBalanceById(user);
+
+  sendResponse(res, {
+    code: StatusCodes.OK,
+    message: 'Balance Retrived successfully',
+    data: result,
+  });
+});
+
 const addWallet = catchAsync(async (req: Request, res: Response) => {
   const user = req.user as JwtPayload;
   const payload = req.body as IWalletAccount;
@@ -35,4 +47,5 @@ const addWallet = catchAsync(async (req: Request, res: Response) => {
 export const WalletController = {
   updateWalletProfit,
   addWallet,
+  getBalanceById
 };

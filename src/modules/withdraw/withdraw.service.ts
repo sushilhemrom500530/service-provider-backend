@@ -1,9 +1,9 @@
 import { Types } from 'mongoose';
-import { Wallet } from './wallet.model';
 import { User } from './../user/user.model';
 import AppError from './../../errors/AppErro';
 import { StatusCodes } from 'http-status-codes';
 import { config } from './../../config/index';
+import { Withdraw } from './Withdraw.model';
 
 export const updateOrCreateWallet = async (
   ownerId: string, // provider
@@ -75,28 +75,40 @@ export const updateOrCreateWallet = async (
   return { adminWallet, providerWallet };
 };
 
-const updateProfit = async (user, payload: number) => {
-  console.log('req data :', payload);
+const getAllFromDB = async (user) => {
 
   const isExistsAdmin = await User.findOne({ role: user?.role });
   if (!isExistsAdmin) {
     throw new AppError(StatusCodes.NOT_FOUND, 'Admin user not found');
   }
 
-  const adminWallet = await Wallet.findOne({ user: isExistsAdmin._id });
-  if (!adminWallet) {
-    throw new AppError(StatusCodes.NOT_FOUND, 'Admin wallet not found');
-  }
+   const result = await Withdraw.find();
 
-  const updateWalletProfit = await Wallet.findOneAndUpdate(
-    { user: isExistsAdmin._id },
-    { $set: { profitCharge: payload } },
-    { new: true }
-  ).select('-transactions -__v');
-
-  return updateWalletProfit;
+  return result;
 };
+// const updateProfit = async (user, payload: number) => {
+//   console.log('req data :', payload);
 
-export const WalletService = {
-  updateProfit,
+//   const isExistsAdmin = await User.findOne({ role: user?.role });
+//   if (!isExistsAdmin) {
+//     throw new AppError(StatusCodes.NOT_FOUND, 'Admin user not found');
+//   }
+
+//   const adminWallet = await Wallet.findOne({ user: isExistsAdmin._id });
+//   if (!adminWallet) {
+//     throw new AppError(StatusCodes.NOT_FOUND, 'Admin wallet not found');
+//   }
+
+//   const updateWalletProfit = await Wallet.findOneAndUpdate(
+//     { user: isExistsAdmin._id },
+//     { $set: { profitCharge: payload } },
+//     { new: true }
+//   ).select('-transactions -__v');
+
+//   return updateWalletProfit;
+// };
+
+export const WithdrawService = {
+  // updateProfit,
+  getAllFromDB
 };

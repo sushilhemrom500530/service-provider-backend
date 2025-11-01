@@ -13,6 +13,13 @@ router.patch(
 );
 
 
+router.get(
+  '/get-balance',
+  auth('Admin','Provider', 'User'), 
+  WalletController.getBalanceById
+);
+
+
 router.post(
   '/add',
   auth('Admin', 'Provider'), 
