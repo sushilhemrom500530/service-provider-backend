@@ -18,12 +18,6 @@ export const updateOrCreateWallet = async (
     throw new AppError('Admin user not found', StatusCodes.NOT_FOUND);
   }
 
-  // Calculate profit (20%)
-  // const profitPercent = config.adminPayment.profit || 20;
-  // const profitRate = profitPercent / 100;
-  // const profitAmount = amount * profitRate;
-  // const mainAmount = amount - profitAmount;
-
   //  Update or create admin wallet
   let adminWallet = await Wallet.findOne({ user: admin._id });
 
@@ -84,13 +78,13 @@ const getAllFromDB = async user => {
   }
   const result = await Withdraw.find()
     .populate('user', '_id fullName email')
-    .lean();  
+    .lean();
 
   // Mask cardId
   const maskedResult = result.map(item => {
-    const cardId = item.cardId || '';
-    const last4 = cardId.slice(-4);
-    const maskedCard = `xxxx xxxx xxxx ${last4}`;
+    const cardId: string = item.cardId || '';
+    const last4: string = cardId.slice(-4);
+    const maskedCard: string = `xxxx xxxx xxxx ${last4}`;
     return {
       ...item,
       cardId: maskedCard,
@@ -100,7 +94,10 @@ const getAllFromDB = async user => {
   return maskedResult;
 };
 
-const sendWithdrawRequest = async (user, payload: IWithdrawRequest) => {
+const sendWithdrawRequest = async (
+  user: JwtPayload,
+  payload: IWithdrawRequest
+) => {
   const isExistsUser = await User.findOne({ email: user?.email });
   if (!isExistsUser) {
     throw new AppError(StatusCodes.NOT_FOUND, 'User not found');
@@ -117,9 +114,8 @@ const sendWithdrawRequest = async (user, payload: IWithdrawRequest) => {
   if (!wallet) {
     throw new AppError(StatusCodes.NOT_FOUND, 'Wallet not found');
   }
-  console.log('wallet is ====>', wallet);
   // Validate wallet account (cardId)
-  const selectedAccount = wallet?.walletAccounts.find(
+  const selectedAccount: any = wallet?.walletAccounts.find(
     acc => acc?.cardNumber.toString() === payload?.cardId.toString()
   );
 
@@ -135,21 +131,79 @@ const sendWithdrawRequest = async (user, payload: IWithdrawRequest) => {
     throw new AppError(StatusCodes.BAD_REQUEST, 'Insufficient wallet balance');
   }
 
-  const withdrawData = {
+  // Calculate profit (%)
+  const profitPercent: number = wallet?.profitCharge || 0;
+  const profitRate: number = profitPercent / 100;
+  const profitAmount: number = Number(payload?.amount) * profitRate;
+  const mainAmount: number = Number(payload?.amount) - profitAmount;
+
+  const withdrawData: IWithdrawRequest = {
     user: isExistsUser?._id,
     wallet: wallet?._id,
     cardId: payload?.cardId,
-    amount: payload?.amount,
+    amount: mainAmount,
     profitCharge: wallet?.profitCharge || 0,
   };
 
   // Create Withdraw Request
   const result = await Withdraw.create(withdrawData);
 
-  return result;
+  return withdrawData;
+};
+
+const acceptWithdrawRequest = async (user: JwtPayload, withdrawId: string) => {
+  const isExistsAdmin = await User.findOne({ role: user?.role });
+  if (!isExistsAdmin) {
+    throw new AppError(StatusCodes.NOT_FOUND, 'Admin user not found');
+  }
+
+  const adminWallet = await Wallet.findOne({ user: isExistsAdmin?._id });
+  if (!adminWallet) {
+    throw new AppError(StatusCodes.NOT_FOUND, 'Admin wallet not found');
+  }
+
+  const withdraw = await Withdraw.findById(withdrawId);
+  if (!withdraw) {
+    throw new AppError(StatusCodes.NOT_FOUND, 'Withdraw request not found');
+  }
+
+  const providerWallet = await Wallet.findOne({ user: withdraw?.user });
+  if (!providerWallet) {
+    throw new AppError(StatusCodes.NOT_FOUND, 'Provider wallet not found');
+  }
+
+  const withdrawalRequestBalance: number = withdraw?.amount;
+
+  const adminWalletBalance: number = adminWallet?.balance;
+
+  if (adminWalletBalance < withdrawalRequestBalance) {
+    throw new AppError(
+      StatusCodes.BAD_REQUEST,
+      'Insufficient admin wallet balance'
+    );
+  }
+
+  // Update admin wallet
+  adminWallet.balance -= withdrawalRequestBalance;
+  adminWallet.transactions.push({
+    user: new Types.ObjectId(withdraw?.user),
+    balance: -withdrawalRequestBalance,
+    createdAt: new Date(),
+  });
+  await adminWallet.save();
+
+  // Update provider wallet
+  providerWallet.balance -= withdrawalRequestBalance;
+  providerWallet.transactions.push({
+    user: new Types.ObjectId(isExistsAdmin?._id),
+    balance: -withdrawalRequestBalance,
+    createdAt: new Date(),
+  });
+  await providerWallet.save();
 };
 
 export const WithdrawService = {
   getAllFromDB,
   sendWithdrawRequest,
+  acceptWithdrawRequest,
 };

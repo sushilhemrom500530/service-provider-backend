@@ -17,6 +17,12 @@ router.post(
   auth('Provider'), 
   WithdrawController.sendWithdrawRequest
 );
+  
+router.patch(
+  '/accept-request',
+  auth('Admin'), 
+  WithdrawController.acceptWithdrawRequest
+);
 
  
 export const WithdrawRoutes = router;

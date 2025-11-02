@@ -36,7 +36,23 @@ const sendWithdrawRequest = catchAsync(async (req: Request, res: Response) => {
  
 
 
+const acceptWithdrawRequest = catchAsync(async (req: Request, res: Response) => {
+    const user = req.user as JwtPayload;
+    const {withdrawalId}= req.body;
+
+  const result = await WithdrawService.acceptWithdrawRequest(user, withdrawalId as string);
+
+  sendResponse(res, {
+    code: StatusCodes.OK,
+    message: 'Withdraw Request Sent successfully',
+    data: result,
+  });
+});
+ 
+
+
 export const WithdrawController = { 
   getAllFromDB,
-  sendWithdrawRequest
+  sendWithdrawRequest,
+  acceptWithdrawRequest
 };

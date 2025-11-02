@@ -35,6 +35,7 @@ export const updateOrCreateWallet = async (
         transactions: {
           user: new Types.ObjectId(senderId),
           balance: amount,
+          type: 'Earn',
           createdAt: new Date(),
         },
       },

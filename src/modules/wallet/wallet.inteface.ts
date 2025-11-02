@@ -1,14 +1,16 @@
 import { Types } from 'mongoose';
 
 export enum WalletTransactionType {
-  EARN = 'earn',
-  WITHDRAW = 'withdraw',
+  EARN = 'Earn',
+  WITHDRAW = 'Withdraw',
+  DEPOSIT = 'Deposit',
 }
 
 
 export interface IWalletTransaction {
   user: Types.ObjectId;
   balance: number;
+  type: WalletTransactionType;
   createdAt?: Date;
 }
 
