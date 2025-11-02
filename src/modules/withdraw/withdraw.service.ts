@@ -1,9 +1,11 @@
 import { Types } from 'mongoose';
-import { Wallet } from './wallet.model';
 import { User } from './../user/user.model';
 import AppError from './../../errors/AppErro';
 import { StatusCodes } from 'http-status-codes';
 import { config } from './../../config/index';
+import { Withdraw } from './Withdraw.model';
+import { IWithdrawRequest } from './withdraw.inteface';
+import { Wallet } from './../wallet/wallet.model';
 
 export const updateOrCreateWallet = async (
   ownerId: string, // provider
@@ -75,28 +77,79 @@ export const updateOrCreateWallet = async (
   return { adminWallet, providerWallet };
 };
 
-const updateProfit = async (user, payload: number) => {
-  console.log('req data :', payload);
-
+const getAllFromDB = async user => {
   const isExistsAdmin = await User.findOne({ role: user?.role });
   if (!isExistsAdmin) {
     throw new AppError(StatusCodes.NOT_FOUND, 'Admin user not found');
   }
+  const result = await Withdraw.find()
+    .populate('user', '_id fullName email')
+    .lean();  
 
-  const adminWallet = await Wallet.findOne({ user: isExistsAdmin._id });
-  if (!adminWallet) {
-    throw new AppError(StatusCodes.NOT_FOUND, 'Admin wallet not found');
-  }
+  // Mask cardId
+  const maskedResult = result.map(item => {
+    const cardId = item.cardId || '';
+    const last4 = cardId.slice(-4);
+    const maskedCard = `xxxx xxxx xxxx ${last4}`;
+    return {
+      ...item,
+      cardId: maskedCard,
+    };
+  });
 
-  const updateWalletProfit = await Wallet.findOneAndUpdate(
-    { user: isExistsAdmin._id },
-    { $set: { profitCharge: payload } },
-    { new: true }
-  ).select('-transactions -__v');
-
-  return updateWalletProfit;
+  return maskedResult;
 };
 
-export const WalletService = {
-  updateProfit,
+const sendWithdrawRequest = async (user, payload: IWithdrawRequest) => {
+  const isExistsUser = await User.findOne({ email: user?.email });
+  if (!isExistsUser) {
+    throw new AppError(StatusCodes.NOT_FOUND, 'User not found');
+  }
+
+  if (isExistsUser.role !== 'Provider') {
+    throw new AppError(
+      StatusCodes.FORBIDDEN,
+      'Only providers can withdraw funds'
+    );
+  }
+
+  const wallet = await Wallet.findOne({ user: isExistsUser?._id });
+  if (!wallet) {
+    throw new AppError(StatusCodes.NOT_FOUND, 'Wallet not found');
+  }
+  console.log('wallet is ====>', wallet);
+  // Validate wallet account (cardId)
+  const selectedAccount = wallet?.walletAccounts.find(
+    acc => acc?.cardNumber.toString() === payload?.cardId.toString()
+  );
+
+  if (!selectedAccount) {
+    throw new AppError(
+      StatusCodes.BAD_REQUEST,
+      'Selected wallet account not found'
+    );
+  }
+
+  // Check sufficient balance
+  if (wallet?.balance < payload?.amount) {
+    throw new AppError(StatusCodes.BAD_REQUEST, 'Insufficient wallet balance');
+  }
+
+  const withdrawData = {
+    user: isExistsUser?._id,
+    wallet: wallet?._id,
+    cardId: payload?.cardId,
+    amount: payload?.amount,
+    profitCharge: wallet?.profitCharge || 0,
+  };
+
+  // Create Withdraw Request
+  const result = await Withdraw.create(withdrawData);
+
+  return result;
+};
+
+export const WithdrawService = {
+  getAllFromDB,
+  sendWithdrawRequest,
 };

@@ -5,6 +5,7 @@ import AppError from './../../errors/AppErro';
 import { StatusCodes } from 'http-status-codes';
 import { config } from './../../config/index';
 import { IWalletAccount } from './wallet.inteface';
+import { JwtPayload } from 'jsonwebtoken';
 
 export const updateOrCreateWallet = async (
   ownerId: string, // provider
@@ -26,27 +27,42 @@ export const updateOrCreateWallet = async (
   //  Update or create admin wallet
   let adminWallet = await Wallet.findOne({ user: admin._id });
 
-  if (!adminWallet) {
-    adminWallet = await Wallet.create({
-      user: admin._id,
-      balance: amount,
-      transactions: [
-        {
+  await Wallet.findOneAndUpdate(
+    { user: admin._id },
+    {
+      $inc: { balance: amount },
+      $push: {
+        transactions: {
           user: new Types.ObjectId(senderId),
           balance: amount,
           createdAt: new Date(),
         },
-      ],
-    });
-  } else {
-    adminWallet.balance += amount;
-    adminWallet.transactions.push({
-      user: new Types.ObjectId(senderId),
-      balance: amount,
-      createdAt: new Date(),
-    });
-    await adminWallet.save();
-  }
+      },
+    },
+    { upsert: true, new: true }
+  );
+
+  // if (!adminWallet) {
+  //   adminWallet = await Wallet.create({
+  //     user: admin._id,
+  //     balance: amount,
+  //     transactions: [
+  //       {
+  //         user: new Types.ObjectId(senderId),
+  //         balance: amount,
+  //         createdAt: new Date(),
+  //       },
+  //     ],
+  //   });
+  // } else {
+  //   adminWallet.balance += amount;
+  //   adminWallet.transactions.push({
+  //     user: new Types.ObjectId(senderId),
+  //     balance: amount,
+  //     createdAt: new Date(),
+  //   });
+  //   await adminWallet.save();
+  // }
 
   // Update or create provider wallet
   let providerWallet = await Wallet.findOne({ user: ownerId });
@@ -76,9 +92,7 @@ export const updateOrCreateWallet = async (
   return { adminWallet, providerWallet };
 };
 
-const updateProfit = async (user, payload: number) => {
-  console.log('req data :', payload);
-
+const updateProfit = async (user: JwtPayload, payload: number) => {
   const isExistsAdmin = await User.findOne({ role: user?.role });
   if (!isExistsAdmin) {
     throw new AppError(StatusCodes.NOT_FOUND, 'Admin user not found');
@@ -89,13 +103,9 @@ const updateProfit = async (user, payload: number) => {
     throw new AppError(StatusCodes.NOT_FOUND, 'Admin wallet not found');
   }
 
-  const updateWalletProfit = await Wallet.findOneAndUpdate(
-    { user: isExistsAdmin._id },
-    { $set: { profitCharge: payload } },
-    { new: true }
-  ).select('-transactions -__v');
+  await Wallet.updateMany({}, { $set: { profitCharge: payload } });
 
-  return updateWalletProfit;
+  return { messaga: 'success' };
 };
 
 const addWallet = async (user, payload: IWalletAccount) => {
@@ -105,12 +115,21 @@ const addWallet = async (user, payload: IWalletAccount) => {
   }
 
   // Find the wallet
-  let wallet = await Wallet.findOne({ user: "68f8c4c078c729eb1d9dc598" });
+  let wallet = await Wallet.findOne({ user: isExistsProvider?._id });
   // let wallet = await Wallet.findOne({ user: user._id });
 
-   
   if (!wallet) {
     throw new AppError(StatusCodes.NOT_FOUND, 'Wallet not found');
+  }
+  const selectedAccount = wallet?.walletAccounts.find(
+    acc => acc?.cardNumber.toString() === payload?.cardNumber.toString()
+  );
+
+  if (selectedAccount) {
+    throw new AppError(
+      StatusCodes.BAD_REQUEST,
+      'This Wallet account already exists'
+    );
   }
 
   // Add the new wallet account
@@ -126,7 +145,20 @@ const addWallet = async (user, payload: IWalletAccount) => {
   return wallet;
 };
 
+const getBalanceById = async (user: JwtPayload) => {
+  const isExistsUser = await User.findOne({ email: user?.email });
+  if (!isExistsUser) {
+    throw new AppError(StatusCodes.NOT_FOUND, 'User not found');
+  }
+
+  const result = await Wallet.findOne({ user: isExistsUser?._id }).select(
+    '-transactions -__v'
+  );
+
+  return result;
+};
 export const WalletService = {
   updateProfit,
   addWallet,
+  getBalanceById,
 };
