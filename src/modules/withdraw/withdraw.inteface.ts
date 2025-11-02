@@ -11,6 +11,7 @@ export interface IWithdraw {
   wallet: Types.ObjectId;
   cardId: string;
   amount: number;
+  profitCharge: number;
   status: 'Pending' | 'Paid' | 'Unpaid' | 'Rejected' | 'Completed';
   transactionId?: string;
   note?: string;

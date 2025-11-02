@@ -29,7 +29,7 @@ const sendWithdrawRequest = catchAsync(async (req: Request, res: Response) => {
 
   sendResponse(res, {
     code: StatusCodes.OK,
-    message: 'Withdraw Retrieved successfully',
+    message: 'Withdraw Request Sent successfully',
     data: result,
   });
 });

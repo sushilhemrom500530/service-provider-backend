@@ -22,9 +22,13 @@ const WithdrawSchema = new Schema<IWithdraw>(
       required: true,
       min: [1, 'Withdrawal amount must be greater than 0'],
     },
-    status: {
+    profitCharge: {
+      type: Number,
+      required: true, 
+    },
+   status: {
       type: String,
-      enum: ['Pending' | 'Paid' | 'Unpaid' | 'Rejected' | 'Completed'],
+      enum: ['Pending', 'Paid', 'Unpaid', 'Rejected', 'Completed'], 
       default: 'Pending',
     },
     transactionId: {

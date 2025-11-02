@@ -82,10 +82,22 @@ const getAllFromDB = async user => {
   if (!isExistsAdmin) {
     throw new AppError(StatusCodes.NOT_FOUND, 'Admin user not found');
   }
+  const result = await Withdraw.find()
+    .populate('user', '_id fullName email')
+    .lean();  
 
-  const result = await Withdraw.find();
+  // Mask cardId
+  const maskedResult = result.map(item => {
+    const cardId = item.cardId || '';
+    const last4 = cardId.slice(-4);
+    const maskedCard = `xxxx xxxx xxxx ${last4}`;
+    return {
+      ...item,
+      cardId: maskedCard,
+    };
+  });
 
-  return result;
+  return maskedResult;
 };
 
 const sendWithdrawRequest = async (user, payload: IWithdrawRequest) => {
@@ -129,14 +141,12 @@ const sendWithdrawRequest = async (user, payload: IWithdrawRequest) => {
     cardId: payload?.cardId,
     amount: payload?.amount,
     profitCharge: wallet?.profitCharge || 0,
-    status: 'Pending',
-    note: payload.note || '',
   };
 
   // Create Withdraw Request
-  // const result = await Withdraw.create();
+  const result = await Withdraw.create(withdrawData);
 
-  return wallet;
+  return result;
 };
 
 export const WithdrawService = {
