@@ -67,7 +67,7 @@ export const processToPayment = async (payload: IProcessPaymentPayload) => {
       amount,
       currency,
       transactionId,
-      sessionId: session.id,
+      sessionId: session?.id,
       status: TransactionStatus.PENDING,
       gateway: PaymentGateway.STRIPE,
       paymentMethodType: 'Card',

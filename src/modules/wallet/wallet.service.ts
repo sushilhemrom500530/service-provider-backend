@@ -76,6 +76,7 @@ export const updateOrCreateWallet = async (
         {
           user: new Types.ObjectId(senderId),
           balance: amount,
+          type: 'Earn',
           createdAt: new Date(),
         },
       ],
@@ -85,6 +86,7 @@ export const updateOrCreateWallet = async (
     providerWallet.transactions.push({
       user: new Types.ObjectId(senderId),
       balance: amount,
+      type: 'Earn',
       createdAt: new Date(),
     });
     await providerWallet.save();

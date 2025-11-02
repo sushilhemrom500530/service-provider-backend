@@ -178,7 +178,7 @@ export const addBookingIntoDB = async (user: JwtPayload, payload: IBooking) => {
   ) {
     throw new AppError(StatusCodes.UNAUTHORIZED, 'User status is not active.');
   }
-  // for find model collection
+  // 2. Prepare models for dynamic ref
   const models: Record<string, any> = {
     SkiPass,
     SkiHire,
@@ -186,9 +186,8 @@ export const addBookingIntoDB = async (user: JwtPayload, payload: IBooking) => {
     Restaurant,
     Massage,
   };
-
   let product = null;
-  let foundModelName = null;
+  let foundModelName: string | null = null;
   let selectedMenuType: string | null = null;
 
   if (payload?.productId) {
@@ -201,109 +200,110 @@ export const addBookingIntoDB = async (user: JwtPayload, payload: IBooking) => {
       }
     }
 
-    if (!product) {
+    if (!product)
       throw new AppError(
         StatusCodes.NOT_FOUND,
         'Product not found in any collection.'
       );
-    }
   }
 
-  // Find product owner
+  // 3. Product owner check
   const productOwner = await User.findById(product?.owner);
-  if (!productOwner) {
+  if (!productOwner)
     throw new AppError(StatusCodes.NOT_FOUND, 'Product owner not found.');
-  }
 
-  //  add validation for booking items
-  if (
-    (productOwner?.providerType === 'Restaurant' ||
-      productOwner?.providerType === 'Ski_Hire') &&
-    (!payload?.bookingItems || payload.bookingItems.length === 0)
-  ) {
-    throw new AppError(
-      StatusCodes.BAD_REQUEST,
-      'Booking items are required for this product type.'
-    );
-  }
+  // 4. Conditional booking based on type
+  let validatedItems: any[] = [];
+  let totalPrice = 0;
 
-  if (!Array.isArray(product?.items)) {
-    throw new AppError(
-      StatusCodes.BAD_REQUEST,
-      'This product does not support booking items.'
-    );
-  }
+  const isItemBooking =
+    payload?.bookingItems && payload.bookingItems.length > 0;
 
-  // Validate booking items
-  const validatedItems = [];
-
-  for (const bookedItem of payload?.bookingItems || []) {
-    const foundItem = product?.items.find(
-      (menuItem: any) => menuItem?._id.toString() === bookedItem?.itemId
-    );
-
-    if (!foundItem) {
+  if (isItemBooking) {
+    // Booking with items
+    if (
+      (productOwner?.providerType === 'Restaurant' ||
+        productOwner?.providerType === 'Ski_Hire') &&
+      (!payload?.bookingItems || payload.bookingItems.length === 0)
+    ) {
       throw new AppError(
         StatusCodes.BAD_REQUEST,
-        `Item with ID ${bookedItem?.itemId} not found in product menu.`
+        'Booking items are required for this product type.'
       );
     }
 
-    if (bookedItem.quantity > foundItem.quantity) {
+    if (!Array.isArray(product?.items)) {
       throw new AppError(
         StatusCodes.BAD_REQUEST,
-        `Not enough quantity for item "${foundItem?.name}". Only ${foundItem?.quantity} available.`
+        'This product does not support booking items.'
       );
     }
 
-    // Push the validated item
-    validatedItems.push({
-      itemId: foundItem?._id,
-      name: foundItem?.name,
-      price: foundItem?.price,
-      requestedQty: bookedItem?.quantity,
-      availableQty: foundItem?.quantity,
-      total: foundItem?.price * bookedItem.quantity,
-    });
-  }
-
-  const menuTypesSet = new Set(
-    validatedItems.map(item => {
+    for (const bookedItem of payload.bookingItems) {
       const foundItem = product?.items.find(
-        i => i?._id.toString() === item?.itemId.toString()
+        (menuItem: any) => menuItem?._id.toString() === bookedItem?.itemId
       );
-      return foundItem?.menuType;
-    })
-  );
+      if (!foundItem) {
+        throw new AppError(
+          StatusCodes.BAD_REQUEST,
+          `Item with ID ${bookedItem?.itemId} not found in product menu.`
+        );
+      }
 
-  if (menuTypesSet?.size === 1) {
-    selectedMenuType = Array.from(menuTypesSet)[0]; // all same, store the menuType
-  } else {
-    throw new AppError(
-      StatusCodes.BAD_REQUEST,
-      'All booked items must have the same menuType.'
-    );
-  }
+      if (bookedItem.quantity > foundItem.quantity) {
+        throw new AppError(
+          StatusCodes.BAD_REQUEST,
+          `Not enough quantity for item "${foundItem?.name}". Only ${foundItem?.quantity} available.`
+        );
+      }
 
-  if (validatedItems.length === 0) {
-    throw new AppError(
-      StatusCodes.BAD_REQUEST,
-      'No valid booking items found.'
-    );
-  }
-
-  for (const item of validatedItems) {
-    const index = product?.items.findIndex(
-      (i: any) => i?._id.toString() === item?.itemId.toString()
-    );
-    if (index !== -1) {
-      product.items[index].quantity -= item.requestedQty;
+      validatedItems.push({
+        itemId: foundItem?._id,
+        name: foundItem?.name,
+        price: foundItem?.price,
+        requestedQty: bookedItem?.quantity,
+        availableQty: foundItem?.quantity,
+        total: foundItem?.price * bookedItem.quantity,
+      });
     }
+
+    const menuTypesSet = new Set(
+      validatedItems.map(item => {
+        const foundItem = product?.items.find(
+          i => i?._id.toString() === item?.itemId.toString()
+        );
+        return foundItem?.menuType;
+      })
+    );
+
+    if (menuTypesSet.size === 1) selectedMenuType = Array.from(menuTypesSet)[0];
+    else
+      throw new AppError(
+        StatusCodes.BAD_REQUEST,
+        'All booked items must have the same menuType.'
+      );
+
+    for (const item of validatedItems) {
+      const index = product?.items.findIndex(
+        (i: any) => i?._id.toString() === item?.itemId.toString()
+      );
+      if (index !== -1) product.items[index].quantity -= item.requestedQty;
+    }
+
+    totalPrice = validatedItems.reduce((sum, item) => sum + item.total, 0);
+  } else {
+    // Booking without items (just personCount, date, time)
+    if (!payload?.personCount || !payload?.date || !payload?.time) {
+      throw new AppError(
+        StatusCodes.BAD_REQUEST,
+        'personCount, date, and time are required for this booking type.'
+      );
+    }
+
+    totalPrice = product?.amount || 0; // fallback to product price if exists
   }
 
-  const totalPrice = validatedItems.reduce((sum, item) => sum + item.total, 0);
-
-  // Determine the model name based on provider type
+  // 5. Determine productModel
   let productModel: string;
   switch (productOwner?.providerType) {
     case 'Ski_Pass':
@@ -325,30 +325,30 @@ export const addBookingIntoDB = async (user: JwtPayload, payload: IBooking) => {
       throw new AppError(StatusCodes.BAD_REQUEST, 'Invalid provider type.');
   }
 
+  // 6. Create booking
   const bookingData = {
     ...payload,
     totalPrice,
     product: payload?.productId,
-    user: isExistsUser?._id,
+    user: isExistsUser._id,
     category: productOwner?.providerType,
     productModel,
     menyType: selectedMenuType,
   };
-
+ 
   const result = await Booking.create(bookingData);
-  if (!result) {
+  if (!result)
     throw new AppError(
       StatusCodes.BAD_REQUEST,
       'Something went wrong. Booking not created.'
     );
-  }
 
   const paymentRequest = await processToPayment({
     bookingId: result?._id,
     userId: isExistsUser?._id,
     amount: result.totalPrice,
-    category:result?.category,
-    ownerId: productOwner?._id
+    category: result?.category,
+    ownerId: productOwner?._id,
   });
 
   return paymentRequest;
