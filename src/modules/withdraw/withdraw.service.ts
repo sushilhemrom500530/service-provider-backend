@@ -123,22 +123,16 @@ const sendWithdrawRequest = async (
       StatusCodes.BAD_REQUEST,
       'Selected wallet account not found'
     );
-  if (wallet.balance < payload.amount)
+  if (wallet?.balance < payload.amount)
     throw new AppError(StatusCodes.BAD_REQUEST, 'Insufficient wallet balance');
 
-  //  calculate profit amount
-  const profitRate = (wallet.profitCharge || 0) / 100;
-  const mainAmount =
-    Number(payload.amount) - Number(payload.amount) * profitRate;
- 
- 
   const withdrawData: Partial<IWithdrawRequest> = {
     user: isExistsUser._id,
     wallet: wallet._id,
     cardId: payload.cardId,
-    amount: mainAmount,
+    amount: payload?.amount,
     transactionId: generateTransactionId('WD'),
-    profitCharge: wallet.profitCharge || 0,  
+    profitCharge: wallet.profitCharge || 0,
   };
   const result = await Withdraw.create(withdrawData);
   return result;
@@ -171,40 +165,42 @@ const acceptWithdrawRequest = async (user: JwtPayload, withdrawId: string) => {
   if (!providerWallet) {
     throw new AppError(StatusCodes.NOT_FOUND, 'Provider wallet not found');
   }
+  // Calculate profit and withdrawal amount
+  const profitRate: number = (adminWallet?.profitCharge || 0) / 100;
+  const profitAmount: number = withdraw.amount * profitRate;
+  const withdrawalAmount: number = withdraw.amount - profitAmount;
 
-  const withdrawalRequestBalance: number = withdraw?.amount;
-
-  const adminWalletBalance: number = adminWallet?.balance;
-
-  if (adminWalletBalance < withdrawalRequestBalance) {
+  //  Check admin balance
+  if (adminWallet.balance < withdrawalAmount) {
     throw new AppError(
       StatusCodes.BAD_REQUEST,
       'Insufficient admin wallet balance'
     );
   }
 
-  // Update admin wallet
-  adminWallet.balance -= withdrawalRequestBalance;
+  // Update admin wallet 
+  adminWallet.balance -= withdrawalAmount;
   adminWallet.transactions.push({
     user: new Types.ObjectId(withdraw?.user),
-    balance: -withdrawalRequestBalance,
+    balance: -withdrawalAmount,
     type: 'Withdraw',
     createdAt: new Date(),
   });
-  await adminWallet.save();
 
-  // Update provider wallet
-  providerWallet.balance -= withdrawalRequestBalance;
+  // Update provider wallet 
+  providerWallet.balance -= withdraw?.amount;
   providerWallet.transactions.push({
     user: new Types.ObjectId(isExistsAdmin?._id),
-    balance: -withdrawalRequestBalance,
+    balance: withdraw?.amount,
     type: 'Withdraw',
     createdAt: new Date(),
   });
-  await providerWallet.save();
 
-  // Update withdraw request
-  withdraw.status = 'Paid';
+  // Save both wallets
+  await adminWallet.save();
+  await providerWallet.save();
+ 
+  withdraw.status = 'Paid'; 
   await withdraw.save();
 
   return withdraw;
