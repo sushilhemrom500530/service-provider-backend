@@ -7,6 +7,7 @@ export interface IWithdrawRequest {
 }
 
 export interface IWithdraw {
+  _id?: Types.ObjectId;
   user: Types.ObjectId;
   wallet: Types.ObjectId;
   cardId: string;

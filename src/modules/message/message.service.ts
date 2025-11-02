@@ -66,7 +66,7 @@ const getAllMessagesByReceiverId = async (
   ];
 
   // Default sorting
-  options.sortBy = options.sortBy || 'createdAt';
+  options.sortBy = options.sortBy || 'updatedAt';
 
   // Fetch paginated messages
   const result = await Message.paginate(query, options);

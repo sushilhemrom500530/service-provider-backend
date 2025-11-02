@@ -16,6 +16,11 @@ const WalletTransactionSchema = new Schema<IWalletTransaction>(
       type: Number,
       default: 0,
     },
+    type: {
+      type: String,
+      required: true,
+      enum: ['Earn', 'Withdraw','Deposit'],
+    },
     createdAt: {
       type: Date,
       default: Date.now,

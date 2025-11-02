@@ -1,20 +1,20 @@
 import { Schema, model, Types } from 'mongoose';
 import { IWithdraw } from './withdraw.interface';
+import { v4 as uuidv4 } from 'uuid';
 
 const WithdrawSchema = new Schema<IWithdraw>(
   {
-    user: {
+   user: {
       type: Types.ObjectId,
       ref: 'User',
       required: true,
     },
     wallet: {
       type: Types.ObjectId,
-      ref: 'Wallet',
-      required: true,
+      ref: 'Wallet', 
     },
     cardId: {
-      type: String, 
+      type: String,
       required: true,
     },
     amount: {
@@ -24,31 +24,30 @@ const WithdrawSchema = new Schema<IWithdraw>(
     },
     profitCharge: {
       type: Number,
-      required: true, 
+      required: true,
     },
-   status: {
+    status: {
       type: String,
-      enum: ['Pending', 'Paid', 'Unpaid', 'Rejected', 'Completed'], 
+      enum: ['Pending', 'Paid', 'Unpaid', 'Rejected', 'Completed'],
       default: 'Pending',
     },
     transactionId: {
       type: String,
-      unique: true,
+      required: true,
     },
     note: {
       type: String,
       default: '',
       trim: true,
-    }, 
+    },
   },
   { timestamps: true }
 );
 
+// Generate a unique transaction ID
 WithdrawSchema.pre('save', function (next) {
   if (!this.transactionId) {
-    this.transactionId = `WD-${Date.now()}-${Math.floor(
-      Math.random() * 10000
-    )}`;
+    this.transactionId = `WD-${uuidv4()}`;
   }
   next();
 });

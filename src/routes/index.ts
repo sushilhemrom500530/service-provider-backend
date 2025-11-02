@@ -19,6 +19,7 @@ import { PaymentRoutes } from './../modules/payment/payment.routes';
 import { WalletRoutes } from './../modules/wallet/wallet.routes';
 import { MessageRoutes } from './../modules/message/message.routes';
 import { WithdrawRoutes } from './../modules/withdraw/withdraw.routes';
+import { MetaRoutes } from './../modules/meta/meta.route';
 
 const router = express.Router();
 
@@ -93,6 +94,10 @@ const apiRoutes = [
   {
     path: '/Withdraw',
     route: WithdrawRoutes,
+  },
+  {
+    path: '/meta',
+    route: MetaRoutes,
   },
 ];
 
