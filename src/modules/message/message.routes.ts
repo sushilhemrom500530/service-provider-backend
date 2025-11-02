@@ -14,7 +14,7 @@ const router = Router();
 router.get(
   '/unviewed-count',
   auth('Admin', 'Provider', 'User'),
-  validateRequest(messageValidations.unviewedMessagesCount),
+  // validateRequest(messageValidations.unviewedMessagesCount),
   MessageController.unviewedMessagesCount
 );
 
