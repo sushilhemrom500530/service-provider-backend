@@ -92,8 +92,7 @@ export const updateOrCreateWallet = async (
   return { adminWallet, providerWallet };
 };
 
-const updateProfit = async (user: JwtPayload, payload: number) => { 
-
+const updateProfit = async (user: JwtPayload, payload: number) => {
   const isExistsAdmin = await User.findOne({ role: user?.role });
   if (!isExistsAdmin) {
     throw new AppError(StatusCodes.NOT_FOUND, 'Admin user not found');
@@ -116,11 +115,21 @@ const addWallet = async (user, payload: IWalletAccount) => {
   }
 
   // Find the wallet
-  let wallet = await Wallet.findOne({ user: '68f8c4c078c729eb1d9dc598' });
+  let wallet = await Wallet.findOne({ user: isExistsProvider?._id });
   // let wallet = await Wallet.findOne({ user: user._id });
 
   if (!wallet) {
     throw new AppError(StatusCodes.NOT_FOUND, 'Wallet not found');
+  }
+  const selectedAccount = wallet?.walletAccounts.find(
+    acc => acc?.cardNumber.toString() === payload?.cardNumber.toString()
+  );
+
+  if (selectedAccount) {
+    throw new AppError(
+      StatusCodes.BAD_REQUEST,
+      'This Wallet account already exists'
+    );
   }
 
   // Add the new wallet account

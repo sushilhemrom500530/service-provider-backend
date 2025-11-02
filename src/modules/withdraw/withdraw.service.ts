@@ -5,6 +5,7 @@ import { StatusCodes } from 'http-status-codes';
 import { config } from './../../config/index';
 import { Withdraw } from './Withdraw.model';
 import { IWithdrawRequest } from './withdraw.inteface';
+import { Wallet } from './../wallet/wallet.model';
 
 export const updateOrCreateWallet = async (
   ownerId: string, // provider
@@ -100,14 +101,14 @@ const sendWithdrawRequest = async (user, payload: IWithdrawRequest) => {
     );
   }
 
-  const wallet = await Wallet.findOne({ user: isExistsUser._id });
+  const wallet = await Wallet.findOne({ user: isExistsUser?._id });
   if (!wallet) {
     throw new AppError(StatusCodes.NOT_FOUND, 'Wallet not found');
   }
-
+  console.log('wallet is ====>', wallet);
   // Validate wallet account (cardId)
-  const selectedAccount = wallet.walletAccounts.find(
-    acc => acc.cardNumber.toString() === payload.cardId.toString()
+  const selectedAccount = wallet?.walletAccounts.find(
+    acc => acc?.cardNumber.toString() === payload?.cardId.toString()
   );
 
   if (!selectedAccount) {
@@ -116,10 +117,9 @@ const sendWithdrawRequest = async (user, payload: IWithdrawRequest) => {
       'Selected wallet account not found'
     );
   }
- 
 
   // Check sufficient balance
-  if (wallet.balance < payload.amount) {
+  if (wallet?.balance < payload?.amount) {
     throw new AppError(StatusCodes.BAD_REQUEST, 'Insufficient wallet balance');
   }
 
@@ -128,15 +128,15 @@ const sendWithdrawRequest = async (user, payload: IWithdrawRequest) => {
     wallet: wallet?._id,
     cardId: payload?.cardId,
     amount: payload?.amount,
-    profitCharge: 0,
+    profitCharge: wallet?.profitCharge || 0,
     status: 'Pending',
     note: payload.note || '',
   };
 
   // Create Withdraw Request
-  const result = await Withdraw.create();
+  // const result = await Withdraw.create();
 
-  return result;
+  return wallet;
 };
 
 export const WithdrawService = {
