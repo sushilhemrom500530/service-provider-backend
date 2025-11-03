@@ -21,19 +21,19 @@ const getAllBookingFromDB = async (user: JwtPayload) => {
   }
 
   // Fetch all bookings first
-  const result = await Booking.find()
+  let result = await Booking.find()
     .populate({
       path: 'product',
       select:
-        '-items -owner -totalPrice -serviceArea -__v -reviews -refunds -averageRating -createdAt -updatedAt',
+        '-items -totalPrice -serviceArea -__v -reviews -refunds -averageRating -createdAt -updatedAt',
     })
     .populate('user', 'fullName email address phoneNumber')
     .sort({ createdAt: -1 });
 
   // Filter by provider (if needed)
-  if (isExistsUser.role === 'Provider') {
+  if (isExistsUser?.role === 'Provider') {
     result = result.filter(
-      (booking: any) =>
+      (booking: any) => 
         booking.product?.owner?._id?.toString() === isExistsUser._id.toString()
     );
   } else if (isExistsUser.role !== 'Admin') {
@@ -96,7 +96,7 @@ const getMyBooking = async (user: JwtPayload) => {
     .populate('user', 'fullName email address phoneNumber')
     .populate(
       'product',
-      '-owner -totalPrice -__v -reviews -refunds -averageRating -createdAt -updatedAt'
+      ' -totalPrice -__v -reviews -refunds -averageRating -createdAt -updatedAt'
     )
     .sort({ createdAt: -1 });
 
@@ -160,7 +160,7 @@ const getMyBooking = async (user: JwtPayload) => {
   return bookingsWithTimeInfo;
 };
 
-export const addBookingIntoDB = async (user: JwtPayload, payload: IBooking) => {
+const addBookingIntoDB = async (user: JwtPayload, payload: IBooking) => {
   // check user
   const isExistsUser = await User.findOne({ email: user?.email });
   if (!isExistsUser) {
@@ -354,7 +354,7 @@ export const addBookingIntoDB = async (user: JwtPayload, payload: IBooking) => {
   return paymentRequest;
 };
 
-export const updateBookingIntoDB = async (
+const updateBookingIntoDB = async (
   user: JwtPayload,
   payload: BookingStatus,
   bookingId: string
@@ -394,7 +394,7 @@ export const updateBookingIntoDB = async (
   return result;
 };
 
-export const updatePermitBookingIntoDB = async (
+const updatePermitBookingIntoDB = async (
   user: JwtPayload,
   isPermitted: boolean,
   bookingId: string
@@ -434,7 +434,7 @@ export const updatePermitBookingIntoDB = async (
   return result;
 };
 
-export const refundBookingIntoDB = async (
+const refundBookingIntoDB = async (
   user: JwtPayload,
   payload: Partial<any | {}>,
   bookingId: string
@@ -525,7 +525,7 @@ export const refundBookingIntoDB = async (
   return result;
 };
 
-export const deleteBookingIntoDB = async (id: string, user: JwtPayload) => {
+const deleteBookingIntoDB = async (id: string, user: JwtPayload) => {
   // check user
   const isExistsUser = await User.findOne({ email: user?.email });
   if (!isExistsUser) {
