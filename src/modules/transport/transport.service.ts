@@ -19,11 +19,13 @@ const getAllTransportFromDB = async (user: JwtPayload) => {
     );
   }
 
-  const transport = await Transport.find().populate({
-    path: 'owner',
-    select: '-isDeleted -agreeTermsCondition -__v -createdAt -updatedAt',
-  });
-
+  const transport = await Transport.find({ owner: isExistsUser?._id });
+  // .populate(
+  //     {
+  //       path: 'owner',
+  //       select: '-isDeleted -agreeTermsCondition -__v -createdAt -updatedAt',
+  //     }
+  //   );
   const result = await Promise.all(
     transport.map(async trans => {
       const categoryDoc = await Category.findOne(

@@ -18,7 +18,11 @@ const getAllSkiPassFromDB = async (user: JwtPayload) => {
     );
   }
 
-  const result = await SkiPass.find();
+  const result = await SkiPass.find({ owner: isExistsUser?._id }) 
+  // .populate({
+  //   path: 'owner',
+  //   select: '-isDeleted -agreeTermsCondition -__v -createdAt -updatedAt',
+  // });
   return result;
 };
 
@@ -166,7 +170,7 @@ const updateSkiPassIntoDB = async (req: Request) => {
       StatusCodes.NOT_FOUND,
       'You cannot view this data because your account was not found.'
     );
-  } 
+  }
 
   // Check provider role & type
   if (

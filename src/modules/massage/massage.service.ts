@@ -19,7 +19,7 @@ const getAllMassageFromDB = async (user: JwtPayload) => {
     );
   }
 
-  const massages = await Massage.find().populate({
+  const massages = await Massage.find({ owner: isExistsUser?._id }).populate({
     path: 'owner',
     select: '-isDeleted -agreeTermsCondition -__v -createdAt -updatedAt',
   });
