@@ -20,7 +20,9 @@ const getAllRestaurantFromDB = async (user: JwtPayload) => {
     );
   }
 
-  const restaurant = await Restaurant.find().populate({
+  const restaurant = await Restaurant.find({
+    owner: isExistsUser?._id,
+  }).populate({
     path: 'owner',
     select: '-isDeleted -agreeTermsCondition -__v -createdAt -updatedAt',
   });

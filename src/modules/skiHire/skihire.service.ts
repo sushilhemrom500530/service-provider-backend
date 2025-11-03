@@ -19,7 +19,7 @@ const getAllSkiHireFromDB = async (user: JwtPayload) => {
     );
   }
 
-  const skiHire = await SkiHire.find().populate({
+  const skiHire = await SkiHire.find({ owner: isExistsUser?._id }).populate({
     path: 'owner',
     select: '-isDeleted -agreeTermsCondition -__v -createdAt -updatedAt',
   });
