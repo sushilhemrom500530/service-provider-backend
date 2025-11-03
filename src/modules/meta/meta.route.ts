@@ -9,4 +9,10 @@ router.get('/provider',
     MetaController.getProviderDashboardData
 );
 
+
+router.get('/admin', 
+    auth('Admin'),
+    MetaController.getAdminDashboardData
+);
+
 export const MetaRoutes = router;

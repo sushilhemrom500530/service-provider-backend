@@ -96,7 +96,7 @@ const apiRoutes = [
     route: WithdrawRoutes,
   },
   {
-    path: '/meta',
+    path: '/dashboard/meta',
     route: MetaRoutes,
   },
 ];

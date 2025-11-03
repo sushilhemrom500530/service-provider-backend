@@ -62,13 +62,13 @@ const getProviderDashboard = async (user: JwtPayload) => {
 
   for (const [modelName, Model] of Object.entries(models)) {
     const products = await Model.find({ owner: isExistUser?._id })
-      .select('-items') 
+      .select('-items')
       .sort({ createdAt: -1 })
       .lean();
 
     const formatted = products?.map(p => ({
       ...p,
-      model: modelName,  
+      model: modelName,
     }));
 
     allProducts.push(...formatted);
@@ -76,20 +76,51 @@ const getProviderDashboard = async (user: JwtPayload) => {
 
   // Sort all products by createdAt (newest first)
   allProducts.sort(
-    (a, b) => new Date(b?.createdAt).getTime() - new Date(a?.createdAt).getTime()
+    (a, b) =>
+      new Date(b?.createdAt).getTime() - new Date(a?.createdAt).getTime()
   );
 
   const recentServices = allProducts.slice(0, 4);
 
   return {
-    totalBooking,
-    todayBookingCount,
+    stats: {
+      todayBookingCount,
+      totalBooking,
+      totalBalance: totalBalance?.balance || 0,
+    },
     recentBookings,
-    totalBalance: totalBalance?.balance || 0,
-    recentServices
+    recentServices,
+  };
+};
+
+const getAdminDashboard = async (user: JwtPayload) => {
+  const isExistUser = await User.findOne({
+    email: user?.email,
+    role: 'Admin',
+  });
+
+  if (!isExistUser) {
+    throw new AppError(StatusCodes.NOT_FOUND, 'Admin not found.');
+  }
+
+  const totalBalance = await Wallet.findOne({
+    user: isExistUser?._id,
+  }).select('balance');
+
+  const totalUser = await User.countDocuments();
+
+  const totalProvider = await User.countDocuments({ role: 'Provider' });
+
+  return {
+    stats: {
+      totalIncome: totalBalance?.balance || 0,
+      totalUser,
+      totalProvider,
+    },
   };
 };
 
 export const MetaService = {
   getProviderDashboard,
+  getAdminDashboard,
 };

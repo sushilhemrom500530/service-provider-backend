@@ -11,7 +11,19 @@ const getProviderDashboardData = catchAsync(
     const result = await MetaService.getProviderDashboard(user as JwtPayload);
     sendResponse(res, {
       code: StatusCodes.OK,
-      message: 'Provider fetched successfully',
+      message: 'Provider Meta fetched successfully',
+      data: result,
+    });
+  }
+);
+
+const getAdminDashboardData = catchAsync(
+  async (req: Request, res: Response) => {
+    const user = req?.user;
+    const result = await MetaService.getAdminDashboard(user as JwtPayload);
+    sendResponse(res, {
+      code: StatusCodes.OK,
+      message: 'Admin Meta fetched successfully',
       data: result,
     });
   }
@@ -19,4 +31,5 @@ const getProviderDashboardData = catchAsync(
 
 export const MetaController = {
   getProviderDashboardData,
+  getAdminDashboardData
 };
