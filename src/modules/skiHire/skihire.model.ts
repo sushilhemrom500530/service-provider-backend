@@ -3,7 +3,7 @@ import { reviewSchema, refundSchema } from './../common/common.schema';
 import { IProductItems } from './skihire.interface';
 
 const productItemsSchema = new Schema<IProductItems>({
-  productName: {    
+  productName: {
     type: String,
     required: true,
     trim: true,
@@ -49,7 +49,7 @@ const skiHireSchema = new Schema<ISkiHire>(
     extraChargePerHour: {
       type: Number,
       required: false,
-      default: 0 , 
+      default: 0,
     },
     totalPrice: {
       type: Number,

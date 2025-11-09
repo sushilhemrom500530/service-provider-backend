@@ -33,7 +33,7 @@ const getAllBookingFromDB = async (user: JwtPayload) => {
   // Filter by provider (if needed)
   if (isExistsUser?.role === 'Provider') {
     result = result.filter(
-      (booking: any) => 
+      (booking: any) =>
         booking.product?.owner?._id?.toString() === isExistsUser._id.toString()
     );
   } else if (isExistsUser.role !== 'Admin') {
@@ -167,6 +167,8 @@ const addBookingIntoDB = async (user: JwtPayload, payload: IBooking) => {
     throw new AppError(StatusCodes.NOT_FOUND, 'User not found.');
   }
 
+  // console.log('user is : ', isExistsUser);
+
   if (!isExistsUser?._id.equals(payload?.userId)) {
     throw new AppError(StatusCodes.UNAUTHORIZED, 'User ID mismatch.');
   }
@@ -178,7 +180,7 @@ const addBookingIntoDB = async (user: JwtPayload, payload: IBooking) => {
   ) {
     throw new AppError(StatusCodes.UNAUTHORIZED, 'User status is not active.');
   }
-  // 2. Prepare models for dynamic ref
+  // Prepare models for dynamic ref
   const models: Record<string, any> = {
     SkiPass,
     SkiHire,
@@ -207,24 +209,24 @@ const addBookingIntoDB = async (user: JwtPayload, payload: IBooking) => {
       );
   }
 
-  // 3. Product owner check
+  // Product owner check
   const productOwner = await User.findById(product?.owner);
   if (!productOwner)
     throw new AppError(StatusCodes.NOT_FOUND, 'Product owner not found.');
 
-  // 4. Conditional booking based on type
+  // Conditional booking based on type
   let validatedItems: any[] = [];
   let totalPrice = 0;
 
   const isItemBooking =
-    payload?.bookingItems && payload.bookingItems.length > 0;
+    payload?.bookingItems && payload?.bookingItems.length > 0;
 
   if (isItemBooking) {
     // Booking with items
     if (
       (productOwner?.providerType === 'Restaurant' ||
         productOwner?.providerType === 'Ski_Hire') &&
-      (!payload?.bookingItems || payload.bookingItems.length === 0)
+      (!payload?.bookingItems || payload?.bookingItems.length === 0)
     ) {
       throw new AppError(
         StatusCodes.BAD_REQUEST,
@@ -239,7 +241,7 @@ const addBookingIntoDB = async (user: JwtPayload, payload: IBooking) => {
       );
     }
 
-    for (const bookedItem of payload.bookingItems) {
+    for (const bookedItem of payload?.bookingItems) {
       const foundItem = product?.items.find(
         (menuItem: any) => menuItem?._id.toString() === bookedItem?.itemId
       );
@@ -250,7 +252,7 @@ const addBookingIntoDB = async (user: JwtPayload, payload: IBooking) => {
         );
       }
 
-      if (bookedItem.quantity > foundItem.quantity) {
+      if (bookedItem?.quantity > foundItem?.quantity) {
         throw new AppError(
           StatusCodes.BAD_REQUEST,
           `Not enough quantity for item "${foundItem?.name}". Only ${foundItem?.quantity} available.`
@@ -268,7 +270,7 @@ const addBookingIntoDB = async (user: JwtPayload, payload: IBooking) => {
     }
 
     const menuTypesSet = new Set(
-      validatedItems.map(item => {
+      validatedItems?.map(item => {
         const foundItem = product?.items.find(
           i => i?._id.toString() === item?.itemId.toString()
         );
@@ -276,7 +278,8 @@ const addBookingIntoDB = async (user: JwtPayload, payload: IBooking) => {
       })
     );
 
-    if (menuTypesSet.size === 1) selectedMenuType = Array.from(menuTypesSet)[0];
+    if (menuTypesSet?.size === 1)
+      selectedMenuType = Array.from(menuTypesSet)[0];
     else
       throw new AppError(
         StatusCodes.BAD_REQUEST,
@@ -303,7 +306,7 @@ const addBookingIntoDB = async (user: JwtPayload, payload: IBooking) => {
     totalPrice = product?.amount || 0; // fallback to product price if exists
   }
 
-  // 5. Determine productModel
+  // Determine productModel
   let productModel: string;
   switch (productOwner?.providerType) {
     case 'Ski_Pass':
@@ -325,8 +328,8 @@ const addBookingIntoDB = async (user: JwtPayload, payload: IBooking) => {
       throw new AppError(StatusCodes.BAD_REQUEST, 'Invalid provider type.');
   }
 
-  // 6. Create booking
-  const bookingData = {
+  // Create booking
+  const bookingData: Partial<IBooking> = {
     ...payload,
     totalPrice,
     product: payload?.productId,
@@ -335,14 +338,14 @@ const addBookingIntoDB = async (user: JwtPayload, payload: IBooking) => {
     productModel,
     menyType: selectedMenuType,
   };
- 
+
   const result = await Booking.create(bookingData);
   if (!result)
     throw new AppError(
       StatusCodes.BAD_REQUEST,
       'Something went wrong. Booking not created.'
     );
-
+  // Process to payment
   const paymentRequest = await processToPayment({
     bookingId: result?._id,
     userId: isExistsUser?._id,

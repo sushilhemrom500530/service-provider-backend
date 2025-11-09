@@ -7,8 +7,7 @@ export type BookingStatus =
   | 'Cancelled'
   | 'Deleted';
 
-
-  export type BookingCategory =
+export type BookingCategory =
   | 'Ski_Pass'
   | 'Ski_Hire'
   | 'Transport'
@@ -22,8 +21,7 @@ export type ProductModelName =
   | 'Restaurant'
   | 'Massage';
 
-
-  export interface IBookingItem {
+export interface IBookingItem {
   itemId: Types.ObjectId;
   quantity: number;
 }
@@ -48,8 +46,11 @@ export interface IBooking extends Document {
 
   bookingStatus: BookingStatus;
 
+  phoneNumber?: string;
+  address?: string;
+
   totalPrice: number;
-  
+
   isPermitted: boolean | false;
 
   createdAt?: Date;

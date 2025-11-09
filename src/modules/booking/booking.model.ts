@@ -70,7 +70,14 @@ const bookingSchema = new Schema<IBooking>(
       required: true,
     },
 
-    isPermitted : {
+    phoneNumber: {
+      type: String,
+    },
+    address: {
+      type: String,
+    },
+
+    isPermitted: {
       type: Boolean,
       default: false,
     },
