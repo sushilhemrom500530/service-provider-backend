@@ -4,7 +4,7 @@ import { User } from './../user/user.model';
 import AppError from './../../errors/AppErro';
 import { StatusCodes } from 'http-status-codes';
 import { config } from './../../config/index';
-import { IWalletAccount } from './wallet.inteface';
+import { IWalletAccount } from './wallet.interface';
 import { JwtPayload } from 'jsonwebtoken';
 
 export const updateOrCreateWallet = async (

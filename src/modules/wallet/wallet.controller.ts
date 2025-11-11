@@ -4,7 +4,7 @@ import { Request, Response } from 'express';
 import sendResponse from './../../shared/sendResponse';
 import { StatusCodes } from 'http-status-codes';
 import { WalletService } from './wallet.service';
-import { IWalletAccount } from './wallet.inteface';
+import { IWalletAccount } from './wallet.interface';
 
 const updateWalletProfit = catchAsync(async (req: Request, res: Response) => {
   const user = req.user as JwtPayload;

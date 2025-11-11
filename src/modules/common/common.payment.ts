@@ -76,7 +76,7 @@ export const processToPayment = async (payload: IProcessPaymentPayload) => {
     await Payment.create(paymentPayload);
 
     // create wallet or update
-    await updateOrCreateWallet(ownerId, userId, amount);
+    // await updateOrCreateWallet(ownerId, userId, amount);
 
     return {
       sessionId: session.id,

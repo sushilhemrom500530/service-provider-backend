@@ -41,8 +41,7 @@ export interface IBooking extends Document {
 
   bookingItems?: IBookingItem[];
   duration?: string;
-  bookinRequestText?: string;
-  menyType?: string;
+  bookinRequestText?: string; 
 
   bookingStatus: BookingStatus;
 

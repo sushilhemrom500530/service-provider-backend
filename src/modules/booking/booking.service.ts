@@ -13,6 +13,8 @@ import { Transport } from './../transport/transport.model';
 import { Restaurant } from './../restaurant/restaurant.model';
 import { Massage } from './../massage/massage.model';
 import { processToPayment } from './../common/common.payment';
+import { Wallet } from './../wallet/wallet.model';
+import { WalletTransactionType } from './../wallet/wallet.interface';
 
 const getAllBookingFromDB = async (user: JwtPayload) => {
   const isExistsUser = await User.findOne({ email: user?.email });
@@ -284,8 +286,7 @@ const addBookingIntoDB = async (user: JwtPayload, payload: IBooking) => {
     Massage,
   };
   let product = null;
-  let foundModelName: string | null = null;
-  let selectedMenuType: string | null = null;
+  let foundModelName: string | null = null; 
 
   if (payload?.productId) {
     for (const [name, Model] of Object.entries(models)) {
@@ -363,24 +364,7 @@ const addBookingIntoDB = async (user: JwtPayload, payload: IBooking) => {
         total: foundItem?.price * bookedItem.quantity,
       });
     }
-
-    const menuTypesSet = new Set(
-      validatedItems?.map(item => {
-        const foundItem = product?.items.find(
-          i => i?._id.toString() === item?.itemId.toString()
-        );
-        return foundItem?.menuType;
-      })
-    );
-
-    if (menuTypesSet?.size === 1)
-      selectedMenuType = Array.from(menuTypesSet)[0];
-    else
-      throw new AppError(
-        StatusCodes.BAD_REQUEST,
-        'All booked items must have the same menuType.'
-      );
-
+ 
     for (const item of validatedItems) {
       const index = product?.items.findIndex(
         (i: any) => i?._id.toString() === item?.itemId.toString()
@@ -430,10 +414,49 @@ const addBookingIntoDB = async (user: JwtPayload, payload: IBooking) => {
     product: payload?.productId,
     user: isExistsUser._id,
     category: productOwner?.providerType,
-    productModel,
-    menyType: selectedMenuType,
+    productModel, 
   };
 
+  // wallet calculation 
+    const ownerWallet = await Wallet.findOne({ user: productOwner?._id });
+
+    if (!ownerWallet) {
+      throw new AppError(StatusCodes.NOT_FOUND, 'Owner wallet not found.');
+    }
+ 
+   const userWallet = await Wallet.findOne({ user: isExistsUser._id });
+  if (!userWallet) {
+    throw new AppError(StatusCodes.NOT_FOUND, 'User wallet not found.');
+  }
+
+  if (userWallet.balance < totalPrice) {
+    throw new AppError(
+      StatusCodes.BAD_REQUEST,
+      'Insufficient wallet balance for this booking.'
+    );
+  }
+
+  // Decrease user wallet balance
+  userWallet.balance -= totalPrice;
+  userWallet.transactions.push({
+    user: isExistsUser._id,
+    balance: totalPrice,
+    type: WalletTransactionType.WITHDRAW,
+  });
+  await userWallet.save();
+
+  // Increase owner wallet balance
+
+  if (ownerWallet) {
+    ownerWallet.balance += totalPrice;
+    ownerWallet.transactions.push({
+      user: productOwner?._id,
+      balance: totalPrice,
+      type: WalletTransactionType.EARN,
+    });
+    await ownerWallet.save();
+  }
+ 
   const result = await Booking.create(bookingData);
   if (!result)
     throw new AppError(

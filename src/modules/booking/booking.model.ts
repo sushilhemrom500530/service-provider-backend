@@ -55,8 +55,7 @@ const bookingSchema = new Schema<IBooking>(
     bookingItems: [bookingItemSchema],
 
     duration: { type: String },
-    bookingAgentText: { type: String },
-    menyType: { type: String },
+    bookingAgentText: { type: String }, // For booking agent
 
     bookingStatus: {
       type: String,
