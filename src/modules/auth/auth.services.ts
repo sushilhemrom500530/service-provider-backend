@@ -53,6 +53,14 @@ const registerUser = async (userData: Partial<IUser>) => {
       );
     }
   }
+  // // check password and confirm password
+  // if (userData?.password !== userData?.confirmPassword) {
+  //   throw new AppError(
+  //     StatusCodes.BAD_REQUEST,
+  //     'Password and confirm password do not match.'
+  //   );
+  // }
+
   const newUser = await User.create(userData);
 
   if (newUser?.role === 'Provider') {
@@ -70,6 +78,7 @@ const registerUser = async (userData: Partial<IUser>) => {
     isDeleted: newUser?.isDeleted,
     createdAt: newUser?.createdAt,
     updatedAt: newUser?.updatedAt,
+    isAgreedTermsConditions: newUser?.isAgreedTermsConditions,
   };
 
   // console.log("creating user info is :", newUser);
@@ -89,7 +98,7 @@ const registerUser = async (userData: Partial<IUser>) => {
 
   return {
     tokens,
-    newUser,
+    resResult,
   };
 };
 

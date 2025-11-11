@@ -9,12 +9,12 @@ import AppError from './../../../errors/AppErro';
 
 const getAllPrivacyFromDB = async (user: JwtPayload) => {
 
-  const existsUser = await User.findOne({
-    email: user?.email,
-    role: user?.role,
-  }); 
+  // const existsUser = await User.findOne({
+  //   email: user?.email,
+  //   role: user?.role,
+  // }); 
 
-  if (!existsUser) throw new AppError(StatusCodes.NOT_FOUND, 'User not found.');
+  // if (!existsUser) throw new AppError(StatusCodes.NOT_FOUND, 'User not found.');
 
   const result = await PrivacyPolicy.find({});
   console.log("find privacy policy", result);
@@ -36,14 +36,14 @@ const addPrivacyIntoDB = async (payload: ISettings, user: JwtPayload) => {
 
 //   const rawContent = decode(payload.content);
 
-  const isUserExists = await User.findOne({
-    email: user?.email,
-    role: user?.role,
-  });
+  // const isUserExists = await User.findOne({
+  //   email: user?.email,
+  //   role: user?.role,
+  // });
 
-  if (!isUserExists) {
-    throw new AppError(StatusCodes.NOT_FOUND, 'User not found.');
-  }
+  // if (!isUserExists) {
+  //   throw new AppError(StatusCodes.NOT_FOUND, 'User not found.');
+  // }
 
   const result = await PrivacyPolicy.create({
     content: payload?.content,
@@ -62,13 +62,13 @@ const updatePrivacyFromDB = async (
    if(!payload?.content) throw new AppError(StatusCodes.BAD_REQUEST, 'Missing required fields');
    
 
-  const isUserExists = await User.findOne({
-    email: user?.email,
-    role: user?.role,
-  });
+  // const isUserExists = await User.findOne({
+  //   email: user?.email,
+  //   role: user?.role,
+  // });
 
-  if (!isUserExists)
-    throw new AppError(StatusCodes.NOT_FOUND, 'User not found.');
+  // if (!isUserExists)
+  //   throw new AppError(StatusCodes.NOT_FOUND, 'User not found.');
 
   const existsPrivacy = await PrivacyPolicy.findById(id);
   if (!existsPrivacy)

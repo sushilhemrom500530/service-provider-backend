@@ -3,13 +3,20 @@ import { authValidations } from './auth.validations';
 import validateRequest from '../../shared/validateRequest';
 import { AuthController } from './auth.controller';
 import auth from './../../middlewares/auth';
-const router = Router();
+import fileUploadHandler from './../../shared/fileUploadHandler';
+import { USER_UPLOADS_FOLDER } from './../user/user.constant';
+import convertHeicToPngMiddleware from './../../shared/convertHeicToPngMiddleware';
 
+
+const router = Router();
+const uploads = fileUploadHandler(USER_UPLOADS_FOLDER);
 
 
 router.post(
   '/register',   
-    validateRequest(authValidations.registerProviderSchema),  
+  // uploads.single('file'),
+  validateRequest(authValidations.registerProviderSchema),  
+  // convertHeicToPngMiddleware(USER_UPLOADS_FOLDER),
   AuthController.register
 );
  
