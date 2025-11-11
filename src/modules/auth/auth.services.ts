@@ -15,10 +15,11 @@ import { Wallet } from './../wallet/wallet.model';
 
 // Move validateUserStatus here to avoid circular dependency
 const validateUserStatus = (user: IUser) => {
+  // else if (user?.status === UserStatus.Inactive) {
+  //   throw new AppError(StatusCodes.BAD_REQUEST, 'User account is inactive.');
+  // }
   if (user?.status === UserStatus.Blocked) {
     throw new AppError(StatusCodes.BAD_REQUEST, 'User account is blocked.');
-  } else if (user?.status === UserStatus.Inactive) {
-    throw new AppError(StatusCodes.BAD_REQUEST, 'User account is inactive.');
   } else if (user?.status === UserStatus.Banned) {
     if (user?.banExpiresAt && user?.banExpiresAt > new Date()) {
       throw new AppError(StatusCodes.BAD_REQUEST, 'User account is banned.');
@@ -83,7 +84,7 @@ const registerUser = async (userData: Partial<IUser>) => {
 
   // console.log("creating user info is :", newUser);
 
-  // Step 4: Send verification OTP
+  // // Step 4: Send verification OTP
   // try {
   //   await OtpService.createVerificationEmailOtp(newUser?.email);
   // } catch (error) {

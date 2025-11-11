@@ -86,6 +86,8 @@ const getSingleBookingFromDB = async (id: string, user: JwtPayload) => {
     bookingItems: enrichedBookingItems,
   };
 };
+
+
 const getMyBooking = async (user: JwtPayload) => {
   const isExistsUser = await User.findOne({ email: user?.email });
   if (!isExistsUser)
@@ -159,6 +161,99 @@ const getMyBooking = async (user: JwtPayload) => {
 
   return bookingsWithTimeInfo;
 };
+
+const getMyBookingForHome = async (user: JwtPayload, selectedDate: string) => {
+  const isExistsUser = await User.findOne({ email: user?.email });
+  if (!isExistsUser)
+    throw new AppError(StatusCodes.NOT_FOUND, 'User not found.');
+
+  // Get user bookings and populate related data
+  const bookings = await Booking.find({ user: isExistsUser._id })
+    .populate('user', 'fullName email address phoneNumber')
+    .populate(
+      'product',
+      ' -totalPrice -__v -reviews -refunds -averageRating -createdAt -updatedAt'
+    )
+    .sort({ createdAt: -1 });
+
+  const msToTime = (ms: number) => {
+    const totalSeconds = Math.floor(ms / 1000);
+    const hours = Math.floor(totalSeconds / 3600);
+    const minutes = Math.floor((totalSeconds % 3600) / 60);
+    return `${hours}h ${minutes}m`;
+  };
+
+  const now = new Date();
+
+  const bookingsWithTimeInfo = bookings?.map(booking => {
+    const startTime = new Date(booking?.startDateAndTime);
+    const endTime = new Date(booking?.endDateAndTime);
+
+    let label: string | undefined;
+
+    if (['Ski_Hire', 'Transport'].includes(booking?.category)) {
+      if (now < endTime) {
+        const timeLeft = endTime.getTime() - now.getTime();
+        label = `Time Left: ${msToTime(timeLeft)}`;
+      } else {
+        const overTime = now.getTime() - endTime.getTime();
+        label = `Over Time: ${msToTime(overTime)}`;
+      }
+    }
+
+    const product = booking.product?.toObject?.() || booking.product;
+    const productItems = product?.items || [];
+
+    const enrichedBookingItems = booking.bookingItems.map((bi: any) => {
+      const matchedItem = productItems.find(
+        (itm: any) => itm._id.toString() === bi.itemId.toString()
+      );
+      return {
+        ...(bi.toObject?.() || bi),
+        item: matchedItem ? { ...matchedItem } : null,
+      };
+    });
+
+    delete product.items;
+
+    const bookingObj: any = {
+      ...booking.toObject(),
+      product,
+      bookingItems: enrichedBookingItems,
+    };
+
+    if (label) bookingObj.timeLabel = label;
+
+    return bookingObj;
+  });
+
+  // If selectedDate is provided, filter bookings
+  let filteredBookings = bookingsWithTimeInfo;
+  if (selectedDate) {
+    const selected = new Date(selectedDate);
+    filteredBookings = bookingsWithTimeInfo.filter(booking => {
+      // Check both Ski_Hire (startDateAndTime) and Ski_Pass (date)
+      if (booking.category === 'Ski_Hire' && booking.startDateAndTime) {
+        const bookingDate = new Date(booking.startDateAndTime);
+        return (
+          bookingDate.getFullYear() === selected.getFullYear() &&
+          bookingDate.getMonth() === selected.getMonth() &&
+          bookingDate.getDate() === selected.getDate()
+        );
+      }
+      if (booking.category === 'Ski_Pass' && booking.date) {
+        const bookingDate = new Date(booking.date);
+        return (
+          bookingDate.getFullYear() === selected.getFullYear() &&
+          bookingDate.getMonth() === selected.getMonth() &&
+          bookingDate.getDate() === selected.getDate()
+        );
+      }
+      return false;
+    });
+  }
+  return filteredBookings;
+}
 
 const addBookingIntoDB = async (user: JwtPayload, payload: IBooking) => {
   // check user
@@ -528,8 +623,9 @@ const refundBookingIntoDB = async (
   return result;
 };
 
+
 const deleteBookingIntoDB = async (id: string, user: JwtPayload) => {
-  // check user
+
   const isExistsUser = await User.findOne({ email: user?.email });
   if (!isExistsUser) {
     throw new AppError(StatusCodes.NOT_FOUND, 'User not found.');
@@ -541,19 +637,22 @@ const deleteBookingIntoDB = async (id: string, user: JwtPayload) => {
     throw new AppError(StatusCodes.NOT_FOUND, 'Booking not found.');
   }
 
+  // Safely extract user ID from booking
+  const bookingUserId =
+    existsBooking.user?._id?.toString?.() || existsBooking.user?.toString?.();
+
+  if (!bookingUserId) {
+    throw new AppError(StatusCodes.BAD_REQUEST, 'Booking user is missing.');
+  }
+
   // Ensure only the booking owner can delete
-  if (existsBooking.userId.toString() !== isExistsUser._id.toString()) {
+  if (bookingUserId !== isExistsUser._id.toString()) {
     throw new AppError(
       StatusCodes.FORBIDDEN,
-      'You are not authorized to delete this booking.'
+      'You are not authorized to delete this booking. Only the booking owner can delete it.'
     );
   }
 
-  //  const result = await Booking.findByIdAndUpdate(
-  //   id,
-  //   { $set: { bookingStatus: 'Delete' } },
-  //   { new: true }
-  // );
   // Delete the booking permanently
   const result = await Booking.findByIdAndDelete(id);
 
@@ -563,8 +662,10 @@ const deleteBookingIntoDB = async (id: string, user: JwtPayload) => {
       'Failed to delete booking.'
     );
   }
+
   return result;
 };
+
 
 export const BookingService = {
   getAllBookingFromDB,
@@ -575,4 +676,5 @@ export const BookingService = {
   refundBookingIntoDB,
   deleteBookingIntoDB,
   getMyBooking,
+  getMyBookingForHome,
 };
