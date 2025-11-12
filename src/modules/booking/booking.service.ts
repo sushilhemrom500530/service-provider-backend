@@ -293,7 +293,7 @@ const addBookingIntoDB = async (user: JwtPayload, payload: IBooking) => {
         'Product not found in any collection.'
       );
   }
-
+  
   // Product owner check
   const productOwner = await User.findById(product?.owner);
   if (!productOwner)
@@ -405,6 +405,46 @@ const addBookingIntoDB = async (user: JwtPayload, payload: IBooking) => {
     category: productOwner?.providerType,
     productModel, 
   };
+
+  // return {bookingData, product, validatedItems};
+ 
+//  Restaurant slot validation & update
+  if (productOwner?.providerType === 'Restaurant') {
+    const { slots = [] } = payload;
+    if (!slots.length)
+      throw new AppError(StatusCodes.BAD_REQUEST, 'At least one slot is required.');
+
+    const bookedIds = slots.map(id => id.toString());
+    const available = product.availableSlots || [];
+    const availableIds = available.map((s: any) => s._id.toString());
+
+    // Find invalid slot IDs
+    const invalid = bookedIds.filter(id => !availableIds.includes(id));
+    if (invalid.length)
+      throw new AppError(
+        StatusCodes.BAD_REQUEST,
+        `Invalid or unavailable slot(s): ${invalid.join(', ')}`
+      );
+
+    // Remove booked slots from availableSlots
+    const updatedAvailableSlots = available.filter(
+      (s: any) => !bookedIds.includes(s._id.toString())
+    );
+
+    // Update Restaurant’s availableSlots in DB
+    await Restaurant.updateOne(
+      { _id: product._id },
+      { $set: { availableSlots: updatedAvailableSlots } }
+    );
+
+    // Create booking
+    const result = await Booking.create(bookingData);
+    if (!result)
+      throw new AppError(StatusCodes.BAD_REQUEST, 'Booking not created.');
+
+    return result;
+  }
+
 
   // wallet calculation 
     const ownerWallet = await Wallet.findOne({ user: productOwner?._id });

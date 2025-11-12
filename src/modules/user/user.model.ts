@@ -49,24 +49,24 @@ const userSchema = new Schema<IUser>(
 userSchema.plugin(paginationPlugin);
 
 // Hash password before save
-userSchema.pre<IUser>('save', async function (next) {
-  if (!this.isModified('password')) return next();
+// userSchema.pre<IUser>('save', async function (next) {
+//   if (!this.isModified('password')) return next();
  
-  if (this.password !== this.confirmPassword) {
-    return next(new Error('Password and confirm password do not match'));
-  }
+//   if (this.password !== this.confirmPassword) {
+//     return next(new Error('Password and confirm password do not match'));
+//   }
 
-  try {
-    const salt = await bcrypt.genSalt(config.bcrypt.saltRounds);
-    this.password = await bcrypt.hash(this.password, salt);
+//   try {
+//     const salt = await bcrypt.genSalt(config.bcrypt.saltRounds);
+//     this.password = await bcrypt.hash(this.password, salt);
  
-    this.confirmPassword = undefined as unknown as string;
+//     this.confirmPassword = undefined as unknown as string;
 
-    next();
-  } catch (error) {
-    next(error as Error);
-  }
-});
+//     next();
+//   } catch (error) {
+//     next(error as Error);
+//   }
+// });
 
 
 userSchema.methods.comparePassword = async function (

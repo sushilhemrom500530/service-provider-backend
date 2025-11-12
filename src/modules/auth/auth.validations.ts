@@ -62,7 +62,7 @@ export const updateUserSchema = z.object({
       required_error: 'Password is required',
       invalid_type_error: 'Password must be a string',
     })
-    .min(8, 'Password must be at least 8 characters long'),
+    .min(6, 'Password must be at least 6 characters long'),
   phoneNumber: z.string({
     required_error: 'Phone number is required',
     invalid_type_error: 'Phone number must be a string',
@@ -113,7 +113,7 @@ export const registerUserSchema = z.object({
         required_error: 'Password is required',
         invalid_type_error: 'Password must be a string',
       })
-      .min(8, 'Password must be at least 8 characters long'),
+      .min(6, 'Password must be at least 6 characters long'),
 
     phoneNumber: z.string({
       required_error: 'Phone number is required',
@@ -175,13 +175,13 @@ const changePassword = z.object({
         required_error: 'Password is required',
         invalid_type_error: 'Password must be a string',
       })
-      .min(8, 'Password must be at least 8 characters long'),
+      .min(6, 'Password must be at least 6 characters long'),
       newPassword: z
       .string({
         required_error: 'New password is required',
         invalid_type_error: 'New password must be a string',
       })
-      .min(8, 'Password must be at least 8 characters long'),
+      .min(6, 'Password must be at least 6 characters long'),
   }),
 });
 
@@ -222,8 +222,8 @@ const resetPassword = z.object({
         required_error: 'New password is required',
         invalid_type_error: 'New password must be a string',
       })
-      .min(8, {
-        message: 'New password must be at least 8 characters',
+      .min(6, {
+        message: 'New password must be at least 6 characters',
       }),
     email: z
       .string({

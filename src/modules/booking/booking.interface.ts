@@ -39,6 +39,10 @@ export interface IBooking extends Document {
   startDateAndTime?: Date;
   endDateAndTime?: Date;
 
+  bookingSeatCount?: number;
+  slots?: string[];
+
+
   bookingItems?: IBookingItem[];
   duration?: string;
   bookinRequestText?: string; 

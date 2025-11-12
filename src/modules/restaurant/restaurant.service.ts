@@ -153,9 +153,10 @@ if (duplicateSeat) {
   if (typeof req.body.slots === 'string') slots = JSON.parse(req.body.slots);
   else if (Array.isArray(req.body.slots)) slots = req.body.slots;
 
-  let availableSlots: ISlot[] = [];
-  if (typeof req.body.availableSlots === 'string') availableSlots = JSON.parse(req.body.availableSlots);
-  else if (Array.isArray(req.body.availableSlots)) availableSlots = req.body.availableSlots;
+  let availableSlots: ISlot[] = []; 
+  if (typeof req.body.slots === 'string') availableSlots = JSON.parse(req.body.slots);
+  else if (Array.isArray(req.body.slots)) availableSlots = req.body.slots;
+
 
   // Calculate status
   const isOpenNow = isRestaurantOpen(req.body.openTime, req.body.closeTime);
@@ -172,8 +173,7 @@ if (duplicateSeat) {
     foodType: req.body.foodType,
     status: isOpenNow ? 'Open' : 'Closed',
     description: req.body.description,
-    slots,
-    availableSlots:slots,
+    slots, 
     availableSlots,
     items: processedItems,
   };

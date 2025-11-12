@@ -198,6 +198,7 @@ const resendOtp = async (email: string) => {
   };
 };
 
+
 const resetPassword = async (email: string, password: string) => {
   const user = await User.findOne({ email });
   if (!user) {
@@ -206,9 +207,7 @@ const resetPassword = async (email: string, password: string) => {
 
   validateUserStatus(user);
 
-  console.log('User: ', user);
-
-  // Verify that password reset was requested
+    // Verify that password reset was requested
   // if (!user.isResetPassword) {
   //   throw new AppError(
   //     StatusCodes.BAD_REQUEST,
@@ -216,7 +215,8 @@ const resetPassword = async (email: string, password: string) => {
   //   );
   // }
 
-  user.password = password;
+  const hashed = await bcrypt.hash(password, 10);
+  user.password = hashed;
   user.isResetPassword = false;
   // user.security.lastPasswordChange = new Date();
   await user.save();
@@ -226,6 +226,8 @@ const resetPassword = async (email: string, password: string) => {
     email: user.email,
   };
 };
+
+
 
 const changePassword = async (
   userId: string,
