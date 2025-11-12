@@ -98,15 +98,19 @@ const getMyBooking = async (user: JwtPayload) => {
   const isExistsUser = await User.findOne({ email: user?.email });
   if (!isExistsUser)
     throw new AppError(StatusCodes.NOT_FOUND, 'User not found.');
+// Get user bookings and populate related data
+const bookings = await Booking.find()
+  .populate({
+    path: 'product',
+    select:
+      '-owner -totalPrice -__v -reviews -refunds -averageRating -createdAt -updatedAt',
+  })
+  .populate(
+    'user',
+    '_id fullName email profileUrl address phoneNumber status'
+  )
+  .sort({ createdAt: -1 })  
 
-  // Get user bookings and populate related data
-  const bookings = await Booking.find({ user: isExistsUser._id })
-    .populate('user', 'fullName email address phoneNumber')
-    .populate(
-      'product',
-      ' -totalPrice -__v -reviews -refunds -averageRating -createdAt -updatedAt'
-    )
-    .sort({ createdAt: -1 });
 
   const msToTime = (ms: number) => {
     const totalSeconds = Math.floor(ms / 1000);
@@ -118,52 +122,52 @@ const getMyBooking = async (user: JwtPayload) => {
   const now = new Date();
 
   const bookingsWithTimeInfo = bookings?.map(booking => {
-    const startTime = new Date(booking?.startDateAndTime);
-    const endTime = new Date(booking?.endDateAndTime);
+  const startTime = new Date(booking?.startDateAndTime);
+  const endTime = new Date(booking?.endDateAndTime);
 
-    let label: string | undefined;
+  let label: string | undefined;
 
-    // Only calculate time info for Ski_Hire or Transport
-    if (['Ski_Hire', 'Transport'].includes(booking?.category)) {
-      if (now < endTime) {
-        // Booking is ongoing
-        const timeLeft = endTime.getTime() - now.getTime();
-        label = `Time Left: ${msToTime(timeLeft)}`;
-      } else {
-        // Booking expired
-        const overTime = now.getTime() - endTime.getTime();
-        label = `Over Time: ${msToTime(overTime)}`;
-      }
+  if (['Ski_Hire', 'Transport'].includes(booking?.category)) {
+    const now = new Date();
+    if (now < endTime) {
+      const timeLeft = endTime.getTime() - now.getTime();
+      label = `Time Left: ${msToTime(timeLeft)}`;
+    } else {
+      const overTime = now.getTime() - endTime.getTime();
+      label = `Over Time: ${msToTime(overTime)}`;
     }
+  }
 
-    // Enrich booking items with product item details
-    const product = booking.product?.toObject?.() || booking.product;
-    const productItems = product?.items || [];
+  // Safely get product object
+  const product = booking.product ? (booking.product.toObject?.() || booking.product) : null;
+  const productItems = product?.items || [];
 
-    const enrichedBookingItems = booking.bookingItems.map((bi: any) => {
-      const matchedItem = productItems.find(
-        (itm: any) => itm._id.toString() === bi.itemId.toString()
-      );
+  // Safely map bookingItems
+  const enrichedBookingItems = (booking.bookingItems || []).map((bi: any) => {
+    const matchedItem = productItems.find(
+      (itm: any) => itm?._id?.toString() === bi?.itemId?.toString()
+    );
 
-      return {
-        ...(bi.toObject?.() || bi),
-        item: matchedItem ? { ...matchedItem } : null,
-      };
-    });
-
-    // Remove full product items array to avoid duplication
-    delete product.items;
-
-    const bookingObj: any = {
-      ...booking.toObject(),
-      product,
-      bookingItems: enrichedBookingItems,
+    return {
+      ...(bi ? (bi.toObject?.() || bi) : {}),
+      item: matchedItem ? { ...matchedItem } : null,
     };
-
-    if (label) bookingObj?.timeLabel = label;
-
-    return bookingObj;
   });
+
+  // Remove full product items array to avoid duplication
+  if (product) delete product.items;
+
+  const bookingObj: any = {
+    ...booking.toObject(),
+    product,
+    bookingItems: enrichedBookingItems,
+  };
+
+  if (label) bookingObj.timeLabel = label;
+
+  return bookingObj;
+});
+
 
   return bookingsWithTimeInfo;
 };
