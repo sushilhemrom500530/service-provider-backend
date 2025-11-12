@@ -7,12 +7,12 @@ import { TermsAndService } from './termsService.model';
 import { ISettings } from './../common/settings.interface';
 
 const getAllTermsFromDB = async (user: JwtPayload) => {
-  const existsUser = await User.findOne({
-    email: user?.email,
-    role: user?.role,
-  });
+  // const existsUser = await User.findOne({
+  //   email: user?.email,
+  //   role: user?.role,
+  // });
 
-  if (!existsUser) throw new AppError(StatusCodes.NOT_FOUND, 'User not found.');
+  // if (!existsUser) throw new AppError(StatusCodes.NOT_FOUND, 'User not found.');
 
   const result = await TermsAndService.find({});
 
@@ -20,24 +20,27 @@ const getAllTermsFromDB = async (user: JwtPayload) => {
 };
 
 const addTermsIntoDB = async (payload: ISettings, user: JwtPayload) => {
-
-  if(!payload?.content) throw new AppError(StatusCodes.BAD_REQUEST, 'Missing required fields');
+  if (!payload?.content)
+    throw new AppError(StatusCodes.BAD_REQUEST, 'Missing required fields');
 
   const existsTerms = await TermsAndService.findOne({});
   if (existsTerms) {
-    throw new AppError(StatusCodes.BAD_REQUEST, 'Terms And Service already exists.');
+    throw new AppError(
+      StatusCodes.BAD_REQUEST,
+      'Terms And Service already exists.'
+    );
   }
 
   // const rawContent = decode(payload.content);
 
-  const isUserExists = await User.findOne({
-    email: user?.email,
-    role: user?.role,
-  });
+  // const isUserExists = await User.findOne({
+  //   email: user?.email,
+  //   role: user?.role,
+  // });
 
-  if (!isUserExists) {
-    throw new AppError(StatusCodes.NOT_FOUND, 'User not found.');
-  }
+  // if (!isUserExists) {
+  //   throw new AppError(StatusCodes.NOT_FOUND, 'User not found.');
+  // }
 
   const result = await TermsAndService.create({
     content: payload?.content,
@@ -47,33 +50,34 @@ const addTermsIntoDB = async (payload: ISettings, user: JwtPayload) => {
   return result;
 };
 
-const updateTermsFromDB = async ( 
-   id: string,
+const updateTermsFromDB = async (
+  id: string,
   payload: Partial<ISettings>,
-  user: JwtPayload) => {
- 
-   if(!payload?.content) throw new AppError(StatusCodes.BAD_REQUEST, 'Missing required fields');
-  
-  const isUserExists = await User.findOne({
-    email: user?.email,
-    role: user?.role,
-  });
+  user: JwtPayload
+) => {
+  if (!payload?.content)
+    throw new AppError(StatusCodes.BAD_REQUEST, 'Missing required fields');
 
-  if (!isUserExists) throw new AppError(StatusCodes.NOT_FOUND, "User not found.");
+  // const isUserExists = await User.findOne({
+  //   email: user?.email,
+  //   role: user?.role,
+  // });
 
-   
+  // if (!isUserExists) throw new AppError(StatusCodes.NOT_FOUND, "User not found.");
+
   const existsTerms = await TermsAndService.findById(id);
-  if (!existsTerms) throw new AppError(StatusCodes.NOT_FOUND, "Terms And Service not found.");
+  if (!existsTerms)
+    throw new AppError(StatusCodes.NOT_FOUND, 'Terms And Service not found.');
 
   // Decode HTML if content is provided
-//   if (payload.content) {
-//     payload.content = decode(payload.content);
-//   }
- 
+  //   if (payload.content) {
+  //     payload.content = decode(payload.content);
+  //   }
+
   const result = await TermsAndService.findByIdAndUpdate(
     id,
     { ...payload },
-    { new: true, runValidators: true }  
+    { new: true, runValidators: true }
   );
 
   return result;

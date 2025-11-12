@@ -82,118 +82,102 @@ const getSingleRestaurantFromDB = async (id: string, user: JwtPayload) => {
 };
 
 const addRestaurantIntoDB = async (req: Request, res: Response) => {
-  const user = req.user as JwtPayload;
-  const { category: categoryId, openTime, closeTime } = req.body;
+ const user = req.user as JwtPayload;
 
-  // check user
+  // Check if user exists
   const isExistsUser = await User.findOne({ email: user?.email });
-  if (!isExistsUser) {
-    throw new AppError(
-      StatusCodes.NOT_FOUND,
-      'You cannot view this data because your account was not found.'
-    );
-  }
+  if (!isExistsUser) throw new AppError(StatusCodes.NOT_FOUND, 'User not found.');
 
-  // Validate provider role and type
-  if (isExistsUser?.role !== 'Provider') {
-    throw new AppError(
-      StatusCodes.FORBIDDEN,
-      'You are not authorized to create a restaurant service.'
-    );
-  }
+  // Validate role and providerType
+  if (isExistsUser.role !== 'Provider')
+    throw new AppError(StatusCodes.FORBIDDEN, 'You are not authorized to create a restaurant.');
+  if (isExistsUser.providerType !== 'Restaurant')
+    throw new AppError(StatusCodes.FORBIDDEN, 'Provider must be Restaurant type.');
 
-  // Now we know user is a Provider — check providerType
-  if (isExistsUser?.providerType !== 'Restaurant') {
-    throw new AppError(
-      StatusCodes.FORBIDDEN,
-      'Only providers with providerType : Restaurant can create a restaurant service.'
-    );
-  }
-
-  const category = await Category.findOne({
-    primaryCategoryName: 'Restaurant',
-  });
-  if (!category) {
-    throw new AppError(StatusCodes.NOT_FOUND, 'Restaurant category not found.');
-  }
+  // Validate category
+  const category = await Category.findOne({ primaryCategoryName: 'Restaurant' });
+  if (!category) throw new AppError(StatusCodes.NOT_FOUND, 'Restaurant category not found.');
 
   const subCategoryItems = category?.subCategory || [];
+  const exists = subCategoryItems.some(item => item._id.toString() === req.body.category);
+  if (!exists) throw new AppError(StatusCodes.BAD_REQUEST, 'Invalid sub-category ID.');
 
-  const exists = subCategoryItems.some(
-    item => item._id.toString() === categoryId
-  );
-
-  if (!exists) {
-    throw new AppError(
-      StatusCodes.BAD_REQUEST,
-      'Invalid sub-category ID for Restaurant.'
-    );
-  }
-
-  // Upload restaurant thumbnail
+  // Upload thumbnail
   const thumbnailFile = req.files?.['thumbnail']?.[0];
-  if (!thumbnailFile) {
-    throw new AppError(StatusCodes.BAD_REQUEST, 'Thumbnail file not found.');
-  }
-  const thumbnailUrl = await s3Services.uploadSingleFileToS3(
-    thumbnailFile,
-    USER_UPLOADS_FOLDER
-  );
+  if (!thumbnailFile) throw new AppError(StatusCodes.BAD_REQUEST, 'Thumbnail file not found.');
+  const thumbnailUrl = await s3Services.uploadSingleFileToS3(thumbnailFile, USER_UPLOADS_FOLDER);
 
-  // Parse menu items JSON
-  let menuItems: any[] = [];
-  if (typeof req.body.menuItems === 'string') {
-    menuItems = JSON.parse(req.body?.menuItems);
-  } else if (Array.isArray(req.body?.menuItems)) {
-    menuItems = req.body.menuItems;
+  // Parse menu items (ICategoryItem[])
+ let items: any[] = [];
+  if (typeof req.body.items === 'string') {
+    items = JSON.parse(req.body.items);
+  } else if (Array.isArray(req.body.items)) {
+    items = req.body.items;
   } else {
-    throw new AppError(
-      StatusCodes.BAD_REQUEST,
-      'Menu items data is missing or invalid.'
-    );
+    throw new AppError(StatusCodes.BAD_REQUEST, 'Items data is missing or invalid.');
   }
 
-  // Upload menu item images
-  const menuItemFiles = req.files?.['files'] || [];
-  const processedMenuItems = await Promise.all(
-    menuItems.map(async (item: any, index: number) => {
-      const menuFile = menuItemFiles[index];
-      if (!menuFile) {
-        throw new AppError(
-          StatusCodes.BAD_REQUEST,
-          `Menu image for item ${item?.name} is missing.`
-        );
+  // 🔹 Validate items
+if (items.length !== 2) {
+  throw new AppError(StatusCodes.BAD_REQUEST, 'Items must contain exactly 2 seat types: Normal and VIP.');
+}
+
+// Check for duplicate seat names (case-insensitive)
+const seatNames = items.map(i => i.seat?.trim().toLowerCase());
+const duplicateSeat = seatNames.some((seat, index) => seatNames.indexOf(seat) !== index);
+if (duplicateSeat) {
+  throw new AppError(StatusCodes.BAD_REQUEST, 'Duplicate seat types are not allowed.');
+}
+
+  // Upload item photos (1:1 mapping)
+  const itemFiles = req.files?.['files'] || [];
+  const processedItems = await Promise.all(
+    items.map(async (item, index) => {
+      const file = itemFiles[index];
+      let photoUrl = item.photo;
+      if (file) {
+        photoUrl = await s3Services.uploadSingleFileToS3(file, USER_UPLOADS_FOLDER);
       }
-
-      const menuImageUrl = await s3Services.uploadSingleFileToS3(
-        menuFile,
-        USER_UPLOADS_FOLDER
-      );
-
       return {
         ...item,
+        totalQty: Number(item.totalQty),
+        availableQty: Number(item.totalQty),
         price: Number(item.price),
-        menuPhoto: menuImageUrl,
+        photo: photoUrl,
       };
     })
   );
 
-  // Calculate total price
-  const totalPrice = menuItems.reduce(
-    (sum: number, item: any) => sum + Number(item.price || 0),
-    0
-  );
-  const isOpenNow = isRestaurantOpen(openTime, closeTime);
+  // Parse slots and availableSlots (ISlot[])
+  let slots: ISlot[] = [];
+  if (typeof req.body.slots === 'string') slots = JSON.parse(req.body.slots);
+  else if (Array.isArray(req.body.slots)) slots = req.body.slots;
 
-  //Prepare restaurant data
-  const restaurantData = {
-    ...(req.body as IRestaurant),
-    owner: isExistsUser?._id,
+  let availableSlots: ISlot[] = []; 
+  if (typeof req.body.slots === 'string') availableSlots = JSON.parse(req.body.slots);
+  else if (Array.isArray(req.body.slots)) availableSlots = req.body.slots;
+
+
+  // Calculate status
+  const isOpenNow = isRestaurantOpen(req.body.openTime, req.body.closeTime);
+
+  // Prepare restaurant data
+  const restaurantData: IRestaurant = {
+    title: req.body.title,
     thumbnail: thumbnailUrl,
-    totalPrice,
-    items: processedMenuItems,
+    category: req.body.category,
+    owner: isExistsUser._id,
+    openTime: req.body.openTime,
+    closeTime: req.body.closeTime,
+    serviceArea: req.body.serviceArea,
+    foodType: req.body.foodType,
     status: isOpenNow ? 'Open' : 'Closed',
+    description: req.body.description,
+    slots, 
+    availableSlots,
+    items: processedItems,
   };
+  
 
   const result = await Restaurant.create(restaurantData);
   return result;
@@ -259,132 +243,110 @@ export const reviewRestaurant = async (
 
   return restaurant;
 };
-
-const updateRestaurantIntoDB = async (req: Request) => {
-  const id = req?.params?.id;
+export const updateRestaurantIntoDB = async (req: Request) => {
+  const id = req.params.id;
   const user = req.user as JwtPayload;
 
   // Check if restaurant exists
-  const isExistsRestaurant = await Restaurant.findById(id);
-  if (!isExistsRestaurant) {
-    throw new AppError(StatusCodes.NOT_FOUND, 'Restaurant not found.');
-  }
+  const restaurant = await Restaurant.findById(id);
+  if (!restaurant) throw new AppError(StatusCodes.NOT_FOUND, 'Restaurant not found.');
 
-  // Verify user
+  // Check user
   const isExistsUser = await User.findOne({ email: user?.email });
-  if (!isExistsUser) {
-    throw new AppError(
-      StatusCodes.NOT_FOUND,
-      'You cannot view this data because your account was not found.'
-    );
+  if (!isExistsUser) throw new AppError(StatusCodes.NOT_FOUND, 'User not found.');
+  if (isExistsUser.role !== 'Provider' || isExistsUser.providerType !== 'Restaurant') {
+    throw new AppError(StatusCodes.FORBIDDEN, 'You are not authorized to update this restaurant.');
   }
 
-  // Check provider role & type
-  if (
-    isExistsUser?.role !== 'Provider' ||
-    isExistsUser?.providerType !== 'Restaurant'
-  ) {
-    throw new AppError(
-      StatusCodes.FORBIDDEN,
-      'You are not authorized to update this restaurant service.'
-    );
+  // Validate category if provided
+  if (req.body.category) {
+    const category = await Category.findOne({ primaryCategoryName: 'Restaurant' });
+    if (!category) throw new AppError(StatusCodes.NOT_FOUND, 'Restaurant category not found.');
+
+    const subCategoryItems = category?.subCategory || [];
+    const exists = subCategoryItems.some(item => item._id.toString() === req.body.category);
+    if (!exists) throw new AppError(StatusCodes.BAD_REQUEST, 'Invalid sub-category ID.');
+    restaurant.category = req.body.category;
   }
 
-  let thumbnailUrl = isExistsRestaurant?.thumbnail;
+  // Upload new thumbnail if provided
   const thumbnailFile = req.files?.['thumbnail']?.[0];
-  const menuItemFiles = req.files?.['files'] || [];
-
   if (thumbnailFile) {
-    thumbnailUrl = await s3Services.uploadSingleFileToS3(
-      thumbnailFile,
-      USER_UPLOADS_FOLDER
-    );
+    const thumbnailUrl = await s3Services.uploadSingleFileToS3(thumbnailFile, USER_UPLOADS_FOLDER);
+    restaurant.thumbnail = thumbnailUrl;
   }
 
-  // Parse menu items (if provided)
-  let menuItems = isExistsRestaurant?.items || [];
+  // Update items if provided
+  if (req.body.items) {
+    let items: any[] = [];
+    if (typeof req.body.items === 'string') items = JSON.parse(req.body.items);
+    else if (Array.isArray(req.body.items)) items = req.body.items;
+    else throw new AppError(StatusCodes.BAD_REQUEST, 'Items data is missing or invalid.');
 
-  if (req.body.menuItems) {
-    let parsedMenuItems: any[] = [];
-
-    if (typeof req.body.menuItems === 'string') {
-      try {
-        parsedMenuItems = JSON.parse(req.body.menuItems);
-      } catch (err) {
-        throw new AppError(
-          StatusCodes.BAD_REQUEST,
-          'Invalid JSON format for menuItems.'
-        );
-      }
-    } else if (Array.isArray(req.body.menuItems)) {
-      parsedMenuItems = req.body.menuItems;
+    if (items.length !== 2) {
+      throw new AppError(StatusCodes.BAD_REQUEST, 'Items must contain exactly 2 seat types: Normal and VIP.');
     }
 
-    const processedMenuItems = await Promise.all(
-      parsedMenuItems.map(async (item: any, index: number) => {
-        const menuFile = menuItemFiles[index];
-        let menuImageUrl = item?.menuPhoto || item?.menuImage || '';
+    const seatNames = items.map(i => i.seat?.trim().toLowerCase());
+    const duplicateSeat = seatNames.some((seat, index) => seatNames.indexOf(seat) !== index);
+    if (duplicateSeat) {
+      throw new AppError(StatusCodes.BAD_REQUEST, 'Duplicate seat types are not allowed.');
+    }
 
-        // Upload new file if available
-        if (menuFile) {
-          menuImageUrl = await s3Services.uploadSingleFileToS3(
-            menuFile,
-            USER_UPLOADS_FOLDER
-          );
-        }
-
-        // Validate image presence
-        if (!menuImageUrl) {
-          throw new AppError(
-            StatusCodes.BAD_REQUEST,
-            `Menu image missing for item "${item.name || 'Unnamed'}".`
-          );
-        }
-
-        // Validate price
-        const price = Number(item.price);
-        if (isNaN(price) || price <= 0) {
-          throw new AppError(
-            StatusCodes.BAD_REQUEST,
-            `Invalid or missing price for menu item "${item.name}".`
-          );
-        }
+    const itemFiles = req.files?.['files'] || [];
+    const processedItems = await Promise.all(
+      items.map(async (item, index) => {
+        const file = itemFiles[index];
+        let photoUrl = item.photo || restaurant.items[index]?.photo;
+        if (file) photoUrl = await s3Services.uploadSingleFileToS3(file, USER_UPLOADS_FOLDER);
 
         return {
           ...item,
-          price,
-          menuPhoto: menuImageUrl,
+          totalQty: Number(item.totalQty),
+          availableQty: Number(item.totalQty),
+          price: Number(item.price),
+          photo: photoUrl,
         };
       })
     );
 
-    menuItems = processedMenuItems;
+    restaurant.items = processedItems;
   }
 
-  // Calculate total price
-  req.body.totalPrice = menuItems.reduce((sum, item) => {
-    if (!item || typeof item.price === 'undefined') return sum;
-    const price = Number(item.price);
-    return sum + (isNaN(price) ? 0 : price);
-  }, 0);
+  // Update slots if provided
+  if (req.body.slots) {
+    let slots: ISlot[] = [];
+    if (typeof req.body.slots === 'string') slots = JSON.parse(req.body.slots);
+    else if (Array.isArray(req.body.slots)) slots = req.body.slots;
+    restaurant.slots = slots;
+    restaurant.availableSlots = slots; // Reset availableSlots to new slots
+  }
 
-  const isOpenNow = isRestaurantOpen(req.body?.openTime, req.body?.closeTime);
-
-  const updateData = {
-    ...(req.body as Partial<IRestaurant>),
-    thumbnail: thumbnailUrl,
-    items: menuItems,
-    status: isOpenNow ? 'Open' : 'Closed',
+  // Update other fields
+  const fieldsToUpdate: Partial<IRestaurant> = {
+    title: req.body.title,
+    openTime: req.body.openTime,
+    closeTime: req.body.closeTime,
+    serviceArea: req.body.serviceArea,
+    foodType: req.body.foodType,
+    description: req.body.description,
   };
 
-  const result = await Restaurant.findByIdAndUpdate(
-    id,
-    { $set: updateData },
-    { new: true }
-  );
+  Object.keys(fieldsToUpdate).forEach(key => {
+    if (fieldsToUpdate[key as keyof IRestaurant] !== undefined) {
+      (restaurant as any)[key] = fieldsToUpdate[key as keyof IRestaurant];
+    }
+  });
 
-  return result;
+  // Recalculate status
+  if (req.body.openTime && req.body.closeTime) {
+    restaurant.status = isRestaurantOpen(restaurant.openTime, restaurant.closeTime) ? 'Open' : 'Closed';
+  }
+
+  const updatedRestaurant = await restaurant.save();
+  return updatedRestaurant;
 };
+
 
 const deleteRestaurantIntoDB = async (id: string, user: JwtPayload) => {
   const isExistsUser = await User.findOne({ email: user?.email });

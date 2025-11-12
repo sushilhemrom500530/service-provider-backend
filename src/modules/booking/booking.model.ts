@@ -54,9 +54,16 @@ const bookingSchema = new Schema<IBooking>(
 
     bookingItems: [bookingItemSchema],
 
+    bookingSeatCount:{ type: Number },
+    slots: [
+    {
+      type: Schema.Types.ObjectId,
+      ref: 'slots',
+      required: true,
+    },
+  ], 
     duration: { type: String },
-    bookingAgentText: { type: String },
-    menyType: { type: String },
+    bookingAgentText: { type: String }, // For booking agent
 
     bookingStatus: {
       type: String,
@@ -70,7 +77,14 @@ const bookingSchema = new Schema<IBooking>(
       required: true,
     },
 
-    isPermitted : {
+    phoneNumber: {
+      type: String,
+    },
+    address: {
+      type: String,
+    },
+
+    isPermitted: {
       type: Boolean,
       default: false,
     },

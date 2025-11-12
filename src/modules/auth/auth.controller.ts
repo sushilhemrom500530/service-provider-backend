@@ -11,6 +11,9 @@ import { TokenService } from '../token/token.services';
 import { AuthService } from './auth.services';
 import { OtpService } from '../otp/otp.services';
 import { SocialAuthService } from './socialAuth.services';
+import { s3Services } from './../../aws/s3Service';
+import { Request, Response } from 'express'; 
+import { USER_UPLOAD_FOLDER } from './../user/user.constant';
 
 // Moved validateUserStatus to AuthService to avoid circular dependency
 const validateUserStatus = (user: IUser) => {
@@ -29,8 +32,19 @@ const validateUserStatus = (user: IUser) => {
 
 
 const register = catchAsync(async (req: Request, res: Response) => {
+  //  if (req.file) {
+  //   const fileUrl = await s3Services.uploadSingleFileToS3(
+  //     req.file,
+  //     USER_UPLOAD_FOLDER
+  //   );
+  //   req.body.profileUrl = fileUrl;
+  // } else {
+  //   throw new Error('File not found');
+  // }
 
-  const result = await AuthService.registerUser(req.body);
+  const formData = req?.body;
+
+  const result = await AuthService.registerUser(formData);
 
   sendResponse(res, {
     code: StatusCodes.CREATED,
@@ -61,7 +75,9 @@ const login = catchAsync(async (req, res) => {
   if (!user) {
     throw new AppError(StatusCodes.BAD_REQUEST, 'Invalid credentials.');
   }
-
+ // Validate user status
+  validateUserStatus(user);
+  
   const isPasswordValid = await bcrypt.compare(password, user.password); 
   if (!isPasswordValid) {
     throw new AppError(StatusCodes.BAD_REQUEST, 'password is incorrect.');

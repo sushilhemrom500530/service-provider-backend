@@ -29,6 +29,7 @@ export interface IUser extends Document {
   fullName: string;
   email: string;
   password: string;
+  confirmPassword: string;
   providerType?: string;
   phoneNumber: string;
   profileUrl?: string;
@@ -36,6 +37,7 @@ export interface IUser extends Document {
   status: UserStatus;
   address: string;
   role: 'User' | 'Provider' | 'Admin';
+  isAgreedTermsConditions: boolean;
   isDeleted: boolean;
   createdAt?: Date;
   updatedAt?: Date;

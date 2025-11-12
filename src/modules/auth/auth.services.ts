@@ -15,10 +15,11 @@ import { Wallet } from './../wallet/wallet.model';
 
 // Move validateUserStatus here to avoid circular dependency
 const validateUserStatus = (user: IUser) => {
+  // else if (user?.status === UserStatus.Inactive) {
+  //   throw new AppError(StatusCodes.BAD_REQUEST, 'User account is inactive.');
+  // }
   if (user?.status === UserStatus.Blocked) {
     throw new AppError(StatusCodes.BAD_REQUEST, 'User account is blocked.');
-  } else if (user?.status === UserStatus.Inactive) {
-    throw new AppError(StatusCodes.BAD_REQUEST, 'User account is inactive.');
   } else if (user?.status === UserStatus.Banned) {
     if (user?.banExpiresAt && user?.banExpiresAt > new Date()) {
       throw new AppError(StatusCodes.BAD_REQUEST, 'User account is banned.');
@@ -53,6 +54,14 @@ const registerUser = async (userData: Partial<IUser>) => {
       );
     }
   }
+  // // check password and confirm password
+  // if (userData?.password !== userData?.confirmPassword) {
+  //   throw new AppError(
+  //     StatusCodes.BAD_REQUEST,
+  //     'Password and confirm password do not match.'
+  //   );
+  // }
+
   const newUser = await User.create(userData);
 
   if (newUser?.role === 'Provider') {
@@ -70,26 +79,27 @@ const registerUser = async (userData: Partial<IUser>) => {
     isDeleted: newUser?.isDeleted,
     createdAt: newUser?.createdAt,
     updatedAt: newUser?.updatedAt,
+    isAgreedTermsConditions: newUser?.isAgreedTermsConditions,
   };
 
   // console.log("creating user info is :", newUser);
 
   // Step 4: Send verification OTP
-  // try {
-  //   await OtpService.createVerificationEmailOtp(newUser?.email);
-  // } catch (error) {
-  //   throw new AppError(
-  //     StatusCodes.INTERNAL_SERVER_ERROR,
-  //     'Failed to send verification email.'
-  //   );
-  // }
+  try {
+    await OtpService.createVerificationEmailOtp(newUser?.email);
+  } catch (error) {
+    throw new AppError(
+      StatusCodes.INTERNAL_SERVER_ERROR,
+      'Failed to send verification email.'
+    );
+  }
 
   // Step 5: Generate tokens
   const tokens = await TokenService.accessAndRefreshToken(newUser);
 
   return {
     tokens,
-    newUser,
+    resResult,
   };
 };
 
@@ -188,6 +198,7 @@ const resendOtp = async (email: string) => {
   };
 };
 
+
 const resetPassword = async (email: string, password: string) => {
   const user = await User.findOne({ email });
   if (!user) {
@@ -196,9 +207,7 @@ const resetPassword = async (email: string, password: string) => {
 
   validateUserStatus(user);
 
-  console.log('User: ', user);
-
-  // Verify that password reset was requested
+    // Verify that password reset was requested
   // if (!user.isResetPassword) {
   //   throw new AppError(
   //     StatusCodes.BAD_REQUEST,
@@ -206,7 +215,8 @@ const resetPassword = async (email: string, password: string) => {
   //   );
   // }
 
-  user.password = password;
+  const hashed = await bcrypt.hash(password, 10);
+  user.password = hashed;
   user.isResetPassword = false;
   // user.security.lastPasswordChange = new Date();
   await user.save();
@@ -216,6 +226,8 @@ const resetPassword = async (email: string, password: string) => {
     email: user.email,
   };
 };
+
+
 
 const changePassword = async (
   userId: string,

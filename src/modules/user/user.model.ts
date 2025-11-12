@@ -20,6 +20,7 @@ const userSchema = new Schema<IUser>(
     fullName: { type: String, trim: true },
     email: { type: String, required: true, unique: true, lowercase: true },
     password: { type: String, required: true, select: false },
+    confirmPassword: { type: String, required: true, select: false },
     providerType: { type: String,  trim: true},
     phoneNumber: { type: String },
     profileUrl: { type: String },
@@ -28,7 +29,7 @@ const userSchema = new Schema<IUser>(
     status: {
       type: String,
       enum: Object.values(UserStatus),
-      default: UserStatus.Active,
+      default: UserStatus.Inactive,
       required: true,
     },
     role: {
@@ -37,7 +38,7 @@ const userSchema = new Schema<IUser>(
       default: 'Provider',
     },
     isDeleted: { type: Boolean, default: false },
-    agreeTermsCondition: { type: Boolean, default: false },
+    isAgreedTermsCondition: { type: Boolean, default: false },
   },
   {
     timestamps: true,  
@@ -48,16 +49,25 @@ const userSchema = new Schema<IUser>(
 userSchema.plugin(paginationPlugin);
 
 // Hash password before save
-userSchema.pre<IUser>('save', async function (next) {
-  if (!this.isModified('password')) return next();
-  try {
-    const salt = await bcrypt.genSalt(config.bcrypt.saltRounds);
-    this.password = await bcrypt.hash(this.password, salt);
-    next();
-  } catch (error) {
-    next(error as Error);
-  }
-});
+// userSchema.pre<IUser>('save', async function (next) {
+//   if (!this.isModified('password')) return next();
+ 
+//   if (this.password !== this.confirmPassword) {
+//     return next(new Error('Password and confirm password do not match'));
+//   }
+
+//   try {
+//     const salt = await bcrypt.genSalt(config.bcrypt.saltRounds);
+//     this.password = await bcrypt.hash(this.password, salt);
+ 
+//     this.confirmPassword = undefined as unknown as string;
+
+//     next();
+//   } catch (error) {
+//     next(error as Error);
+//   }
+// });
+
 
 userSchema.methods.comparePassword = async function (
   password: string

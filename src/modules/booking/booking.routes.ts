@@ -24,6 +24,14 @@ router.get(
   BookingController.getMyBookingIntoDB
 );
 
+
+// get my booking for home
+router.get(
+  '/my-booking-home',
+  auth('User', 'Admin', 'Provider'),
+  BookingController.getMyBookingForHome
+);
+
 // get single
 router.get(
   '/:id',
@@ -66,7 +74,7 @@ router.patch(
 // delete
 router.delete(
   '/delete/:id',
-  auth('User'),
+  auth('Admin','User'),
   BookingController.deleteBookingIntoDB
 );
 

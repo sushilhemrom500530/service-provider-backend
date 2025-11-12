@@ -7,7 +7,7 @@ const router = Router();
 // get all  
 router.get(
   '/all',
-  auth('User','Admin', 'Provider'), 
+  // auth('User','Admin', 'Provider'), 
   PrivacyPolicyController.getAllPrivacyFromDB
 );
 
@@ -16,7 +16,7 @@ router.get(
 // create 
 router.post(
   '/create',
-  auth('Admin'),
+  // auth('Admin'),
   // validateRequest(paymentValidations.processPayPalPayment),
   PrivacyPolicyController.addPrivacyIntoDB
 );
@@ -24,7 +24,7 @@ router.post(
 // update 
 router.patch(
   '/update/:id',
-  auth('Admin'),
+  // auth('Admin'),
   // validateRequest(paymentValidations.processPayPalPayment),
   PrivacyPolicyController.updatePrivacyFromDB
 );

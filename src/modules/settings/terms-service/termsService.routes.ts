@@ -7,7 +7,7 @@ const router = Router();
 // get all  
 router.get(
   '/all',
-  auth('User','Admin', 'Provider'), 
+  // auth('User','Admin', 'Provider'), 
   TermsAndServiceController.getAllTermsFromDB
 );
 
@@ -15,7 +15,7 @@ router.get(
 // create 
 router.post(
   '/create',
-  auth('Admin'),
+  // auth('Admin'),
   // validateRequest(paymentValidations.processPayPalPayment),
   TermsAndServiceController.addTermsIntoDB
 );
@@ -23,7 +23,7 @@ router.post(
 // update 
 router.patch(
   '/update/:id',
-  auth('Admin'),
+  // auth('Admin'),
   // validateRequest(paymentValidations.processPayPalPayment),
   TermsAndServiceController.updateTermsFromDB
 );
