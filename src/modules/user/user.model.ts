@@ -29,7 +29,7 @@ const userSchema = new Schema<IUser>(
     status: {
       type: String,
       enum: Object.values(UserStatus),
-      default: UserStatus.Active,
+      default: UserStatus.Inactive,
       required: true,
     },
     role: {

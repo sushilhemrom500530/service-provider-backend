@@ -6,7 +6,7 @@ const registerProviderSchema = z.object({
       required_error: 'Name is required',
       invalid_type_error: 'Name must be a string',
     })
-    .min(3, 'Name must be at least 3 characters long'),
+    .min(1, 'Name must be at least 1 characters long'),
     email: z
       .string({
         required_error: 'Email is required',

@@ -17,10 +17,15 @@ const productItemsSchema = new Schema<IProductItems>({
     required: true,
     min: 1,
   },
-  quantity: {
+  totalQty: {
     type: Number,
     required: true,
     min: 1,
+  },
+  availableQty: {
+      type: Number,
+      required: true,
+      default: 0,
   },
 });
 

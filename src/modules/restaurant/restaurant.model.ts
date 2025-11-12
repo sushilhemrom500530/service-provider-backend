@@ -1,38 +1,49 @@
 import mongoose, { Schema, Model } from 'mongoose';
-import { IRestaurant, IMenuItems } from './restaurant.interface';
+import { IRestaurant, ICategoryItem } from './restaurant.interface';
 import { reviewSchema, refundSchema } from './../common/common.schema';
 
-const menuItemsSchema = new Schema<IMenuItems>({
-  name: {
-    type: String,
-    required: true,
-    trim: true,
-  },
-  menuType: {
-    type: String,
-    required: true,
-    trim: true,
-  },
-  price: {
-    type: Number,
-    required: true,
-    min: 1,
-  },
-  menuPhoto: {
+const slotsSchema = new Schema({
+  startTime: {
     type: String,
     required: true,
   },
-  description: {
+  endTime: {
     type: String,
     required: true,
-    trim: true,
   },
-  quantity: {
-    type: Number,
-    required: true,
-    min: 0,
-  },
+})
+
+const categoryItemsSchema = new Schema<ICategoryItem>({
+      seat: {
+        type: String,
+        required: true,
+        enum: ["VIP", "Normal"],
+      },
+      photo: {
+        type: String,
+        required: true,
+      },
+      totalQty: {
+        type: Number,
+        required: true,
+        min: 0,
+      },
+      availableQty: {
+        type: Number,
+        required: true,
+        default: 0,
+      },
+      price: {
+        type: Number,
+        required: true,
+        min: 1,
+      },
+      description: {
+        type: String,
+        default: "",
+      },
 });
+
 
 const restaurantSchema = new Schema<IRestaurant>(
   {
@@ -68,25 +79,32 @@ const restaurantSchema = new Schema<IRestaurant>(
       type: String,
       required: true,
     },
-
-    totalPrice: {
-      type: Number,
-      required: true,
-      min: 0,
+    foodType: {
+      type: String,
+      required: true, 
     },
     status: {
       type: String,
-      required: true,
-      min: 0,
+      enum: ['Open', 'Closed'],
+      default: 'Open',
     },
     items: {
-      type: [menuItemsSchema],
+      type: [categoryItemsSchema],
       required: true,
     },
-    extraChargePerHour: {
+    description: {
       type: String,
       required: true,
-    },
+      trim: true,
+  },
+  slots: {
+    type: [slotsSchema],
+    required: true,
+  },
+  availableSlots: {
+    type: [slotsSchema],
+    default: [],
+  },
     // optional fields for later updates
     averageRating: {
       type: Number,

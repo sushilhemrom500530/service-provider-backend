@@ -6,7 +6,8 @@ export interface IProductItems {
   productName: string;
   productPhoto: string; 
   price: number;
-  quantity: number; 
+  totalQty: number; 
+  availableQty?: number;
 }
 
 

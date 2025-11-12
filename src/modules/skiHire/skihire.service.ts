@@ -112,7 +112,7 @@ const addSkiHireIntoDB = async (req: Request, res: Response) => {
   const subCategoryItems = category?.subCategory || [];
 
   const exists = subCategoryItems.some(
-    item => item._id.toString() === categoryId
+    item => item?._id.toString() === categoryId
   );
 
   if (!exists) {
@@ -168,13 +168,14 @@ const addSkiHireIntoDB = async (req: Request, res: Response) => {
         productName: item?.productName,
         productPhoto: productPhotoUrl,
         price: Number(item.price),
-        quantity: Number(item.quantity),
+        totalQty: Number(item.quantity),
+        availableQty: Number(item.quantity),
       };
     })
   );
 
   const totalPrice = processedProductItems.reduce(
-    (sum: number, item: any) => sum + item.price,
+    (sum: number, item: any) => sum + item?.price,
     0
   );
 
@@ -182,12 +183,12 @@ const addSkiHireIntoDB = async (req: Request, res: Response) => {
     category: categoryId || req.body.category,
     title: req.body.title,
     thumbnail: thumbnailUrl,
-    owner: isExistsUser._id,
+    owner: isExistsUser?._id,
     extraChargePerHour: Number(req.body.extraChargePerHour || 0) || 0,
     totalPrice,
     serviceArea: req.body.serviceArea,
     items: processedProductItems,
-  };
+  }; 
 
   const result = await SkiHire.create(skiHireData);
   return result;

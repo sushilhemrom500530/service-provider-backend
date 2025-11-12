@@ -15,6 +15,10 @@ import { Massage } from './../massage/massage.model';
 import { processToPayment } from './../common/common.payment';
 import { Wallet } from './../wallet/wallet.model';
 import { WalletTransactionType } from './../wallet/wallet.interface';
+import { format } from 'date-fns';
+
+
+
 
 const getAllBookingFromDB = async (user: JwtPayload) => {
   const isExistsUser = await User.findOne({ email: user?.email });
@@ -169,93 +173,78 @@ const getMyBookingForHome = async (user: JwtPayload, selectedDate: string) => {
   if (!isExistsUser)
     throw new AppError(StatusCodes.NOT_FOUND, 'User not found.');
 
-  // Get user bookings and populate related data
   const bookings = await Booking.find({ user: isExistsUser._id })
     .populate('user', 'fullName email address phoneNumber')
     .populate(
       'product',
-      ' -totalPrice -__v -reviews -refunds -averageRating -createdAt -updatedAt'
+      'title category serviceArea amount startDateAndTime endDateAndTime time'
     )
     .sort({ createdAt: -1 });
 
-  const msToTime = (ms: number) => {
-    const totalSeconds = Math.floor(ms / 1000);
-    const hours = Math.floor(totalSeconds / 3600);
-    const minutes = Math.floor((totalSeconds % 3600) / 60);
-    return `${hours}h ${minutes}m`;
+  // Format time into "hh:mm am - hh:mm pm"
+  const formatTimeRange = (start: Date, end: Date) => {
+    const startStr = format(start, 'hh:mm a');
+    const endStr = format(end, 'hh:mm a');
+    return `${startStr}–${endStr}`;
   };
 
-  const now = new Date();
-
-  const bookingsWithTimeInfo = bookings?.map(booking => {
-    const startTime = new Date(booking?.startDateAndTime);
-    const endTime = new Date(booking?.endDateAndTime);
-
-    let label: string | undefined;
-
-    if (['Ski_Hire', 'Transport'].includes(booking?.category)) {
-      if (now < endTime) {
-        const timeLeft = endTime.getTime() - now.getTime();
-        label = `Time Left: ${msToTime(timeLeft)}`;
-      } else {
-        const overTime = now.getTime() - endTime.getTime();
-        label = `Over Time: ${msToTime(overTime)}`;
-      }
+  const formatSingleTime = (time: string | Date) => {
+    if (!time) return '';
+    try {
+      const parsed = typeof time === 'string' ? new Date(time) : time;
+      return format(parsed, 'hh:mm a');
+    } catch {
+      return time?.toString() || '';
     }
+  };
 
-    const product = booking.product?.toObject?.() || booking.product;
-    const productItems = product?.items || [];
+  // Default to today if no date provided
+  const targetDate = selectedDate
+    ? new Date(selectedDate)
+    : new Date(new Date().toISOString().split('T')[0]);
 
-    const enrichedBookingItems = booking.bookingItems.map((bi: any) => {
-      const matchedItem = productItems.find(
-        (itm: any) => itm._id.toString() === bi.itemId.toString()
+  const filtered = bookings.filter(b => {
+    if (b.category === 'Ski_Hire' && b.startDateAndTime) {
+      const d = new Date(b.startDateAndTime);
+      return (
+        d.getFullYear() === targetDate.getFullYear() &&
+        d.getMonth() === targetDate.getMonth() &&
+        d.getDate() === targetDate.getDate()
       );
-      return {
-        ...(bi.toObject?.() || bi),
-        item: matchedItem ? { ...matchedItem } : null,
-      };
-    });
-
-    delete product.items;
-
-    const bookingObj: any = {
-      ...booking.toObject(),
-      product,
-      bookingItems: enrichedBookingItems,
-    };
-
-    if (label) bookingObj.timeLabel = label;
-
-    return bookingObj;
+    }
+    if (b.category === 'Ski_Pass' && b.date) {
+      const d = new Date(b.date);
+      return (
+        d.getFullYear() === targetDate.getFullYear() &&
+        d.getMonth() === targetDate.getMonth() &&
+        d.getDate() === targetDate.getDate()
+      );
+    }
+    return false;
   });
 
-  // If selectedDate is provided, filter bookings
-  let filteredBookings = bookingsWithTimeInfo;
-  if (selectedDate) {
-    const selected = new Date(selectedDate);
-    filteredBookings = bookingsWithTimeInfo.filter(booking => {
-      // Check both Ski_Hire (startDateAndTime) and Ski_Pass (date)
-      if (booking.category === 'Ski_Hire' && booking.startDateAndTime) {
-        const bookingDate = new Date(booking.startDateAndTime);
-        return (
-          bookingDate.getFullYear() === selected.getFullYear() &&
-          bookingDate.getMonth() === selected.getMonth() &&
-          bookingDate.getDate() === selected.getDate()
-        );
-      }
-      if (booking.category === 'Ski_Pass' && booking.date) {
-        const bookingDate = new Date(booking.date);
-        return (
-          bookingDate.getFullYear() === selected.getFullYear() &&
-          bookingDate.getMonth() === selected.getMonth() &&
-          bookingDate.getDate() === selected.getDate()
-        );
-      }
-      return false;
-    });
-  }
-  return filteredBookings;
-}
+  // Simplify data output
+  const simplified = filtered.map(b => {
+    const type =
+      b.category?.replace('_', '')?.replace(/([A-Z])/g, ' $1')?.trim() || '';
+    const person = b.personCount || 0;
+
+    let time = '';
+    if (b.startDateAndTime && b.endDateAndTime) {
+      time = formatTimeRange(b.startDateAndTime, b.endDateAndTime);
+    } else if (b.time) {
+      time = b.time;
+    }
+
+    return {
+      type: type.charAt(0).toUpperCase() + type.slice(1),
+      person,
+      time,
+    };
+  });
+
+  return simplified;
+};
 
 const addBookingIntoDB = async (user: JwtPayload, payload: IBooking) => {
   // check user

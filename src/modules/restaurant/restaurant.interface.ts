@@ -1,30 +1,38 @@
 import { Document, Types } from 'mongoose';
-import { IReview } from './../massage/massage.interface';
+import { IReview,IRefund } from './../common/common.interface';
 
 
-export interface IMenuItems {
-  name: string;
-  menuType: string;
+
+export interface ISlot {
+  startTime: string;
+  endTime: string;
+}
+
+export interface ICategoryItemDetail {
+  seat: "VIP" | "Normal";
+  photo: string;
+  totalQty: number;
+  availableQty: number;
   price: number;
-  menuPhoto: string;
-  description: string;
-  quantity: number;
+  description?: string;
 }
 
 
 
 export interface IRestaurant extends Document {
   title: string;
-  owner: Types.ObjectId;
   thumbnail: string;
   category: Types.ObjectId;
+  owner: Types.ObjectId;
   openTime: string;
   closeTime: string;
   serviceArea: string;
-  totalPrice: number;
-  status: string;
-  items: IMenuItems[];
-  extraChargePerHour: string;
+  foodType: string;
+  status: "Open" | "Closed";
+  items: ICategoryItemDetail[];
+  description: string;
+  slots: ISlot[];
+  availableSlots: ISlot[];
   averageRating?: number;
   reviews?: IReview[];
   refunds?: IRefund[];

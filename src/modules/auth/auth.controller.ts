@@ -75,7 +75,9 @@ const login = catchAsync(async (req, res) => {
   if (!user) {
     throw new AppError(StatusCodes.BAD_REQUEST, 'Invalid credentials.');
   }
-
+ // Validate user status
+  validateUserStatus(user);
+  
   const isPasswordValid = await bcrypt.compare(password, user.password); 
   if (!isPasswordValid) {
     throw new AppError(StatusCodes.BAD_REQUEST, 'password is incorrect.');

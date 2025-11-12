@@ -84,15 +84,15 @@ const registerUser = async (userData: Partial<IUser>) => {
 
   // console.log("creating user info is :", newUser);
 
-  // // Step 4: Send verification OTP
-  // try {
-  //   await OtpService.createVerificationEmailOtp(newUser?.email);
-  // } catch (error) {
-  //   throw new AppError(
-  //     StatusCodes.INTERNAL_SERVER_ERROR,
-  //     'Failed to send verification email.'
-  //   );
-  // }
+  // Step 4: Send verification OTP
+  try {
+    await OtpService.createVerificationEmailOtp(newUser?.email);
+  } catch (error) {
+    throw new AppError(
+      StatusCodes.INTERNAL_SERVER_ERROR,
+      'Failed to send verification email.'
+    );
+  }
 
   // Step 5: Generate tokens
   const tokens = await TokenService.accessAndRefreshToken(newUser);

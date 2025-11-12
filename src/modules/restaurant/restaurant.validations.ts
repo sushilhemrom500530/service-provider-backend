@@ -1,85 +1,120 @@
 import { z } from 'zod';
 
-const menuItemSchema = z.object({
-  name: z.string({
-    required_error: 'Menu item name is required',
-  }),
-  menuType: z.string({
-    required_error: 'Menu type is required',
-  }),
-  price: z.coerce
-    .number()
-    .min(1, { message: 'Amount must be greater than zero' }),
 
-  menuPhoto: z
+const slotSchema = z.object({
+  startTime: z
     .string({
-      required_error: 'Menu image is required',
+      required_error: "Start time is required",
     })
-    .optional(),
-  description: z.string({
-    required_error: 'Description is required',
-  }),
-  
-  quantity: z.coerce
-    .number()
-    .min(1, { message: 'Quantity must be greater than zero' })
-    .max(25, { message: 'Quantity must be less than or equal to 25' }),
+    .min(1, "Start time cannot be empty"),
+  endTime: z
+    .string({
+      required_error: "End time is required",
+    })
+    .min(1, "End time cannot be empty"),
 });
 
-const createRestaurant = z.object({
+// Category Item Detail Schema
+const categoryItemDetailSchema = z.object({
+  seat: z.enum(["VIP", "Normal"], {
+    required_error: "Seat type is required",
+    invalid_type_error: "Seat must be either VIP or Normal",
+  }),
+  photo: z
+    .string({
+      required_error: "Photo is required",
+    })
+    .url("Photo must be a valid URL").optional(),
+  totalQty: z.coerce
+    .number({
+      required_error: "Total quantity is required",
+      invalid_type_error: "Total quantity must be a number",
+    })
+    .min(0, "Total quantity cannot be negative"),
+  price: z.coerce
+    .number({
+      required_error: "Price is required",
+      invalid_type_error: "Price must be a number",
+    })
+    .min(1, "Price must be at least 1"),
+  description: z.string().optional(),
+});
+
+ 
+// Main Restaurant Validation
+export const createRestaurant = z.object({
   body: z.object({
     title: z
       .string({
-        required_error: 'Title is required',
-        invalid_type_error: 'Title must be a string',
+        required_error: "Title is required",
+        invalid_type_error: "Title must be a string",
       })
-      .min(1, 'Title cannot be empty'),
+      .min(1, "Title cannot be empty"),
+
+    category: z
+      .string({
+        required_error: "Category ID is required",
+      })
+      .min(1, "Category cannot be empty"),
 
     openTime: z.string({
-      required_error: 'Open time is required',
+      required_error: "Open time is required",
     }),
 
     closeTime: z.string({
-      required_error: 'Close time is required',
+      required_error: "Close time is required",
     }),
 
-    serviceArea: z.string({
-      required_error: 'Service area is required',
-    }),
-
-    menuItems: z
-      .array(menuItemSchema, {
-        required_error: 'Menu items are required',
+    serviceArea: z
+      .string({
+        required_error: "Service area is required",
       })
-      .min(1, 'At least one menu item is required'),
+      .min(1, "Service area cannot be empty"),
+
+    foodType: z
+      .string({
+        required_error: "Food type is required",
+      })
+      .min(1, "Food type cannot be empty"),
+
+    items: z
+      .array(categoryItemDetailSchema, {
+        required_error: "Items are required",
+        invalid_type_error: "Items must be an array",
+      })
+      .nonempty("At least one item is required"),
+
+    description: z
+      .string({
+        required_error: "Description is required",
+      })
+      .min(1, "Description cannot be empty"),
+
+    slots: z
+      .array(slotSchema, {
+        required_error: "Slots are required",
+        invalid_type_error: "Slots must be an array",
+      })
+      .nonempty("At least one slot is required"),
+   
   }),
 });
 
+
 const updateRestaurant = z.object({
-  body: z.object({
-    title: z.string().min(1, 'Title cannot be empty').optional(),
-
-    ownerId: z.string().optional(),
-
-    thumbnail: z.string().optional(),
-
+   body: z.object({
+    title: z.string().min(1, "Title cannot be empty").optional(),
+    thumbnail: z.string().url("Thumbnail must be a valid URL").optional(),
+    category: z.string().min(1, "Category ID cannot be empty").optional(),
+    owner: z.string().min(1, "Owner ID cannot be empty").optional(),
     openTime: z.string().optional(),
-
     closeTime: z.string().optional(),
-
     serviceArea: z.string().optional(),
-
-    totalPrice: z
-      .number({
-        invalid_type_error: 'Total price must be a number',
-      })
-      .min(0, 'Total price must be non-negative')
-      .optional(),
-
-    items: z
-      .array(menuItemSchema)
-      .min(1, 'At least one menu item is required')
-      .optional(),
+    foodType: z.string().optional(),
+    status: z.enum(["Open", "Closed"]).optional(),
+    items: z.array(categoryItemDetailSchema).optional(),
+    description: z.string().optional(),
+    slots: z.array(slotSchema).optional(), 
   }),
 });
 
