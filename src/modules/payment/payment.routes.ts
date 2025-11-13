@@ -8,8 +8,20 @@ const router = Router();
  
 router.get(
   '/all',
-  auth('User'), 
+  auth('Admin','User'), 
   PaymentController.getAllPayment
+);
+ 
+router.get(
+  '/:id',
+  auth('Admin'), 
+  PaymentController.findById
+);
+ 
+router.delete(
+  '/delete/:id',
+  auth('Admin'), 
+  PaymentController.deletePayment
 );
 
  
