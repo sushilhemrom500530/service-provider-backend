@@ -9,11 +9,11 @@ export interface IPaginationOptions {
 }
 
 export interface IPaginationResult<T> {
-  results: T[];
   pagination: {
     page: number;
     limit: number;
     totalResult: number;
     totalPages: number;
   };
+   results: T[];
 }

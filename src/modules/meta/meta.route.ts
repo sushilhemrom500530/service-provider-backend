@@ -15,4 +15,10 @@ router.get('/admin',
     MetaController.getAdminDashboardData
 );
 
+
+router.get('/service-management', 
+    auth('Admin'),
+    MetaController.getAdminServiceManagement
+);
+
 export const MetaRoutes = router;

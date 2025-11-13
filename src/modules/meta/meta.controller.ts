@@ -29,7 +29,21 @@ const getAdminDashboardData = catchAsync(
   }
 );
 
+const getAdminServiceManagement = catchAsync(
+  async (req: Request, res: Response) => {
+    const user = req?.user;
+    const result = await MetaService.getCommonService(user as JwtPayload);
+    sendResponse(res, {
+      code: StatusCodes.OK,
+      message: 'Common Service fetched successfully',
+      data: result,
+    });
+  }
+);
+
 export const MetaController = {
   getProviderDashboardData,
-  getAdminDashboardData
+  getAdminDashboardData,
+  getAdminServiceManagement,
+
 };

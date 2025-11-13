@@ -167,8 +167,7 @@ const bookings = await Booking.find()
 
   return bookingObj;
 });
-
-
+ 
   return bookingsWithTimeInfo;
 };
 
@@ -449,11 +448,50 @@ const addBookingIntoDB = async (user: JwtPayload, payload: IBooking) => {
     return result;
   }
 
+  // Ski Hire quantity logic
+  if (productOwner?.providerType === 'Ski_Hire') {
+    const bookingItems = payload.bookingItems || [];
+    if (!bookingItems.length)
+      throw new AppError(StatusCodes.BAD_REQUEST, 'At least one booking item is required.');
+
+    // Fetch current SkiHire data again (to ensure fresh state)
+    const skiHire = await SkiHire.findById(product._id);
+    if (!skiHire)
+      throw new AppError(StatusCodes.NOT_FOUND, 'Ski Hire product not found.');
+
+    const updatedItems = skiHire.items.map(item => {
+      const booked = bookingItems.find(b => b.itemId.toString() === item._id.toString());
+      if (booked) {
+        if (item.availableQty < booked.quantity)
+          throw new AppError(
+            StatusCodes.BAD_REQUEST,
+            `Insufficient quantity for ${item.productName}. Available: ${item.availableQty}`
+          );
+        return {
+          ...item.toObject(),
+          availableQty: item.availableQty - booked.quantity,
+        };
+      }
+      return item;
+    });
+
+    await SkiHire.updateOne(
+      { _id: skiHire._id },
+      { $set: { items: updatedItems } }
+    );
+
+    const result = await Booking.create(bookingData);
+    if (!result)
+      throw new AppError(StatusCodes.BAD_REQUEST, 'Booking not created.');
+
+    return result;
+  }
+
 
   // wallet calculation 
     const ownerWallet = await Wallet.findOne({ user: productOwner?._id });
 
-    if (!ownerWallet) {
+    if (!ownerWallet) { 
       throw new AppError(StatusCodes.NOT_FOUND, 'Owner wallet not found.');
     }
  

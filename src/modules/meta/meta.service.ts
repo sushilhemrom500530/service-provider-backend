@@ -183,8 +183,25 @@ const getAdminDashboard = async (user: JwtPayload) => {
   };
 };
 
+const getCommonService = async (user: JwtPayload) => {
+  const isExistUser = await User.findOne({
+    email: user?.email,
+    role: 'Admin',
+  });
+
+  if (!isExistUser) {
+    throw new AppError(StatusCodes.NOT_FOUND, 'Admin not found.');
+  }
+
+  const result = Booking.find({});
+  return result;
+ 
+};
+
 
 export const MetaService = {
   getProviderDashboard,
   getAdminDashboard,
+  getCommonService,
+
 };
