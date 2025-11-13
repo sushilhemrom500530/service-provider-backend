@@ -8,6 +8,8 @@ import { IWithdrawRequest } from './withdraw.inteface';
 import { Wallet } from './../wallet/wallet.model';
 import { generateTransactionId } from './../../utils/generateTransactionId';
 import { v4 as uuidv4 } from 'uuid';
+import { JwtPayload } from 'jsonwebtoken';
+
 // export const updateOrCreateWallet = async (
 //   ownerId: string, // provider
 //   senderId: string, // customer
@@ -76,28 +78,50 @@ import { v4 as uuidv4 } from 'uuid';
 //   return { adminWallet, providerWallet };
 // };
 
-const getAllFromDB = async user => {
-  const isExistsAdmin = await User.findOne({ role: user?.role });
-  if (!isExistsAdmin) {
-    throw new AppError(StatusCodes.NOT_FOUND, 'Admin user not found');
-  }
-  const result = await Withdraw.find()
+
+
+const getAllFromDB = async (query: any) => {
+  const page = Number(query.page) || 1;
+  const limit = Number(query.limit) || 10;
+  const skip = (page - 1) * limit;
+
+  // Build filters
+  const filters: any = {};
+  if (query.status) filters.status = query.status;
+  if (query.userId) filters.user = query.userId;
+
+  // Get total count for pagination
+  const total = await Withdraw.countDocuments(filters);
+
+  // Query with filters, populate, sorting, and pagination
+  const result = await Withdraw.find(filters)
     .populate('user', '_id fullName email')
-    .lean();
+    .sort({ createdAt: -1 })
+    .skip(skip)
+    .limit(limit);
 
   // Mask cardId
-  const maskedResult = result?.map(item => {
+  const maskedResult = result.map(item => {
     const cardId: string = item.cardId || '';
     const last4: string = cardId.slice(-4);
     const maskedCard: string = `xxxx xxxx xxxx ${last4}`;
     return {
-      ...item,
+      ...item.toObject(), // convert mongoose doc to plain object
       cardId: maskedCard,
     };
   });
 
-  return maskedResult;
+  return {
+    pagination: {
+      total,
+      page,
+      limit,
+      totalPages: Math.ceil(total / limit),
+    },
+    withdrawals: maskedResult,
+  };
 };
+
 
 const sendWithdrawRequest = async (
   user: JwtPayload,

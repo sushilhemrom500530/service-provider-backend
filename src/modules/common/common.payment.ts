@@ -4,6 +4,7 @@ import { config } from './../../config/index';
 import { updateOrCreateWallet } from './../wallet/wallet.service';
 import { Types } from 'mongoose';
 import { Payment } from './../payment/payment.model';
+import { Booking } from './../booking/booking.model';
 import {
   TransactionStatus,
   PaymentGateway,
@@ -68,15 +69,17 @@ export const processToPayment = async (payload: IProcessPaymentPayload) => {
       currency,
       transactionId,
       sessionId: session?.id,
-      status: TransactionStatus.PENDING,
+      status: TransactionStatus.PAID,
       gateway: PaymentGateway.STRIPE,
       paymentMethodType: 'Card',
     };
     // create payment
     await Payment.create(paymentPayload);
 
-    // create wallet or update
-    // await updateOrCreateWallet(ownerId, userId, amount);
+    // update booking status
+      await Booking.findByIdAndUpdate(bookingId, {
+    $set: { bookingStatus: 'Active', isPermitted: true },
+  });
 
     return {
       sessionId: session.id,

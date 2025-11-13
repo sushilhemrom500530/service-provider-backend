@@ -70,13 +70,13 @@ function paginationPlugin(schema: Schema): void {
     const totalPages = Math.ceil(totalResult / validatedLimit);
 
     return {
-      results: data,
       pagination: {
         page: validatedPage,
         limit: validatedLimit,
         totalResult,
         totalPages,
       },
+      results: data,
     };
   };
 }

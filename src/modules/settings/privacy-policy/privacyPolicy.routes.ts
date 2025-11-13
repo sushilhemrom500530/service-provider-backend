@@ -16,16 +16,14 @@ router.get(
 // create 
 router.post(
   '/create',
-  // auth('Admin'),
-  // validateRequest(paymentValidations.processPayPalPayment),
+  // auth('Admin'), 
   PrivacyPolicyController.addPrivacyIntoDB
 );
 
 // update 
 router.patch(
   '/update/:id',
-  // auth('Admin'),
-  // validateRequest(paymentValidations.processPayPalPayment),
+  // auth('Admin'), 
   PrivacyPolicyController.updatePrivacyFromDB
 );
 

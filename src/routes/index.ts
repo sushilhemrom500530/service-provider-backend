@@ -20,6 +20,7 @@ import { WalletRoutes } from './../modules/wallet/wallet.routes';
 import { MessageRoutes } from './../modules/message/message.routes';
 import { WithdrawRoutes } from './../modules/withdraw/withdraw.routes';
 import { MetaRoutes } from './../modules/meta/meta.route';
+import { SupportRoutes } from './../modules/settings/customer-support/customer.support.routes';
 
 const router = express.Router();
 
@@ -44,6 +45,10 @@ const apiRoutes = [
   {
     path: '/settings/terms-service',
     route: TermsAndServiceRoutes,
+  },
+  {
+    path: '/settings/support',
+    route: SupportRoutes,
   },
   {
     path: '/users',

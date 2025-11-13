@@ -8,10 +8,7 @@ import { IWithdrawRequest } from './withdraw.inteface';
 
  
 const getAllFromDB = catchAsync(async (req: Request, res: Response) => {
-    const user = req.user as JwtPayload;
-    const {profit} = req.body;
-
-  const result = await WithdrawService.getAllFromDB(user, profit as number);
+  const result = await WithdrawService.getAllFromDB(req.query as any);
 
   sendResponse(res, {
     code: StatusCodes.OK,
