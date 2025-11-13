@@ -15,16 +15,14 @@ router.get(
 // create 
 router.post(
   '/create',
-  // auth('Admin'),
-  // validateRequest(paymentValidations.processPayPalPayment),
+  // auth('Admin'), 
   TermsAndServiceController.addTermsIntoDB
 );
 
 // update 
 router.patch(
   '/update/:id',
-  // auth('Admin'),
-  // validateRequest(paymentValidations.processPayPalPayment),
+  // auth('Admin'), 
   TermsAndServiceController.updateTermsFromDB
 );
  
