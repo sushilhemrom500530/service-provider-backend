@@ -16,9 +16,14 @@ router.get('/admin',
 );
 
 
-router.get('/service-management', 
+router.get('/common-service', 
     auth('Admin'),
     MetaController.getAdminServiceManagement
+);
+
+router.get('/restaurant-service', 
+    auth('Admin'),
+    MetaController.getAdminRestaurantService
 );
 
 export const MetaRoutes = router;

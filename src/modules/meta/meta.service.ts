@@ -10,6 +10,7 @@ import { Restaurant } from './../restaurant/restaurant.model';
 import { Massage } from './../massage/massage.model';
 import { startOfYear, endOfYear } from 'date-fns';
 import mongoose from 'mongoose';
+import { IQuery } from './meta.inteface';
 
 
 
@@ -183,7 +184,7 @@ const getAdminDashboard = async (user: JwtPayload) => {
   };
 };
 
-const getCommonService = async (user: JwtPayload) => {
+export const getCommonService = async (user: JwtPayload, query: IQuery) => {
   const isExistUser = await User.findOne({
     email: user?.email,
     role: 'Admin',
@@ -193,15 +194,141 @@ const getCommonService = async (user: JwtPayload) => {
     throw new AppError(StatusCodes.NOT_FOUND, 'Admin not found.');
   }
 
-  const result = Booking.find({});
-  return result;
- 
+  const page = Number(query.page) || 1;
+  const limit = Number(query.limit) || 10;
+  const skip = (page - 1) * limit;
+
+  const filters: any = { category: { $ne: 'Restaurant' } };
+
+  // Add optional filters
+  if (query.category) filters.category = query.category;
+  if (query.bookingStatus) filters.bookingStatus = query.bookingStatus;
+  if (query.userId) filters.user = query.userId;
+
+  // Optional search (by product title or user name)
+  if (query.search) {
+  const [users, skiPasses] = await Promise.all([
+    User.find(
+      {
+        $or: [
+          { name: { $regex: query.search, $options: 'i' } },
+          { email: { $regex: query.search, $options: 'i' } },
+        ],
+      },
+      '_id'
+    ),
+    Booking.db.model('SkiPass').find(
+      { title: { $regex: query.search, $options: 'i' } },
+      '_id'
+    ),
+  ]);
+
+  filters.$or = [
+    { user: { $in: users.map(u => u._id) } },
+    { product: { $in: skiPasses.map(p => p._id) } },
+  ];
+}
+  const total = await Booking.countDocuments(filters);
+
+  // Query bookings with populate and pagination
+  const bookings = await Booking.find(filters)
+    .populate({
+      path: 'user',
+      select: 'name email phoneNumber role status',
+    })
+    .populate({
+      path: 'product',
+      select: 'title category owner totalPrice items thumbnail serviceArea',
+      populate: {
+        path: 'owner',
+        select: 'name email phoneNumber role providerType',
+      },
+    })
+    .sort({ createdAt: -1 })
+    .skip(skip)
+    .limit(limit);
+
+  return {
+    pagination: {
+      total,
+      page,
+      limit,
+      totalPages: Math.ceil(total / limit),
+    },
+    bookings,
+  };
 };
 
 
+export const getRestaurantManagement = async (user: JwtPayload, query: IQuery) => {
+  const isExistUser = await User.findOne({
+    email: user?.email,
+    role: 'Admin',
+  });
+
+  if (!isExistUser) {
+    throw new AppError(StatusCodes.NOT_FOUND, 'Admin not found.');
+  }
+
+  // Pagination
+  const page = Number(query.page) || 1;
+  const limit = Number(query.limit) || 10;
+  const skip = (page - 1) * limit;
+
+  const filters: any = { category: 'Restaurant' };
+
+  // Optional filters
+  if (query.bookingStatus) filters.bookingStatus = query.bookingStatus;
+  if (query.userId) filters.user = query.userId;
+
+  if (query.search) {
+    const matchedUsers = await User.find(
+      {
+        $or: [
+          { name: { $regex: query.search, $options: 'i' } },
+          { email: { $regex: query.search, $options: 'i' } },
+        ],
+      },
+      '_id'
+    );
+
+    filters.user = { $in: matchedUsers.map(u => u._id) };
+  }
+ 
+  const total = await Booking.countDocuments(filters);
+
+  // Fetch bookings with populate and pagination
+  const bookings = await Booking.find(filters)
+    .populate({
+      path: 'user',
+      select: 'name email phoneNumber role status',
+    })
+    .populate({
+      path: 'product',
+      select: 'title owner totalPrice items thumbnail serviceArea availableSlots',
+      populate: {
+        path: 'owner',
+        select: 'name email phoneNumber role providerType',
+      },
+    })
+    .sort({ createdAt: -1 })
+    .skip(skip)
+    .limit(limit);
+
+  return {
+    pagination: {
+      total,
+      page,
+      limit,
+      totalPages: Math.ceil(total / limit),
+    },
+    bookings,
+  };
+};
 export const MetaService = {
   getProviderDashboard,
   getAdminDashboard,
   getCommonService,
+  getRestaurantManagement
 
 };

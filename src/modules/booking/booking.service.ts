@@ -367,12 +367,12 @@ const addBookingIntoDB = async (user: JwtPayload, payload: IBooking) => {
     totalPrice = validatedItems.reduce((sum, item) => sum + item.total, 0);
   } else {
     // Booking without items (just personCount, date, time)
-    if (!payload?.personCount || !payload?.date || !payload?.time) {
-      throw new AppError(
-        StatusCodes.BAD_REQUEST,
-        'personCount, date, and time are required for this booking type.'
-      );
-    }
+    // if (!payload?.personCount || !payload?.date || !payload?.time) {
+    //   throw new AppError(
+    //     StatusCodes.BAD_REQUEST,
+    //     'personCount, date, and time are required for this booking type.'
+    //   );
+    // }
 
     totalPrice = product?.amount || 0; // fallback to product price if exists
   }
@@ -491,7 +491,7 @@ const addBookingIntoDB = async (user: JwtPayload, payload: IBooking) => {
   // wallet calculation 
     const ownerWallet = await Wallet.findOne({ user: productOwner?._id });
 
-    if (!ownerWallet) { 
+    if (!ownerWallet) {  
       throw new AppError(StatusCodes.NOT_FOUND, 'Owner wallet not found.');
     }
  
