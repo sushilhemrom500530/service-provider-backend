@@ -11,7 +11,7 @@ const getAllSkiPassFromDB = catchAsync(async (req: Request, res: Response) => {
 
   const user = req.user as JwtPayload;
   
-  const result = await SkiPassService.getAllSkiPassFromDB(user)
+  const result = await SkiPassService.getAllSkiPassFromDB(user ,req.query as any)
   sendResponse(res, {
     code: StatusCodes.OK,
     message: 'Ski pass fetched successfully.',

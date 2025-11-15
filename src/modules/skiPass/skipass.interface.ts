@@ -1,4 +1,4 @@
-import { Document, Types } from 'mongoose';
+import { Document, Types } from 'mongoose'; 
 import { IReview, IRefund } from './../common/common.interface';
 
 export enum ISkiPassType {

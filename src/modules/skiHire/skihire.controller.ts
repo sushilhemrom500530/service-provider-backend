@@ -11,7 +11,7 @@ const getAllSkiHireFromDB = catchAsync(async (req: Request, res: Response) => {
 
   const user = req.user as JwtPayload;
   
-  const result = await SkiHireService.getAllSkiHireFromDB(user)
+  const result = await SkiHireService.getAllSkiHireFromDB(user, req.query as any)
   sendResponse(res, {
     code: StatusCodes.OK,
     message: 'Ski Hire fetched successfully.',

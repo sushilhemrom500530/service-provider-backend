@@ -2,13 +2,14 @@ import { Types } from 'mongoose';
 import { User } from './../user/user.model';
 import AppError from './../../errors/AppErro';
 import { StatusCodes } from 'http-status-codes';
-import { config } from './../../config/index';
-import { Withdraw } from './Withdraw.model';
-import { IWithdrawRequest } from './withdraw.inteface';
+import { config } from './../../config/index';  
 import { Wallet } from './../wallet/wallet.model';
 import { generateTransactionId } from './../../utils/generateTransactionId';
 import { v4 as uuidv4 } from 'uuid';
 import { JwtPayload } from 'jsonwebtoken';
+import {WalletTransactionType} from './../wallet/wallet.interface'
+import { Withdraw } from './withdraw.model';
+import { IWithdraw } from './withdraw.inteface';
 
 // export const updateOrCreateWallet = async (
 //   ownerId: string, // provider
@@ -102,9 +103,9 @@ const getAllFromDB = async (query: any) => {
 
   // Mask cardId
   const maskedResult = result.map(item => {
-    const cardId: string = item.cardId || '';
-    const last4: string = cardId.slice(-4);
-    const maskedCard: string = `xxxx xxxx xxxx ${last4}`;
+    const cardId: any = item.cardId || '';
+    const last4: any = cardId.slice(-4);
+    const maskedCard: any = `xxxx xxxx xxxx ${last4}`;
     return {
       ...item.toObject(), // convert mongoose doc to plain object
       cardId: maskedCard,
@@ -125,7 +126,7 @@ const getAllFromDB = async (query: any) => {
 
 const sendWithdrawRequest = async (
   user: JwtPayload,
-  payload: IWithdrawRequest
+  payload: IWithdraw
 ) => {
   const isExistsUser = await User.findOne({ email: user?.email });
   if (!isExistsUser)
@@ -150,13 +151,13 @@ const sendWithdrawRequest = async (
   if (wallet?.balance < payload.amount)
     throw new AppError(StatusCodes.BAD_REQUEST, 'Insufficient wallet balance');
 
-  const withdrawData: Partial<IWithdrawRequest> = {
-    user: isExistsUser._id,
-    wallet: wallet._id,
-    cardId: payload.cardId,
+  const withdrawData: Partial<IWithdraw> = {
+    user: isExistsUser?._id,
+    wallet: wallet?._id,
+    cardId: payload?.cardId,
     amount: payload?.amount,
     transactionId: generateTransactionId('WD'),
-    profitCharge: wallet.profitCharge || 0,
+    profitCharge: wallet?.profitCharge || 0,
   };
   const result = await Withdraw.create(withdrawData);
   return result;
@@ -207,7 +208,7 @@ const acceptWithdrawRequest = async (user: JwtPayload, withdrawId: string) => {
   adminWallet.transactions.push({
     user: new Types.ObjectId(withdraw?.user),
     balance: -withdrawalAmount,
-    type: 'Withdraw',
+    type: WalletTransactionType.WITHDRAW,
     createdAt: new Date(),
   });
 
@@ -216,7 +217,7 @@ const acceptWithdrawRequest = async (user: JwtPayload, withdrawId: string) => {
   providerWallet.transactions.push({
     user: new Types.ObjectId(isExistsAdmin?._id),
     balance: withdraw?.amount,
-    type: 'Withdraw',
+    type: WalletTransactionType.WITHDRAW,
     createdAt: new Date(),
   });
 

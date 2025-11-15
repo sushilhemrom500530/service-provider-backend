@@ -1,5 +1,6 @@
  
 export interface ISubCategory {
+  _id?: string;
   name: string;
   categoryPhoto: string;
 }
@@ -12,6 +13,7 @@ export type PrimaryCategoryType =
   | 'Massage';
 
 export interface ICategory {
+   _id?: string;     
   primaryCategoryName: PrimaryCategoryType;
   thumbnail?: string;
   subCategory: ISubCategory[];

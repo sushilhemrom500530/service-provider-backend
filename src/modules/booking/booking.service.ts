@@ -70,13 +70,13 @@ const getSingleBookingFromDB = async (id: string, user: JwtPayload) => {
     throw new AppError(StatusCodes.NOT_FOUND, 'Booking not found.');
   }
 
-  const product = booking.product;
+  const product = booking?.product;
   const productItems = product?.items || [];
 
-  const enrichedBookingItems = booking.bookingItems.map((bi: any) => {
+  const enrichedBookingItems = booking?.bookingItems.map((bi: any) => {
     const matchedItem = productItems.find(
       (itm: any) => itm._id.toString() === bi.itemId.toString()
-    );
+    ) || null;
 
     return {
       ...bi,

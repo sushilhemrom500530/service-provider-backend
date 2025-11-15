@@ -1,5 +1,4 @@
-import { StatusCodes } from 'http-status-codes';
-import Chat from '../chat/chat.model';
+import { StatusCodes } from 'http-status-codes'; 
 import { IMessage } from './message.interface';
 import Message from './message.model';
 import { User } from '../user/user.model';
@@ -7,6 +6,7 @@ import { Types } from 'mongoose';
 import { ChatService } from '../chat/chat.service';
 import { IPaginationOptions, IPaginationResult } from '../../types/pagination';
 import AppError from '../../errors/AppErro';
+import { Chat } from './../chat/chat.model';
 
 // View all messages by receiver ID (aligned with GET /:receiverId)
 
@@ -436,14 +436,14 @@ const replyToMessage = async (
     deliveryStatus: 'sent',
   });
 
-  if (payload.chatId) {
-    const chat = await Chat.findById(payload.chatId);
-    if (chat) {
-      chat.lastMessage = new Types.ObjectId(newMessage._id);
-      chat.updatedAt = newMessage.createdAt;
-      await chat.save();
-    }
-  }
+  // if (payload?.chatId) {
+  //   const chat = await Chat.findById(payload?.chatId);
+  //   if (chat) {
+  //     chat.lastMessage = new Types.ObjectId(newMessage._id);
+  //     chat.updatedAt = newMessage.createdAt;
+  //     await chat.save();
+  //   }
+  // }
 
   // Emit socket event to notify about reply
   if (global.io) {

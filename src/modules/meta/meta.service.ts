@@ -7,11 +7,11 @@ import { SkiPass } from './../skiPass/skipass.model';
 import { SkiHire } from './../skiHire/skihire.model';
 import { Transport } from './../transport/transport.model';
 import { Restaurant } from './../restaurant/restaurant.model';
-import { Massage } from './../massage/massage.model';
-import { startOfYear, endOfYear } from 'date-fns';
+import { Massage } from './../massage/massage.model'; 
 import mongoose from 'mongoose';
 import { IQuery } from './meta.inteface';
-
+import { StatusCodes } from 'http-status-codes';
+import { startOfYear, endOfYear, setYear } from 'date-fns';
 
 
 //  for provider home page data
@@ -71,7 +71,7 @@ const getProviderDashboard = async (user: JwtPayload) => {
       .sort({ createdAt: -1 })
       .lean();
 
-    const formatted = products?.map(p => ({
+    const formatted = products?.map((p: any) => ({
       ...p,
       model: modelName,
     }));
@@ -99,8 +99,8 @@ const getProviderDashboard = async (user: JwtPayload) => {
 };
 
 // admin dashboard data
-const getAdminDashboard = async (user: JwtPayload) => {
-  const isExistUser = await User.findOne({
+const getAdminDashboard = async (user: JwtPayload, query:any) => {
+ const isExistUser = await User.findOne({
     email: user?.email,
     role: 'Admin',
   });
@@ -113,8 +113,12 @@ const getAdminDashboard = async (user: JwtPayload) => {
   const totalUser = await User.countDocuments();
   const totalProvider = await User.countDocuments({ role: 'Provider' });
 
-  const yearStart = startOfYear(new Date());
-  const yearEnd = endOfYear(new Date());
+  // Get year from query (default: current year)
+  const selectedYear = query?.year ? parseInt(query?.year, 10) : new Date().getFullYear();
+
+  // Use date-fns to set start and end of selected year
+  const yearStart = startOfYear(setYear(new Date(), selectedYear));
+  const yearEnd = endOfYear(setYear(new Date(), selectedYear));
 
   // Define all models and their income field names
   const modelsWithFields = [

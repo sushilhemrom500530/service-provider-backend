@@ -40,10 +40,10 @@ const seedUsers = async () => {
       user.password = await hashPassword(user.password);
     }
 
-    await User.deleteOne({ email: adminData.email });
+    await User.deleteOne({ email: usersData[0].email });
 
     // insert the single admin user
-    const result = await User.create(adminData);
+    const result = await User.create(usersData[0]);
 
     // Create a wallet for the user
     await Wallet.create({

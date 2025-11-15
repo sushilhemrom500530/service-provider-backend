@@ -1,7 +1,7 @@
 import { Types } from 'mongoose';
 
 export interface IWithdrawRequest {
-  cardId: Types.ObjectId;
+  cardId: string;
   amount: number;
   createdAt?: Date;
 }

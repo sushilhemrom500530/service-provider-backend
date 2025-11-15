@@ -12,7 +12,7 @@ import { UserStatus } from '../modules/user/user.interface';
 import { status } from 'http-status';
 
 const auth = (...roles: string[]) =>
-  catchAsync(async (req: Request, res: Response, next: NextFunction) => {
+  catchAsync(async (req: Request, res: Response, next: NextFunction) => {  
     const tokenWithBearer = req.headers.authorization;
     if (!tokenWithBearer || !tokenWithBearer.startsWith('Bearer')) {
       throw new AppError(StatusCodes.UNAUTHORIZED, 'Please provide your token.');

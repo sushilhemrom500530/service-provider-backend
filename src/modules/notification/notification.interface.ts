@@ -1,31 +1,11 @@
-import { Model, Types } from 'mongoose';
-import { IPaginationOptions, IPaginationResult } from '../../types/pagination';
+import { Document, Types } from "mongoose";
 
-export interface INotification {
-  _id?: Types.ObjectId;
-  senderId?: Types.ObjectId | string;
-  receiverId?: Types.ObjectId | string;
+
+// Define the INotification type
+export type INotification = {
+  senderId: Types.ObjectId;
+  receiverIds?: Types.ObjectId[]; 
   title: string;
-  message?: string;
-  image?: string;
-  type:
-    | 'post'
-    | 'story'
-    | 'comment'
-    | 'event'
-    | 'group'
-    | 'connection'
-    | 'message';
-  linkId?: Types.ObjectId | string;
-  role: 'admin' | 'user';
-  viewStatus?: boolean;
-  createdAt?: Date;
-  updatedAt?: Date;
-}
-
-export interface NotificationModel extends Model<INotification> {
-  paginate(
-    filters?: Record<string, any>,
-    options?: IPaginationOptions
-  ): Promise<IPaginationResult<INotification>>;
-}
+  description: string;
+  isRead: boolean | false;
+} & Document;

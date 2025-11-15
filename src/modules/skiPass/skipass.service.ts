@@ -6,11 +6,12 @@ import { s3Services } from './../../aws/s3Service';
 import { USER_UPLOADS_FOLDER } from './skipass.constant';
 import { SkiPass } from './skipass.model';
 import { User } from './../user/user.model';
-import { JwtPayload } from 'jsonwebtoken';
-import { IReview } from './skipass.interface';
+import { JwtPayload } from 'jsonwebtoken'; 
+import { IReview } from './../common/common.interface';
 
-const getAllSkiPassFromDB = async (user: JwtPayload) => {
+const getAllSkiPassFromDB = async (user: JwtPayload, query: any) => {
   const isExistsUser = await User.findOne({ email: user?.email });
+
   if (!isExistsUser) {
     throw new AppError(
       StatusCodes.NOT_FOUND,
@@ -18,12 +19,39 @@ const getAllSkiPassFromDB = async (user: JwtPayload) => {
     );
   }
 
-  const result = await SkiPass.find({ owner: isExistsUser?._id }) 
-  // .populate({
-  //   path: 'owner',
-  //   select: '-isDeleted -agreeTermsCondition -__v -createdAt -updatedAt',
-  // });
-  return result;
+  // Pagination
+  const page = Number(query.page) || 1;
+  const limit = Number(query.limit) || 10;
+  const skip = (page - 1) * limit;
+
+  // Search
+  const search = query.search || "";
+
+ 
+  const filters: any = { owner: isExistsUser._id };
+
+  if (search) {
+    filters.title = { $regex: search, $options: "i" };  
+  }
+
+ 
+  const total = await SkiPass.countDocuments(filters);
+
+  // Fetch paginated result
+  const result = await SkiPass.find(filters)
+    .skip(skip)
+    .limit(limit)
+    .sort({ createdAt: -1 });  
+
+  return { 
+    pagination: {
+      total,
+      page,
+      limit,
+      totalPages: Math.ceil(total / limit),
+    },
+    result,
+  };
 };
 
 const getSingleSkipPassFromDB = async (id: string, user: JwtPayload) => {
@@ -47,7 +75,7 @@ const getSingleSkipPassFromDB = async (id: string, user: JwtPayload) => {
   return result;
 };
 
-const addSkiPassIntoDB = async (req: Request, res: Response) => {
+const addSkiPassIntoDB = async (req: Request) => {
   const user = req?.user as JwtPayload;
   // check user
   const isExistsUser = await User.findOne({ email: user?.email });
@@ -123,9 +151,9 @@ export const reviewSkiPass = async (
   }
 
   //  (Optional) Prevent duplicate reviews by the same user
-  const alreadyReviewed = skiPass.reviews.some(
+  const alreadyReviewed = skiPass?.reviews.some(
     review => review.userId.toString() === isExistsUser._id.toString()
-  );
+  ) as boolean;
   if (alreadyReviewed) {
     throw new AppError(
       StatusCodes.BAD_REQUEST,
@@ -144,9 +172,9 @@ export const reviewSkiPass = async (
   skiPass.reviews.push(newReview as IReview);
 
   // Recalculate average rating
-  const total = skiPass.reviews.reduce((sum, r) => sum + r.rating, 0);
+  const total = skiPass.reviews.reduce((sum : number, r : IReview) => sum + r.rating, 0);
   skiPass.averageRating = parseFloat(
-    (total / skiPass.reviews.length).toFixed(1)
+    (total / skiPass.reviews.length || 0).toFixed(1)
   );
 
   // Save updated SkiPass

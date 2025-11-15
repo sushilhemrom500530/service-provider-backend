@@ -20,7 +20,7 @@ const getProviderDashboardData = catchAsync(
 const getAdminDashboardData = catchAsync(
   async (req: Request, res: Response) => {
     const user = req?.user;
-    const result = await MetaService.getAdminDashboard(user as JwtPayload);
+    const result = await MetaService.getAdminDashboard(user as JwtPayload, req.query as any);
     sendResponse(res, {
       code: StatusCodes.OK,
       message: 'Admin Meta fetched successfully',

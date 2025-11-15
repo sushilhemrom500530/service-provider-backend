@@ -7,9 +7,13 @@ import { Request, Response } from 'express';
 import { IContent, IFileMetadata, IMessage, MessageType } from './message.interface';
 import { MESSAGE_UPLOADS_FOLDER } from './message.constant';
 import { Types } from 'mongoose';
+import AppError from './../../errors/AppErro';
 
 const sendMessage = catchAsync(async (req, res) => {
   const senderId = req?.user?.userId;
+     if (!senderId) {
+      throw new AppError(StatusCodes.UNAUTHORIZED, 'User not authenticated.');
+    }
   const { message, receiverId } = req.body;
   // Prepare message content
   const content: IContent = {
@@ -82,7 +86,10 @@ const sendMessage = catchAsync(async (req, res) => {
 
 const getAllMessagesByReceiverId = catchAsync(
   async (req: Request, res: Response) => {
-    const senderId = req.user.userId;
+    const senderId = req?.user?.userId;
+    if (!senderId) {
+      throw new AppError(StatusCodes.UNAUTHORIZED, 'User not authenticated.');
+    }
     const { receiverId } = req.params;
     const options = pick(req.query, ['sortBy', 'limit', 'page', 'populate']);
     const messages = await MessageService.getAllMessagesByReceiverId(
@@ -111,6 +118,9 @@ const updateMessage = catchAsync(async (req: Request, res: Response) => {
 const deleteMessage = catchAsync(async (req: Request, res: Response) => {
   const { messageId } = req.params;
   const userId = req.user.userId;
+     if (!userId) {
+      throw new AppError(StatusCodes.UNAUTHORIZED, 'User not authenticated.');
+    }
   const message = await MessageService.deleteMessage(userId, messageId);
   sendResponse(res, {
     code: StatusCodes.OK,
@@ -122,6 +132,9 @@ const deleteMessage = catchAsync(async (req: Request, res: Response) => {
 const markMessageSeen = catchAsync(async (req: Request, res: Response) => {
   const { messageId } = req.params;
   const userId = req.user.userId;
+     if (!userId) {
+      throw new AppError(StatusCodes.UNAUTHORIZED, 'User not authenticated.');
+    }
   const message = await MessageService.markMessageSeen(messageId);
   sendResponse(res, {
     code: StatusCodes.OK,
@@ -132,6 +145,9 @@ const markMessageSeen = catchAsync(async (req: Request, res: Response) => {
 
 const viewAllMessages = catchAsync(async (req: Request, res: Response) => {
   const { userId } = req.user;
+     if (!userId) {
+      throw new AppError(StatusCodes.UNAUTHORIZED, 'User not authenticated.');
+    }
   const { chatId } = req.params;
 
   const messages = await MessageService.viewAllMessages(chatId, userId);
@@ -145,6 +161,9 @@ const viewAllMessages = catchAsync(async (req: Request, res: Response) => {
 const unviewedMessagesCount = catchAsync(
   async (req: Request, res: Response) => {
     const { userId } = req.user;
+       if (!userId) {
+      throw new AppError(StatusCodes.UNAUTHORIZED, 'User not authenticated.');
+    }
     const { chatId } = req.query;
     const count = await MessageService.unviewedMessagesCount(
       userId,
@@ -161,7 +180,10 @@ const unviewedMessagesCount = catchAsync(
 const addReaction = catchAsync(async (req: Request, res: Response) => {
   const { messageId } = req.params;
   const { emoji } = req.body;
-  const userId = req.user.userId;
+  const userId = req?.user?.userId;
+    if (!userId) {
+      throw new AppError(StatusCodes.UNAUTHORIZED, 'User not authenticated.');
+    }
   const message = await MessageService.addReaction(messageId, userId, emoji);
   sendResponse(res, {
     code: StatusCodes.OK,
@@ -173,6 +195,9 @@ const addReaction = catchAsync(async (req: Request, res: Response) => {
 const removeReaction = catchAsync(async (req: Request, res: Response) => {
   const { messageId } = req.params;
   const userId = req.user.userId;
+    if (!userId) {
+      throw new AppError(StatusCodes.UNAUTHORIZED, 'User not authenticated.');
+    }
   const message = await MessageService.removeReaction(messageId, userId);
   sendResponse(res, {
     code: StatusCodes.OK,
@@ -183,6 +208,9 @@ const removeReaction = catchAsync(async (req: Request, res: Response) => {
 
 const replyToMessage = catchAsync(async (req: Request, res: Response) => {
   const userId = req.user.userId;
+    if (!userId) {
+      throw new AppError(StatusCodes.UNAUTHORIZED, 'User not authenticated.');
+    }
   const { replyToId, chatId, receiverId, content } = req.body;
   
   // Handle file uploads if present in the request
@@ -229,6 +257,9 @@ const forwardMessage = catchAsync(async (req: Request, res: Response) => {
   const { messageId } = req.params;
   const { chatIds } = req.body;
   const userId = req.user.userId;
+    if (!userId) {
+      throw new AppError(StatusCodes.UNAUTHORIZED, 'User not authenticated.');
+    }
   const messages = await MessageService.forwardMessage(
     messageId,
     userId,
@@ -279,7 +310,10 @@ const searchMessages = catchAsync(async (req: Request, res: Response) => {
 
 const sendTypingIndicator = catchAsync(async (req: Request, res: Response) => {
   const { chatId } = req.params;
-  const userId = req.user.userId;
+  const userId = req.user?.userId;
+    if (!userId) {
+      throw new AppError(StatusCodes.UNAUTHORIZED, 'User not authenticated.');
+    }
   await MessageService.sendTypingIndicator(chatId, userId);
   sendResponse(res, {
     code: StatusCodes.OK,
@@ -290,7 +324,10 @@ const sendTypingIndicator = catchAsync(async (req: Request, res: Response) => {
 
 const stopTypingIndicator = catchAsync(async (req: Request, res: Response) => {
   const { chatId } = req.params;
-  const userId = req.user.userId;
+  const userId = req.user?.userId;
+    if (!userId) {
+      throw new AppError(StatusCodes.UNAUTHORIZED, 'User not authenticated.');
+    }
   await MessageService.stopTypingIndicator(chatId, userId);
   sendResponse(res, {
     code: StatusCodes.OK,

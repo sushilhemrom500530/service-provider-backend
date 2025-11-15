@@ -1,5 +1,5 @@
-import { Document, Types } from 'mongoose';
-import { IReview, IRefund } from './../common/common.interface';
+import { Document, Types } from 'mongoose'; 
+import { IReview,IRefund } from './../common/common.interface';
  
 export interface IPriceByDuration {
   duration: string;
@@ -7,7 +7,7 @@ export interface IPriceByDuration {
 }
 
 
-export interface IMassage extends Document {
+export interface IMassage extends Document { 
   category: Types.ObjectId;
   owner: Types.ObjectId;
   thumbnail: string;

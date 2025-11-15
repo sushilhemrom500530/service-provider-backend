@@ -9,6 +9,7 @@ import { CustomerSupportService } from './customer.support.service';
 const getSupport = catchAsync(async (req: Request, res: Response) => {
 
   const user = req.user as JwtPayload;
+  console.log("user is ", user);
 
   const result = await CustomerSupportService.getSupport();
  

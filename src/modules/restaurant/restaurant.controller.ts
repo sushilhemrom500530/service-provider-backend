@@ -11,7 +11,7 @@ const getAllRestaurantFromDB = catchAsync(async (req: Request, res: Response) =>
 
   const user = req.user as JwtPayload;
   
-  const result = await RestaurantService.getAllRestaurantFromDB(user)
+  const result = await RestaurantService.getAllRestaurantFromDB(user, req.query as any)
   sendResponse(res, {
     code: StatusCodes.OK,
     message: 'Restaurant fetched successfully.',
@@ -33,7 +33,7 @@ const getSingleRestaurantFromDB = catchAsync(async (req: Request, res: Response)
  
  
 const addRestaurantIntoDB = catchAsync(async (req: Request, res: Response) => {
-  const result = await RestaurantService.addRestaurantIntoDB(req)
+  const result = await RestaurantService.addRestaurantIntoDB(req as any)
   sendResponse(res, {
     code: StatusCodes.OK,
     message: 'Restaurant added successfully',

@@ -1,12 +1,12 @@
 import { StatusCodes } from 'http-status-codes';
 import { User } from '../user/user.model';
-import { IChat } from './chat.interface';
-import Chat from './chat.model';
+import { IChat } from './chat.interface'; 
 import Message from '../message/message.model';
 import { Types } from 'mongoose';
 import { MessageService } from '../message/message.service';
 import { IPaginationOptions, IPaginationResult } from '../../types/pagination';
 import AppError from '../../errors/AppErro';
+import { Chat } from './chat.model';
 
 const getAllChatsByUserId = async (
   filters: Record<string, any>,
@@ -212,7 +212,7 @@ const removeParticipantFromGroup = async (
   }
 
   chat.participants = chat.participants.filter(
-    participant => participant.toString() !== userId
+    (participant: any) => participant.toString() !== userId
   );
   await chat.save();
 

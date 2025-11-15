@@ -7,6 +7,7 @@ export enum ChatType {
 }
 
 export interface IChat {
+  _id?: Types.ObjectId;
   chatType: ChatType;
   participants: Types.ObjectId[];
   chatName?: string;

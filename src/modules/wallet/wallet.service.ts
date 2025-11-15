@@ -6,6 +6,7 @@ import { StatusCodes } from 'http-status-codes';
 import { config } from './../../config/index';
 import { IWalletAccount } from './wallet.interface';
 import { JwtPayload } from 'jsonwebtoken';
+import {WalletTransactionType} from "./wallet.interface"
 
 export const updateOrCreateWallet = async (
   ownerId: string, // provider
@@ -15,7 +16,7 @@ export const updateOrCreateWallet = async (
   // Find admin user
   const admin = await User.findOne({ role: 'Admin' });
   if (!admin) {
-    throw new AppError('Admin user not found', StatusCodes.NOT_FOUND);
+    throw new AppError(StatusCodes.NOT_FOUND,'Admin user not found' );
   }
 
   // Calculate profit (20%)
@@ -35,7 +36,7 @@ export const updateOrCreateWallet = async (
         transactions: {
           user: new Types.ObjectId(senderId),
           balance: amount,
-          type: 'Earn',
+          type: WalletTransactionType.EARN,
           createdAt: new Date(),
         },
       },
@@ -76,7 +77,7 @@ export const updateOrCreateWallet = async (
         {
           user: new Types.ObjectId(senderId),
           balance: amount,
-          type: 'Earn',
+          type: WalletTransactionType.EARN,
           createdAt: new Date(),
         },
       ],
@@ -86,7 +87,7 @@ export const updateOrCreateWallet = async (
     providerWallet.transactions.push({
       user: new Types.ObjectId(senderId),
       balance: amount,
-      type: 'Earn',
+      type: WalletTransactionType.EARN,
       createdAt: new Date(),
     });
     await providerWallet.save();
@@ -111,10 +112,10 @@ const updateProfit = async (user: JwtPayload, payload: number) => {
   return { messaga: 'success' };
 };
 
-const addWallet = async (user, payload: IWalletAccount) => {
+const addWallet = async (user : JwtPayload, payload: IWalletAccount) => {
   const isExistsProvider = await User.findOne({ role: user?.role });
   if (!isExistsProvider) {
-    throw new AppError('Provider user not found', StatusCodes.NOT_FOUND);
+    throw new AppError(StatusCodes.NOT_FOUND, 'Provider user not found' );
   }
 
   // Find the wallet

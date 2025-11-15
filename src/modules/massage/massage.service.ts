@@ -10,41 +10,95 @@ import { IReview } from './../common/common.interface';
 import { USER_UPLOADS_FOLDER } from './massage.constant';
 import { Category } from './../category/category.model';
 
-const getAllMassageFromDB = async (user: JwtPayload) => {
+
+
+const getAllMassageFromDB = async (user: JwtPayload, query: any) => {
   const isExistsUser = await User.findOne({ email: user?.email });
   if (!isExistsUser) {
-    throw new AppError(
-      StatusCodes.NOT_FOUND,
-      'You cannot view this data because your account was not found.'
-    );
+    throw new AppError(StatusCodes.NOT_FOUND, 'User not found.');
   }
 
-  const massages = await Massage.find({ owner: isExistsUser?._id }).populate({
-    path: 'owner',
-    select: '-isDeleted -agreeTermsCondition -__v -createdAt -updatedAt',
-  });
+  // Pagination
+  const page = Number(query.page) || 1;
+  const limit = Number(query.limit) || 10;
+  const skip = (page - 1) * limit;
 
+  // Search filter
+  const search = query.search
+    ? { title: { $regex: query.search, $options: "i" } }
+    : {};
+
+  // Category filter
+  let categoryFilter = {};
+  if (query.category) {
+    const categories = await Category.find(
+      {
+        primaryCategoryName: "Massage",
+        "subCategory.name": { $regex: query.category, $options: "i" },
+      },
+      { "subCategory.$": 1 }
+    );
+
+    const categoryIds = categories.map((c) => c.subCategory?.[0]?._id);
+
+    if (categoryIds.length > 0) {
+      categoryFilter = { category: { $in: categoryIds } };
+    } else {
+      return {
+        data: [],
+        pagination: { total: 0, page, limit, totalPages: 0 },
+      };
+    }
+  }
+
+  const filters = {
+    owner: isExistsUser._id,
+    ...search,
+    ...categoryFilter,
+  };
+
+  // Total count
+  const total = await Massage.countDocuments(filters);
+
+  // Paginated items
+  const massageList = await Massage.find(filters)
+    .skip(skip)
+    .limit(limit)
+    .populate({
+      path: "owner",
+      select: "-isDeleted -agreeTermsCondition -__v -createdAt -updatedAt",
+    })
+    .sort({ createdAt: -1 });
+
+  // Attach category (your original logic)
   const result = await Promise.all(
-    massages.map(async massage => {
+    massageList.map(async (item) => {
       const categoryDoc = await Category.findOne(
         {
-          primaryCategoryName: 'Massage',
-          'subCategory._id': massage.category,  
+          primaryCategoryName: "Massage",
+          "subCategory._id": item.category,
         },
-        { 'subCategory.$': 1 }
+        { "subCategory.$": 1 }
       );
 
-      const subCategoryData = categoryDoc?.subCategory?.[0] || null;
-
       return {
-        ...massage.toObject(),
-        category: subCategoryData,  
+        ...item.toObject(),
+        category: categoryDoc?.subCategory?.[0] || null,
       };
     })
   );
 
-  return result;
+  return { 
+    pagination: {
+      total,
+      page,
+      limit,
+      totalPages: Math.ceil(total / limit),
+    },
+    result,
+  };
 };
+
 
 const getSingleMassageFromDB = async (id: string, user: JwtPayload) => {
   const isExistsUser = await User.findOne({ email: user?.email });
@@ -173,9 +227,10 @@ export const reviewMassage = async (
   }
 
   //  (Optional) Prevent duplicate reviews by the same user
-  const alreadyReviewed = massage.reviews.some(
+  const alreadyReviewed = massage.reviews?.some(
     review => review.userId.toString() === isExistsUser._id.toString()
-  );
+  ) || false;
+
   if (alreadyReviewed) {
     throw new AppError(
       StatusCodes.BAD_REQUEST,
@@ -185,19 +240,19 @@ export const reviewMassage = async (
 
   // Push new review
   const newReview = {
-    userId: isExistsUser?._id,
+    userId: isExistsUser!._id,
     rating: payload?.rating,
     comment: payload?.comment,
     createdAt: new Date(),
-  };
+  } || [];
 
   massage.reviews.push(newReview as IReview);
 
   // Recalculate average rating
-  const total = massage.reviews.reduce((sum, r) => sum + r.rating, 0);
+  const total = massage?.reviews.reduce((sum: number, r: IReview) => sum + r?.rating, 0);
   massage.averageRating = parseFloat(
-    (total / massage.reviews.length).toFixed(1)
-  );
+    (total / massage?.reviews.length).toFixed(1)
+  ) || 0;
 
   // Save updated massage
   await massage.save();

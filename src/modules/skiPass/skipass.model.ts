@@ -1,6 +1,6 @@
-import mongoose, { Schema, Model } from 'mongoose';
-import { ISkiPass, ISkiPassType } from './skiPass.interface';
+import mongoose, { Schema, Model } from 'mongoose'; 
 import { reviewSchema, refundSchema } from './../common/common.schema';
+import { ISkiPass, ISkiPassType } from './skipass.interface';
 
 const serviceSchema = new mongoose.Schema(
   {
@@ -41,7 +41,7 @@ const skiPassSchema = new Schema<ISkiPass>(
     },
     services: {
       type: [serviceSchema],
-      validate: [arr => arr.length > 0, 'At least one service is required'],
+      validate: [(arr: any)=> arr.length > 0, 'At least one service is required'],
       required: true,
     },
     serviceArea: {
@@ -82,8 +82,8 @@ const skiPassSchema = new Schema<ISkiPass>(
 
 skiPassSchema.pre('save', function (next) {
   if (this.reviews && this.reviews.length > 0) {
-    const total = this.reviews.reduce((sum, r) => sum + r.rating, 0);
-    this.averageRating = parseFloat((total / this.reviews.length).toFixed(1));
+    const total : number = this.reviews.reduce((sum : number, r : any) => sum + r.rating, 0);
+    this.averageRating = parseFloat((total / this.reviews.length || 0).toFixed(1));
   }
   next();
 });

@@ -1,5 +1,5 @@
 import mongoose, { Schema } from 'mongoose';
-import { ChatType, IChat, IChatModel } from './chat.interface';
+import { ChatType, IChat } from './chat.interface';
 import paginationPlugin from '../../common/plugins/pagination.plugin';
 
 const chatSchema = new Schema<IChat>(

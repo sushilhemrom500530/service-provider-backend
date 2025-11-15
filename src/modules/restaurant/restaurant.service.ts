@@ -7,47 +7,100 @@ import { User } from './../user/user.model';
 import { JwtPayload } from 'jsonwebtoken';
 import { Restaurant } from './restaurant.model';
 import { USER_UPLOADS_FOLDER } from './restaurant.constant';
-import { IRestaurant } from './restaurant.interface';
+import { IRestaurant, ISlot } from './restaurant.interface';
 import { Category } from './../category/category.model';
 import { isRestaurantOpen } from './../../utils/restaurentTimeConvert';
+import { IReview } from './../common/common.interface';
 
-const getAllRestaurantFromDB = async (user: JwtPayload) => {
+
+
+const getAllRestaurantFromDB = async (user: JwtPayload, query: any) => {
   const isExistsUser = await User.findOne({ email: user?.email });
   if (!isExistsUser) {
-    throw new AppError(
-      StatusCodes.NOT_FOUND,
-      'You cannot view this data because your account was not found.'
-    );
+    throw new AppError(StatusCodes.NOT_FOUND, 'User not found.');
   }
 
-  const restaurant = await Restaurant.find({
-    owner: isExistsUser?._id,
-  }).populate({
-    path: 'owner',
-    select: '-isDeleted -agreeTermsCondition -__v -createdAt -updatedAt',
-  });
+  // Pagination
+  const page = Number(query.page) || 1;
+  const limit = Number(query.limit) || 10;
+  const skip = (page - 1) * limit;
 
+  // Search filter
+  const search = query.search
+    ? { title: { $regex: query.search, $options: "i" } }
+    : {};
+
+  // Category filter
+  let categoryFilter = {};
+  if (query.category) {
+    const categories = await Category.find(
+      {
+        primaryCategoryName: "Restaurant",
+        "subCategory.name": { $regex: query.category, $options: "i" },
+      },
+      { "subCategory.$": 1 }
+    );
+
+    const categoryIds = categories.map((c) => c.subCategory?.[0]?._id);
+
+    if (categoryIds.length > 0) {
+      categoryFilter = { category: { $in: categoryIds } };
+    } else {
+      return {
+        data: [],
+        pagination: { total: 0, page, limit, totalPages: 0 },
+      };
+    }
+  }
+
+  const filters = {
+    owner: isExistsUser._id,
+    ...search,
+    ...categoryFilter,
+  };
+
+  // Total after filters
+  const total = await Restaurant.countDocuments(filters);
+
+  // Fetch paginated restaurant data
+  const restaurantList = await Restaurant.find(filters)
+    .skip(skip)
+    .limit(limit)
+    .populate({
+      path: "owner",
+      select: "-isDeleted -agreeTermsCondition -__v -createdAt -updatedAt",
+    })
+    .sort({ createdAt: -1 });
+
+  // Attach category data (kept exactly as your logic)
   const result = await Promise.all(
-    restaurant.map(async restuar => {
+    restaurantList.map(async (item) => {
       const categoryDoc = await Category.findOne(
         {
-          primaryCategoryName: 'Restaurant',
-          'subCategory._id': restuar.category,
+          primaryCategoryName: "Restaurant",
+          "subCategory._id": item.category,
         },
-        { 'subCategory.$': 1 }
+        { "subCategory.$": 1 }
       );
 
-      const subCategoryData = categoryDoc?.subCategory?.[0] || null;
-
       return {
-        ...restuar.toObject(),
-        category: subCategoryData,
+        ...item.toObject(),
+        category: categoryDoc?.subCategory?.[0] || null,
       };
     })
   );
 
-  return result;
+  return {
+    pagination: {
+      total,
+      page,
+      limit,
+      totalPages: Math.ceil(total / limit),
+    },
+    result,
+  };
 };
+
 
 const getSingleRestaurantFromDB = async (id: string, user: JwtPayload) => {
   const isExistsUser = await User.findOne({ email: user?.email });
@@ -81,7 +134,7 @@ const getSingleRestaurantFromDB = async (id: string, user: JwtPayload) => {
   };
 };
 
-const addRestaurantIntoDB = async (req: Request, res: Response) => {
+const addRestaurantIntoDB = async (req: Request) => {
  const user = req.user as JwtPayload;
 
   // Check if user exists
@@ -99,11 +152,11 @@ const addRestaurantIntoDB = async (req: Request, res: Response) => {
   if (!category) throw new AppError(StatusCodes.NOT_FOUND, 'Restaurant category not found.');
 
   const subCategoryItems = category?.subCategory || [];
-  const exists = subCategoryItems.some(item => item._id.toString() === req.body.category);
+  const exists = subCategoryItems.some((item: any) => item?._id.toString() === req.body?.category) as boolean;
   if (!exists) throw new AppError(StatusCodes.BAD_REQUEST, 'Invalid sub-category ID.');
 
   // Upload thumbnail
-  const thumbnailFile = req.files?.['thumbnail']?.[0];
+  const thumbnailFile : any = req.files?.['thumbnail']?.[0];
   if (!thumbnailFile) throw new AppError(StatusCodes.BAD_REQUEST, 'Thumbnail file not found.');
   const thumbnailUrl = await s3Services.uploadSingleFileToS3(thumbnailFile, USER_UPLOADS_FOLDER);
 
@@ -130,7 +183,7 @@ if (duplicateSeat) {
 }
 
   // Upload item photos (1:1 mapping)
-  const itemFiles = req.files?.['files'] || [];
+  const itemFiles : any = req.files?.['files'] || [];
   const processedItems = await Promise.all(
     items.map(async (item, index) => {
       const file = itemFiles[index];
@@ -212,9 +265,9 @@ export const reviewRestaurant = async (
   }
 
   //  (Optional) Prevent duplicate reviews by the same user
-  const alreadyReviewed = restaurant.reviews.some(
-    review => review.userId.toString() === isExistsUser._id.toString()
-  );
+  const alreadyReviewed = restaurant?.reviews.some(
+    review => review?.userId.toString() === isExistsUser?._id.toString()
+  ) || false;
   if (alreadyReviewed) {
     throw new AppError(
       StatusCodes.BAD_REQUEST,
@@ -224,19 +277,19 @@ export const reviewRestaurant = async (
 
   // Push new review
   const newReview = {
-    userId: isExistsUser?._id,
+    userId: isExistsUser!._id,
     rating: payload?.rating,
     comment: payload?.comment,
     createdAt: new Date(),
-  };
+  } as IReview;
 
-  restaurant.reviews.push(newReview as IReview);
+  restaurant?.reviews.push(newReview as IReview);
 
   // Recalculate average rating
-  const total = restaurant.reviews.reduce((sum, r) => sum + r.rating, 0);
-  restaurant.averageRating = parseFloat(
-    (total / restaurant.reviews.length).toFixed(1)
-  );
+  const total : number = restaurant?.reviews.reduce((sum : number, r: IReview) => sum + r?.rating, 0);
+  restaurant?.averageRating = parseFloat(
+    (total / restaurant?.reviews.length || 0).toFixed(1)
+  ) || 0;
 
   // Save updated restaurant
   await restaurant.save();
@@ -264,13 +317,13 @@ export const updateRestaurantIntoDB = async (req: Request) => {
     if (!category) throw new AppError(StatusCodes.NOT_FOUND, 'Restaurant category not found.');
 
     const subCategoryItems = category?.subCategory || [];
-    const exists = subCategoryItems.some(item => item._id.toString() === req.body.category);
+    const exists = subCategoryItems.some((item: any) => item?._id.toString() === req.body.category) as boolean;
     if (!exists) throw new AppError(StatusCodes.BAD_REQUEST, 'Invalid sub-category ID.');
-    restaurant.category = req.body.category;
+    restaurant.category = req.body?.category;
   }
 
   // Upload new thumbnail if provided
-  const thumbnailFile = req.files?.['thumbnail']?.[0];
+  const thumbnailFile : any = req.files?.['thumbnail']?.[0];
   if (thumbnailFile) {
     const thumbnailUrl = await s3Services.uploadSingleFileToS3(thumbnailFile, USER_UPLOADS_FOLDER);
     restaurant.thumbnail = thumbnailUrl;
@@ -293,7 +346,7 @@ export const updateRestaurantIntoDB = async (req: Request) => {
       throw new AppError(StatusCodes.BAD_REQUEST, 'Duplicate seat types are not allowed.');
     }
 
-    const itemFiles = req.files?.['files'] || [];
+    const itemFiles : any = req.files?.['files'] || [];
     const processedItems = await Promise.all(
       items.map(async (item, index) => {
         const file = itemFiles[index];
