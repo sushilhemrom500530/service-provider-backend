@@ -41,8 +41,10 @@ const getCategoryById = async (id: string, user: JwtPayload) => {
   return [];
 };
 
+
 const createCategory = async (req: Request, res: Response) => {
   const user = req.user as JwtPayload;
+
   // check user
   const isExistsUser = await User.findOne({ email: user?.email });
   if (!isExistsUser) {
@@ -55,14 +57,24 @@ const createCategory = async (req: Request, res: Response) => {
   const { primaryCategoryName } = req.body;
 
   const thumbnailFile = req.files?.['thumbnail']?.[0];
-  // if (!thumbnailFile) {
-  //   throw new AppError(StatusCodes.BAD_REQUEST, 'Thumbnail file not found.');
-  // }
-
   const thumbnailUrl = await s3Services.uploadSingleFileToS3(
     thumbnailFile,
     USER_UPLOADS_FOLDER
   );
+
+  if (primaryCategoryName === "Ski_Pass") {
+    throw new AppError(
+      StatusCodes.BAD_REQUEST,
+      'The "Ski_Pass" category cannot be created or updated.'
+    );
+  }
+  const category = await Category.findOne({ primaryCategoryName });
+  if (category) {
+    throw new AppError(
+      StatusCodes.BAD_REQUEST,
+      'Category with this name already exists.'
+    );
+  }
 
   let subCategory: ICategory[] = [];
 
@@ -77,48 +89,50 @@ const createCategory = async (req: Request, res: Response) => {
     }
   } else if (Array.isArray(req.body?.subCategory)) {
     subCategory = req.body.subCategory;
-  } else {
-    throw new AppError(
-      StatusCodes.BAD_REQUEST,
-      'SubCategory data is missing or invalid.'
+  }
+
+  //  Upload subCategory images if any
+  const subCategoryFiles = req.files?.['files'] || [];
+  let processedSubCategory: any[] = [];
+
+  if (subCategory.length > 0) {
+    processedSubCategory = await Promise.all(
+      subCategory.map(async (item, index) => {
+        const subFile = subCategoryFiles[index];
+        if (!subFile) {
+          throw new AppError(
+            StatusCodes.BAD_REQUEST,
+            `Subcategory image for "${item?.name}" is missing.`
+          );
+        }
+
+        const subCategoryPhotoUrl = await s3Services.uploadSingleFileToS3(
+          subFile,
+          USER_UPLOADS_FOLDER
+        );
+
+        return {
+          name: item.name,
+          categoryPhoto: subCategoryPhotoUrl,
+        };
+      })
     );
   }
 
-  //  Upload subCategory images
-  const subCategoryFiles = req.files?.['files'] || [];
-
-  const processedSubCategory = await Promise.all(
-    subCategory.map(async (item, index) => {
-      const subFile = subCategoryFiles[index];
-      if (!subFile) {
-        throw new AppError(
-          StatusCodes.BAD_REQUEST,
-          `Subcategory image for "${item?.name}" is missing.`
-        );
-      }
-
-      const subCategoryPhotoUrl = await s3Services.uploadSingleFileToS3(
-        subFile,
-        USER_UPLOADS_FOLDER
-      );
-
-      return {
-        name: item.name,
-        categoryPhoto: subCategoryPhotoUrl,
-      };
-    })
-  );
-
-  const categoryData = {
+  // Create category with or without subCategory
+  const categoryData: any = {
     primaryCategoryName,
     thumbnail: thumbnailUrl,
-    subCategory: processedSubCategory,
   };
 
-  const result: ICategory = await Category.create(categoryData);
+  if (processedSubCategory.length > 0) {
+    categoryData.subCategory = processedSubCategory;
+  }
 
+  const result = await Category.create(categoryData);
   return result;
 };
+
 
 const addSubCategory = async (req: Request, res: Response) => {
   const user = req.user as JwtPayload;
@@ -216,12 +230,12 @@ const updateCategory = async (req: Request, id: string, user: JwtPayload) => {
     throw new AppError(StatusCodes.NOT_FOUND, 'Category not found.');
   }
 
-  if (isExistsCategory?.primaryCategoryName !== req.body?.primaryCategoryName) {
-    throw new AppError(
-      StatusCodes.BAD_REQUEST,
-      'Primary category name cannot be changed.'
-    );
-  }
+  // if (isExistsCategory?.primaryCategoryName !== req.body?.primaryCategoryName) {
+  //   throw new AppError(
+  //     StatusCodes.BAD_REQUEST,
+  //     'Primary category name cannot be changed.'
+  //   );
+  // }
 
   const { primaryCategoryName } = req.body;
 
@@ -276,7 +290,7 @@ const updateCategory = async (req: Request, id: string, user: JwtPayload) => {
     id,
     {
       primaryCategoryName:
-        primaryCategoryName || isExistsCategory?.primaryCategoryName,
+      primaryCategoryName || isExistsCategory?.primaryCategoryName,
       thumbnail: thumbnailUrl,
       subCategory: processedSubCategory,
     },

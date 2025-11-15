@@ -1,8 +1,7 @@
 import { Router } from 'express'; 
-import validateRequest from '../../shared/validateRequest';
-import { paymentValidations } from './payment.validations'; 
-import auth from './../../middlewares/auth'; 
-import { WithdrawController } from './Withdraw.controller';
+// import validateRequest from '../../shared/validateRequest'; 
+import auth from './../../middlewares/auth';  
+import { WithdrawController } from './withdraw.controller';
  
 const router = Router();
   

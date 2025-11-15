@@ -85,7 +85,7 @@ export const processToPayment = async (payload: IProcessPaymentPayload) => {
       sessionId: session.id,
       sessionUrl: session.url,
     };
-  } catch (error) {
+  } catch (error:any) {
     throw new Error(error);
   }
 };

@@ -1,6 +1,6 @@
-import { Schema, model, Types } from 'mongoose';
-import { IWithdraw } from './withdraw.interface';
+import { Schema, model, Types } from 'mongoose'; 
 import { v4 as uuidv4 } from 'uuid';
+import { IWithdraw } from './withdraw.inteface';
 
 const WithdrawSchema = new Schema<IWithdraw>(
   {

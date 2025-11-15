@@ -85,6 +85,9 @@ const removeParticipantFromGroup = catchAsync(async (req: Request, res: Response
   const { chatId } = req.params;
   const { userId } = req.body;
   const adminId = req.user.userId;
+  if(!adminId) {
+    throw new AppError(StatusCodes.UNAUTHORIZED, 'User not authenticated.');
+  }
   const chat = await ChatService.removeParticipantFromGroup(chatId, userId, adminId);
   sendResponse(res, {
     code: StatusCodes.OK,
@@ -97,6 +100,9 @@ const updateGroupSettings = catchAsync(async (req: Request, res: Response) => {
   const { chatId } = req.params;
   const settings = pick(req.body, ['allowAddParticipants', 'allowRemoveParticipants']);
   const adminId = req.user.userId;
+   if(!adminId) {
+    throw new AppError(StatusCodes.UNAUTHORIZED, 'User not authenticated.');
+  }
   const chat = await ChatService.updateGroupSettings(chatId, settings, adminId);
   sendResponse(res, {
     code: StatusCodes.OK,

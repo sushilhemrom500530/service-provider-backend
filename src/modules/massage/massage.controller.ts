@@ -11,7 +11,7 @@ const getAllMassageFromDB = catchAsync(async (req: Request, res: Response) => {
 
   const user = req.user as JwtPayload;
   
-  const result = await MassageService.getAllMassageFromDB(user)
+  const result = await MassageService.getAllMassageFromDB(user, req.query as any)
   sendResponse(res, {
     code: StatusCodes.OK,
     message: 'Massage fetched successfully.',

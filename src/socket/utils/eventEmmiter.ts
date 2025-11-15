@@ -151,8 +151,8 @@ export const emitMessageWithNotification = async (
   emitToUser(io, receiverId, event, data);
   
   // Send notification about the message
-  const { sendSystemNotification } = await import('../handlers/notification.handler');
-  await sendSystemNotification(io, null as any, notificationTitle, notificationMessage, 'message');
+  // const { sendSystemNotification } = await import('../handlers/notification.handler');
+  // await sendSystemNotification(io, null as any, notificationTitle, notificationMessage, 'message');
 };
 
 /**

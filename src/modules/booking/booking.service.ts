@@ -70,13 +70,13 @@ const getSingleBookingFromDB = async (id: string, user: JwtPayload) => {
     throw new AppError(StatusCodes.NOT_FOUND, 'Booking not found.');
   }
 
-  const product = booking.product;
+  const product = booking?.product;
   const productItems = product?.items || [];
 
-  const enrichedBookingItems = booking.bookingItems.map((bi: any) => {
+  const enrichedBookingItems = booking?.bookingItems.map((bi: any) => {
     const matchedItem = productItems.find(
       (itm: any) => itm._id.toString() === bi.itemId.toString()
-    );
+    ) || null;
 
     return {
       ...bi,
@@ -551,12 +551,12 @@ const updateBookingIntoDB = async (
   payload: BookingStatus,
   bookingId: string
 ) => {
-  // Check user
+  // Verify logged-in user
   const isExistsUser = await User.findOne({ email: user?.email });
   if (!isExistsUser) {
     throw new AppError(StatusCodes.NOT_FOUND, 'User not found.');
   }
-  // console.log('find current user ===========>', isExistsUser);
+
   const existsBooking = await Booking.findById(bookingId).populate({
     path: 'product',
     select: 'owner',
@@ -566,15 +566,22 @@ const updateBookingIntoDB = async (
     throw new AppError(StatusCodes.NOT_FOUND, 'Booking not found.');
   }
 
-  // Check ownership
-  const owner = existsBooking?.product?.owner;
-  if (owner?.toString() !== isExistsUser._id.toString()) {
-    throw new AppError(
-      StatusCodes.FORBIDDEN,
-      'You are not the owner of this product. Cannot update booking status.'
-    );
-  }
+  const ownerId = existsBooking.product?.owner?.toString();
+ 
 
+  // ------------------------------------------
+  // ALLOWED:
+  // 1. Admin can update everything
+  // 2. Owner can update only own bookings
+  // ------------------------------------------ 
+if (user.role !== "Admin" && ownerId !== isExistsUser?._id.toString()) {
+  throw new AppError(
+    StatusCodes.FORBIDDEN,
+    'You are not allowed to update this booking.'
+  );
+}
+
+  // Update booking status
   const result = await Booking.findByIdAndUpdate(
     bookingId,
     { $set: { bookingStatus: payload } },
@@ -585,6 +592,7 @@ const updateBookingIntoDB = async (
 
   return result;
 };
+
 
 const updatePermitBookingIntoDB = async (
   user: JwtPayload,

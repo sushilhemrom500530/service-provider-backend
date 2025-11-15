@@ -1,6 +1,7 @@
 import mongoose, { Schema, Model } from 'mongoose';
 import { reviewSchema, refundSchema } from './../common/common.schema';
-import { IProductItems } from './skihire.interface';
+import { IProductItems,ISkiHire } from './skihire.interface';
+import { IReview } from './../common/common.interface';
 
 const productItemsSchema = new Schema<IProductItems>({
   productName: {
@@ -90,13 +91,18 @@ const skiHireSchema = new Schema<ISkiHire>(
   }
 );
 
-skiHireSchema.pre('save', function (next) {
-  if (this.reviews && this.reviews.length > 0) {
-    const total = this.reviews.reduce((sum, r) => sum + r.rating, 0);
-    this.averageRating = parseFloat((total / this.reviews.length).toFixed(1));
+skiHireSchema.pre<ISkiHire>('save', function (next) {
+  // Ensure reviews is always an array
+  const reviews = this.reviews || [];
+
+  if (reviews.length > 0) {
+    const total = reviews.reduce((sum: number, r: IReview) => sum + r.rating, 0);
+    this.averageRating = parseFloat((total / reviews.length).toFixed(1));
   }
+
   next();
 });
+
 
 export const SkiHire: Model<ISkiHire> =
   mongoose.models.SkiHire || mongoose.model<ISkiHire>('SkiHire', skiHireSchema);

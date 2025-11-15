@@ -64,8 +64,8 @@ const verifyToken = async (
 
 const accessAndRefreshToken = async (user: IUser) => {
   const accessTokenPayload: TokenPayload = {
-    userId: user._id.toString(),
-    email: user.email,
+    userId: user?._id.toString(),
+    email: user?.email,
     role: user?.role,
   };
 
@@ -78,7 +78,7 @@ const accessAndRefreshToken = async (user: IUser) => {
   const accessTokenExpires = getExpirationTime(config.jwt.accessExpiration);
   await saveToken(
     accessToken,
-    user._id.toString(),
+    user?._id.toString(),
     TokenType.ACCESS,
     accessTokenExpires
   );
@@ -99,7 +99,7 @@ const accessAndRefreshToken = async (user: IUser) => {
 
   await saveToken(
     refreshToken,
-    user._id.toString(),
+    user?._id.toString(),
     TokenType.REFRESH,
     refreshTokenExpires
   );
@@ -109,9 +109,9 @@ const accessAndRefreshToken = async (user: IUser) => {
 
 const createResetPasswordToken = async (user: IUser) => {
   const resetPasswordTokenPayload: TokenPayload = {
-    userId: user._id.toString(),
-    email: user.email,
-    role: user.role,
+    userId: user?._id.toString(),
+    email: user?.email,
+    role: user?.role,
   };
   const resetPasswordToken = generateToken(
     resetPasswordTokenPayload,
@@ -125,7 +125,7 @@ const createResetPasswordToken = async (user: IUser) => {
 
   await saveToken(
     resetPasswordToken,
-    user._id.toString(),
+    user?._id.toString(),
     TokenType.RESET_PASSWORD,
     resetPasswordExpires
   );

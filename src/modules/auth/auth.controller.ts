@@ -111,11 +111,18 @@ const login = catchAsync(async (req, res) => {
   });
   const formatedUserData = {
     _id: user?.id,
+    fullName: user?.fullName,
     email: user?.email,
     role: user?.role,
-    status: user?.status,
-    profile: user?.profile, 
     providerType: user?.providerType,
+    phoneNumber: user?.phoneNumber,
+    profileUrl: user?.profileUrl, 
+    service: user?.service,
+    address: user?.address,
+    status: user?.status,
+    isDeleted: user?.isDeleted,
+    isAgreedTermsConditions: user?.isAgreedTermsConditions,
+    createdAt: user?.createdAt,
   };
   // Send response with tokens
   sendResponse(res, {

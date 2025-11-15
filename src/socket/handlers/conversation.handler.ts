@@ -3,7 +3,7 @@ import { ChatService } from '../../modules/chat/chat.service';
 import { StatusCodes } from 'http-status-codes';
 import { logger } from '../../shared/logger';
 import colors from 'colors';
-import { sendSystemNotification } from './notification.handler';
+// import { sendSystemNotification } from './notification.handler';
 /**
  * Get conversation list handler
  */
@@ -109,22 +109,22 @@ export const getOrCreateChat = async (
       chat.createdAt &&
       new Date().getTime() - new Date(chat.createdAt).getTime() < 5000
     ) {
-      await sendSystemNotification(
-        io,
-        userId,
-        'New Chat Created',
-        `You started a chat with ${receiverId}`,
-        'connection',
-        chat._id
-      );
-      await sendSystemNotification(
-        io,
-        receiverId,
-        'New Chat Created',
-        `You have a new chat with ${userId}`,
-        'connection',
-        chat._id
-      );
+      // await sendSystemNotification(
+      //   io,
+      //   userId,
+      //   'New Chat Created',
+      //   `You started a chat with ${receiverId}`,
+      //   'connection',
+      //   chat?._id
+      // );
+      // await sendSystemNotification(
+      //   io,
+      //   receiverId,
+      //   'New Chat Created',
+      //   `You have a new chat with ${userId}`,
+      //   'connection',
+      //   chat?._id
+      // );
     }
 
     logger.info(

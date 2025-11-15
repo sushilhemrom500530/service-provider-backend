@@ -13,14 +13,7 @@ const createSkiPassSchema = z.object({
         invalid_type_error: 'Title must be a string',
       })
       .min(1, 'Title cannot be empty'),
-
-    description: z
-      .string({
-        required_error: 'Description is required',
-        invalid_type_error: 'Description must be a string',
-      })
-      .min(1, 'Description cannot be empty'),
-
+ 
     skiPassType: z.enum(['Basic', 'Vip', 'Premium'], {
       required_error: 'SkiPassType is required',
     }),

@@ -38,7 +38,7 @@ const userSchema = new Schema<IUser>(
       default: 'Provider',
     },
     isDeleted: { type: Boolean, default: false },
-    isAgreedTermsCondition: { type: Boolean, default: false },
+    isAgreedTermsConditions: { type: Boolean, default: false },
   },
   {
     timestamps: true,  

@@ -54,6 +54,13 @@ const registerUser = async (userData: Partial<IUser>) => {
       );
     }
   }
+
+  if(userData?.role === "Admin"){
+     throw new AppError(
+        StatusCodes.BAD_REQUEST,
+        'One Admin is already exists. please create another type of role (provider or user).'
+      );
+  }
   // // check password and confirm password
   // if (userData?.password !== userData?.confirmPassword) {
   //   throw new AppError(

@@ -10,43 +10,91 @@ import { Transport } from './transport.model';
 import { USER_UPLOADS_FOLDER } from './transport.constant';
 import { Category } from './../category/category.model';
 
-const getAllTransportFromDB = async (user: JwtPayload) => {
+
+
+const getAllTransportFromDB = async (user: JwtPayload, query: any) => {
   const isExistsUser = await User.findOne({ email: user?.email });
   if (!isExistsUser) {
-    throw new AppError(
-      StatusCodes.NOT_FOUND,
-      'You cannot view this data because your account was not found.'
-    );
+    throw new AppError(StatusCodes.NOT_FOUND, 'User not found.');
   }
 
-  const transport = await Transport.find({ owner: isExistsUser?._id });
-  // .populate(
-  //     {
-  //       path: 'owner',
-  //       select: '-isDeleted -agreeTermsCondition -__v -createdAt -updatedAt',
-  //     }
-  //   );
+  // Pagination
+  const page = Number(query.page) || 1;
+  const limit = Number(query.limit) || 10;
+  const skip = (page - 1) * limit;
+
+  // filter
+  const search = query.search
+    ? { title: { $regex: query.search, $options: "i" } }
+    : {};
+
+  // Category filter
+  let categoryFilter = {};
+  if (query.category) {
+    const categories = await Category.find(
+      {
+        primaryCategoryName: "Transport",
+        "subCategory.name": { $regex: query.category, $options: "i" },
+      },
+      { "subCategory.$": 1 }
+    );
+
+    const categoryIds = categories.map(c => c.subCategory?.[0]?._id);
+
+    if (categoryIds.length > 0) {
+      categoryFilter = { category: { $in: categoryIds } };
+    } else {
+      return {
+        data: [],
+        pagination: { total: 0, page, limit, totalPages: 0 },
+      };
+    }
+  }
+
+  const filters = {
+    owner: isExistsUser._id,
+    ...search,
+    ...categoryFilter,
+  };
+
+  // Total count after filters
+  const total = await Transport.countDocuments(filters);
+
+  // Fetch paginated data
+  const transportList = await Transport.find(filters)
+    .skip(skip)
+    .limit(limit)
+    .sort({ createdAt: -1 });
+
+  // Attach category data (your original logic)
   const result = await Promise.all(
-    transport.map(async trans => {
+    transportList.map(async (item) => {
       const categoryDoc = await Category.findOne(
         {
-          primaryCategoryName: 'Transport',
-          'subCategory._id': trans.category,
+          primaryCategoryName: "Transport",
+          "subCategory._id": item.category,
         },
-        { 'subCategory.$': 1 }
+        { "subCategory.$": 1 }
       );
 
-      const subCategoryData = categoryDoc?.subCategory?.[0] || null;
-
       return {
-        ...trans.toObject(),
-        category: subCategoryData,
+        ...item.toObject(),
+        category: categoryDoc?.subCategory?.[0] || null,
       };
     })
   );
 
-  return result;
+  return { 
+    pagination: {
+      total,
+      page,
+      limit,
+      totalPages: Math.ceil(total / limit),
+    },
+    result,
+  };
 };
+
 
 const getSingleTransportFromDB = async (id: string, user: JwtPayload) => {
   const isExistsUser = await User.findOne({ email: user?.email });
@@ -118,7 +166,7 @@ const addTransportIntoDB = async (req: Request) => {
   const subCategoryItems = category?.subCategory || [];
 
   const exists = subCategoryItems.some(
-    item => item?._id.toString() === req.body?.category.toString()
+    (item : any) => item?._id.toString() === req.body?.category.toString()
   );
 
   if (!exists) {
@@ -144,8 +192,8 @@ const addTransportIntoDB = async (req: Request) => {
     owner: isExistsUser?._id,
   };
 
-  transportData?.amount = Number(transportData?.amount);
-  transportData?.personCount = Number(transportData?.personCount);
+  transportData.amount = Number(transportData?.amount || 0);
+  transportData.personCount = Number(transportData?.personCount || 0);
 
   const result = await Transport.create(transportData);
   return result;
@@ -180,9 +228,9 @@ export const reviewTransport = async (
   }
 
   //  (Optional) Prevent duplicate reviews by the same user
-  const alreadyReviewed = transport.reviews.some(
-    review => review.userId.toString() === isExistsUser._id.toString()
-  );
+  const alreadyReviewed = transport?.reviews.some(
+    (review :any) => review?.userId.toString() === isExistsUser._id.toString()
+  ) as boolean;
   if (alreadyReviewed) {
     throw new AppError(
       StatusCodes.BAD_REQUEST,
@@ -192,18 +240,18 @@ export const reviewTransport = async (
 
   // Push new review
   const newReview = {
-    userId: isExistsUser?._id,
+    userId: isExistsUser!._id,
     rating: payload?.rating,
     comment: payload?.comment,
     createdAt: new Date(),
-  };
+  } as IReview || {};
 
   transport.reviews.push(newReview as IReview);
 
   // Recalculate average rating
-  const total = transport.reviews.reduce((sum, r) => sum + r.rating, 0);
+  const total = transport?.reviews.reduce((sum :number, r:any) => sum + r.rating, 0);
   transport.averageRating = parseFloat(
-    (total / transport.reviews.length).toFixed(1)
+    (total / transport?.reviews.length || 0).toFixed(1)
   );
 
   // Save updated transport
@@ -244,7 +292,7 @@ const updateTransportIntoDB = async (req: Request) => {
     const subCategoryItems = category?.subCategory || [];
 
     const brandExists = subCategoryItems.some(
-      item => item?._id.toString() === req.body?.category.toString()
+      ( item :any) => item?._id.toString() === req.body?.category.toString()
     );
 
     if (!brandExists) {
@@ -295,7 +343,7 @@ const deleteTransportIntoDB = async (id: string, user: JwtPayload) => {
     throw new AppError(StatusCodes.NOT_FOUND, 'Transport not found.');
   }
 
-  if (transport?.ownerId.toString() !== isExistsUser?._id.toString()) {
+  if (transport?.owner.toString() !== isExistsUser?._id.toString()) {
     throw new AppError(
       StatusCodes.FORBIDDEN,
       'You are not authorized to delete this transport.'

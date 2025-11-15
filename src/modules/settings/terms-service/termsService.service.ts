@@ -44,7 +44,8 @@ const addTermsIntoDB = async (payload: ISettings, user: JwtPayload) => {
 
   const result = await TermsAndService.create({
     content: payload?.content,
-    assignee: isUserExists.role || user?.role,
+    assignee: user?.role,
+    // assignee: isUserExists.role || user?.role,
   });
 
   return result;

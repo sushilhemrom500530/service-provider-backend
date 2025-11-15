@@ -47,7 +47,8 @@ const addPrivacyIntoDB = async (payload: ISettings, user: JwtPayload) => {
 
   const result = await PrivacyPolicy.create({
     content: payload?.content,
-    assignee: isUserExists.role || user?.role,
+    assignee:user?.role,
+    // assignee: isUserExists.role || user?.role,
   });
 
   return result;

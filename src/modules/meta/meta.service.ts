@@ -7,11 +7,11 @@ import { SkiPass } from './../skiPass/skipass.model';
 import { SkiHire } from './../skiHire/skihire.model';
 import { Transport } from './../transport/transport.model';
 import { Restaurant } from './../restaurant/restaurant.model';
-import { Massage } from './../massage/massage.model';
-import { startOfYear, endOfYear } from 'date-fns';
+import { Massage } from './../massage/massage.model'; 
 import mongoose from 'mongoose';
 import { IQuery } from './meta.inteface';
-
+import { StatusCodes } from 'http-status-codes';
+import { startOfYear, endOfYear, setYear } from 'date-fns';
 
 
 //  for provider home page data
@@ -71,7 +71,7 @@ const getProviderDashboard = async (user: JwtPayload) => {
       .sort({ createdAt: -1 })
       .lean();
 
-    const formatted = products?.map(p => ({
+    const formatted = products?.map((p: any) => ({
       ...p,
       model: modelName,
     }));
@@ -99,8 +99,8 @@ const getProviderDashboard = async (user: JwtPayload) => {
 };
 
 // admin dashboard data
-const getAdminDashboard = async (user: JwtPayload) => {
-  const isExistUser = await User.findOne({
+const getAdminDashboard = async (user: JwtPayload, query:any) => {
+ const isExistUser = await User.findOne({
     email: user?.email,
     role: 'Admin',
   });
@@ -113,8 +113,12 @@ const getAdminDashboard = async (user: JwtPayload) => {
   const totalUser = await User.countDocuments();
   const totalProvider = await User.countDocuments({ role: 'Provider' });
 
-  const yearStart = startOfYear(new Date());
-  const yearEnd = endOfYear(new Date());
+  // Get year from query (default: current year)
+  const selectedYear = query?.year ? parseInt(query?.year, 10) : new Date().getFullYear();
+
+  // Use date-fns to set start and end of selected year
+  const yearStart = startOfYear(setYear(new Date(), selectedYear));
+  const yearEnd = endOfYear(setYear(new Date(), selectedYear));
 
   // Define all models and their income field names
   const modelsWithFields = [
@@ -184,7 +188,7 @@ const getAdminDashboard = async (user: JwtPayload) => {
   };
 };
 
-export const getCommonService = async (user: JwtPayload, query: IQuery) => {
+ const getCommonService = async (user: JwtPayload, query: IQuery) => {
   const isExistUser = await User.findOne({
     email: user?.email,
     role: 'Admin',
@@ -200,13 +204,12 @@ export const getCommonService = async (user: JwtPayload, query: IQuery) => {
 
   const filters: any = { category: { $ne: 'Restaurant' } };
 
-  // Add optional filters
-  if (query.category) filters.category = query.category;
-  if (query.bookingStatus) filters.bookingStatus = query.bookingStatus;
-  if (query.userId) filters.user = query.userId;
+ if (query.bookingStatus) {
+  filters.bookingStatus = { $regex: query.bookingStatus, $options: 'i' };
+}
 
-  // Optional search (by product title or user name)
-  if (query.search) {
+// Optional search by user name/email or product title
+if (query.search) {
   const [users, skiPasses] = await Promise.all([
     User.find(
       {
@@ -228,20 +231,21 @@ export const getCommonService = async (user: JwtPayload, query: IQuery) => {
     { product: { $in: skiPasses.map(p => p._id) } },
   ];
 }
+
   const total = await Booking.countDocuments(filters);
 
   // Query bookings with populate and pagination
   const bookings = await Booking.find(filters)
     .populate({
       path: 'user',
-      select: 'name email phoneNumber role status',
+      select: 'fullName email phoneNumber role status',
     })
     .populate({
       path: 'product',
       select: 'title category owner totalPrice items thumbnail serviceArea',
       populate: {
         path: 'owner',
-        select: 'name email phoneNumber role providerType',
+        select: 'fullName email phoneNumber role providerType',
       },
     })
     .sort({ createdAt: -1 })
@@ -259,8 +263,42 @@ export const getCommonService = async (user: JwtPayload, query: IQuery) => {
   };
 };
 
+const getSingleService = async (user: JwtPayload, serviceId: string) => {
+  // Check if admin exists
+  const isExistUser = await User.findOne({
+    email: user?.email,
+    role: 'Admin',
+  });
 
-export const getRestaurantManagement = async (user: JwtPayload, query: IQuery) => {
+  if (!isExistUser) {
+    throw new AppError(StatusCodes.NOT_FOUND, 'Admin not found.');
+  }
+
+  // Fetch the booking with user and product/owner populated
+  const booking = await Booking.findById(serviceId)
+    .populate({
+      path: 'user',
+      select: '-password', 
+    })
+    .populate({
+      path: 'product',
+      populate: {
+        path: 'owner',
+        select: '-password',  
+      },
+    })
+    .lean();
+
+  if (!booking) {
+    throw new AppError(StatusCodes.NOT_FOUND, 'Booking not found.');
+  }
+ 
+
+  return booking;
+};
+
+
+ const getRestaurantManagement = async (user: JwtPayload, query: IQuery) => {
   const isExistUser = await User.findOne({
     email: user?.email,
     role: 'Admin',
@@ -275,11 +313,11 @@ export const getRestaurantManagement = async (user: JwtPayload, query: IQuery) =
   const limit = Number(query.limit) || 10;
   const skip = (page - 1) * limit;
 
-  const filters: any = { category: 'Restaurant' };
+  const filters: any = { category: 'Restaurant', bookingStatus: 'Pending' };
 
   // Optional filters
-  if (query.bookingStatus) filters.bookingStatus = query.bookingStatus;
-  if (query.userId) filters.user = query.userId;
+  if (query.bookingStatus) filters.bookingStatus = { $regex: query.bookingStatus, $options: 'i' };;
+  if (query.userId)filters.userId = { $regex: query.userId, $options: 'i' };;
 
   if (query.search) {
     const matchedUsers = await User.find(
@@ -329,6 +367,6 @@ export const MetaService = {
   getProviderDashboard,
   getAdminDashboard,
   getCommonService,
-  getRestaurantManagement
-
+  getRestaurantManagement,
+  getSingleService 
 };

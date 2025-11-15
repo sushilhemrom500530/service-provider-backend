@@ -45,7 +45,8 @@ const addAboutIntoDB = async (payload: ISettings, user: JwtPayload) => {
 
   const result = await About.create({
     content: payload?.content,
-    assignee: isUserExists.role || user?.role,
+    // assignee: isUserExists?.role || user?.role,
+    assignee: user?.role,
   });
 
   return result;

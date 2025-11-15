@@ -2,11 +2,11 @@ import { StatusCodes } from 'http-status-codes';
 import catchAsync from '../../shared/catchAsync';
 import sendResponse from '../../shared/sendResponse';
 import { UserService } from './user.service';
-import pick from '../../shared/pick';
-import { USER_UPLOAD_FOLDER } from './user.constant';
+import pick from '../../shared/pick'; 
 import { s3Services } from '../../aws/s3Service';
 import { User } from './user.model';
 import { JwtPayload } from 'jsonwebtoken';
+import { USER_UPLOADS_FOLDER } from './user.constant';
 
 const getAllUsers = catchAsync(async (req, res) => {
   // const result = await User.find({ isDeleted: false, status:'Active' });
@@ -50,6 +50,9 @@ const updateUserStatus = catchAsync(async (req, res) => {
 
 const getMyProfile = catchAsync(async (req, res) => {
   const { userId } = req.user;
+  if(!userId){
+    throw new Error('User id not found');
+  }
   const user = await UserService.getMyProfile(userId);
   sendResponse(res, {
     code: StatusCodes.OK,
@@ -64,7 +67,7 @@ const updateMyProfile = catchAsync(async (req, res) => {
   if (req.file) {
     const fileUrl = await s3Services.uploadSingleFileToS3(
       req.file,
-      USER_UPLOAD_FOLDER
+      USER_UPLOADS_FOLDER
     );
     req.body.profileUrl = fileUrl;
   } else {
@@ -84,6 +87,9 @@ const updateMyProfile = catchAsync(async (req, res) => {
 
 const deleteMyProfile = catchAsync(async (req, res) => {
   const { userId } = req.user;
+  if(!userId){
+    throw new Error('User id not found');
+  }
   await UserService.deleteMyProfile(userId);
   sendResponse(res, {
     code: StatusCodes.OK,

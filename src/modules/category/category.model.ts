@@ -28,7 +28,7 @@ const categorySchema = new Schema<ICategory>(
     },
     subCategory: {
       type: [subCategorySchema],
-      required: true,
+      required: false,
     },
   },
   {

@@ -2,6 +2,7 @@ import { User } from './../user/user.model';
 import { Category } from './../category/category.model';
 import AppError from './../../errors/AppErro';
 import { StatusCodes } from 'http-status-codes';
+import { JwtPayload } from 'jsonwebtoken';
 
 const getSkiPassCategory = async (user: JwtPayload) => {
   const isExistsUser = await User.findOne({ email: user?.email });

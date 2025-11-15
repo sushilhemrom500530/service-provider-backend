@@ -11,7 +11,7 @@ const getAllTransportFromDB = catchAsync(async (req: Request, res: Response) => 
 
   const user = req.user as JwtPayload;
   
-  const result = await TransportService.getAllTransportFromDB(user)
+  const result = await TransportService.getAllTransportFromDB(user, req.query as any)
   sendResponse(res, {
     code: StatusCodes.OK,
     message: 'Transport fetched successfully.',

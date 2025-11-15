@@ -1,5 +1,5 @@
 import mongoose, { Schema, Model } from 'mongoose';
-import { IRestaurant, ICategoryItem } from './restaurant.interface';
+import { IRestaurant, ICategoryItemDetail } from './restaurant.interface';
 import { reviewSchema, refundSchema } from './../common/common.schema';
 
 const slotsSchema = new Schema({
@@ -13,7 +13,7 @@ const slotsSchema = new Schema({
   },
 })
 
-const categoryItemsSchema = new Schema<ICategoryItem>({
+const categoryItemsSchema = new Schema<ICategoryItemDetail>({
       seat: {
         type: String,
         required: true,

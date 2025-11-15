@@ -1,64 +1,33 @@
-import { model, Schema } from 'mongoose';
-import { INotification, NotificationModel } from './notification.interface';
-import paginationPlugin from '../../common/plugins/pagination.plugin';
+import mongoose, { Schema } from "mongoose";
+import { INotification } from "./notification.interface";
 
-const notificationModel = new Schema<INotification>(
+const NotificationSchema: Schema = new Schema(
   {
-    title: {
-      type: String,
-      required: [true, 'Title is required'],
-    },
-    message: {
-      type: String,
-      required: [true, 'Message is required'],
-    },
     senderId: {
       type: Schema.Types.ObjectId,
-      ref: 'User',
-      required: [false, 'User is required'],
-    },
-    receiverId: {
-      type: Schema.Types.ObjectId,
-      ref: 'User',
-      required: [false, 'User is required'],
-    },
-    role: {
-      type: String,
-      enum: ['admin', 'user'],
+      ref: "User",
       required: true,
     },
-    image: {
-      type: Object,
-    },
-    type: {
-      type: String,
-      enum: [
-        'post',
-        'story',
-        'comment',
-        'event',
-        'group',
-        'connection',
-        'message',
-      ],
-      required: [true, 'Type is required'],
-    },
-    linkId: {
+    receiverIds: [
+      {
+        type: Schema.Types.ObjectId,
+        ref: "User",
+      },
+    ],
+    title: {
       type: String,
     },
-    viewStatus: { type: Boolean, default: false },
+    description: {
+      type: String,
+    },
+    isRead: {
+      type: Boolean,
+      default: false,
+    },
   },
-  {
-    timestamps: true,
-    toJSON: {
-      virtuals: true,
-    },
-  }
+  { timestamps: true }
 );
 
-notificationModel.plugin(paginationPlugin);
-
-export const Notification = model<INotification, NotificationModel>(
-  'Notification',
-  notificationModel
-);
+export const Notification =
+  mongoose.models.Notification ||
+  mongoose.model<INotification>("Notification", NotificationSchema);

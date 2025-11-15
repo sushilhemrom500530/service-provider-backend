@@ -20,7 +20,7 @@ const getProviderDashboardData = catchAsync(
 const getAdminDashboardData = catchAsync(
   async (req: Request, res: Response) => {
     const user = req?.user;
-    const result = await MetaService.getAdminDashboard(user as JwtPayload);
+    const result = await MetaService.getAdminDashboard(user as JwtPayload, req.query as any);
     sendResponse(res, {
       code: StatusCodes.OK,
       message: 'Admin Meta fetched successfully',
@@ -53,10 +53,24 @@ const getAdminRestaurantService = catchAsync(
   }
 );
 
+const getSingleService = catchAsync(
+  async (req: Request, res: Response) => {
+    const user = req?.user;
+    const serviceId = req.params.id
+    const result = await MetaService.getSingleService(user as JwtPayload , serviceId as string);
+    sendResponse(res, {
+      code: StatusCodes.OK,
+      message: 'Single Service fetched successfully',
+      data: result,
+    });
+  }
+);
+
 export const MetaController = {
   getProviderDashboardData,
   getAdminDashboardData,
   getAdminServiceManagement,
-  getAdminRestaurantService
+  getAdminRestaurantService,
+  getSingleService
 
 };

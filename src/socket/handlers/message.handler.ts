@@ -7,7 +7,7 @@ import { Types } from 'mongoose';
 import { logger } from '../../shared/logger';
 import colors from 'colors';
 import { emitToUser, emitError, emitSuccess } from '../utils/eventEmmiter';
-import { sendMessageNotification } from './notification.handler';
+// import { sendMessageNotification } from './notification.handler';
 
 interface MessageData {
   message: string;
@@ -421,7 +421,7 @@ export const searchMessages = async (
 
     const options = { page, limit, sortBy: 'createdAt:desc' };
     const messages = await MessageService.searchMessages(
-      chat._id as string,
+      chat?._id as string,
       searchTerm,
       options
     );

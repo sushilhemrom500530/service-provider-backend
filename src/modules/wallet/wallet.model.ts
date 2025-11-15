@@ -56,7 +56,6 @@ const WalletSchema = new Schema<IWallet>(
       type: Types.ObjectId,
       ref: 'User',
       required: true,
-      unique: true,
     },
     balance: {
       type: Number,

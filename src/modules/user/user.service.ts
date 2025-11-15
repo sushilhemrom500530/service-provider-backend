@@ -3,7 +3,7 @@ import AppError from '../../errors/AppErro';
 import { IUser, UserStatus, IUpdateData } from './user.interface';
 import { User } from './user.model';
 import { IPaginationOptions, IPaginationResult } from '../../types/pagination';
-import { JwtPayload } from 'jsonwebtoken';
+import { JwtPayload } from 'jsonwebtoken'; 
 
  
 const getAllUsers = async (

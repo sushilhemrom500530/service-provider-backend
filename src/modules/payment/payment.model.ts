@@ -1,4 +1,4 @@
-import mongoose, { Schema } from 'mongoose';
+import mongoose, { Schema,Model } from 'mongoose';
 import {
   IPayment,
   IPaymentModel,
