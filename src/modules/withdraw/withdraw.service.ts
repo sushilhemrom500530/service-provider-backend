@@ -79,49 +79,78 @@ import { IWithdraw } from './withdraw.inteface';
 //   return { adminWallet, providerWallet };
 // };
 
-
-
 const getAllFromDB = async (query: any) => {
   const page = Number(query.page) || 1;
   const limit = Number(query.limit) || 10;
   const skip = (page - 1) * limit;
 
-  // Build filters
-  const filters: any = {};
-  if (query.status) filters.status = query.status;
-  if (query.userId) filters.user = query.userId;
+  const match: any = {};
+  
+  // Build search regex
+  if (query.search) {
+    const searchRegex = new RegExp(query.search, 'i');
+    const searchOr: any[] = [
+      { 'user.email': searchRegex },
+      { 'user.fullName': searchRegex },
+    ];
 
-  // Get total count for pagination
-  const total = await Withdraw.countDocuments(filters);
+    // _id search only if valid ObjectId
+    if (query.search.match(/^[0-9a-fA-F]{24}$/)) {
+      searchOr.push({ _id: new mongoose.Types.ObjectId(query.search) });
+    }
 
-  // Query with filters, populate, sorting, and pagination
-  const result = await Withdraw.find(filters)
-    .populate('user', '_id fullName email')
+    match.$or = searchOr;
+  }
+
+  const aggregate = Withdraw.aggregate()
+    .lookup({
+      from: 'users', // collection name
+      localField: 'user',
+      foreignField: '_id',
+      as: 'user',
+    })
+    .unwind('$user')
+    .match(match)
     .sort({ createdAt: -1 })
     .skip(skip)
     .limit(limit);
 
-  // Mask cardId
-  const maskedResult = result.map(item => {
-    const cardId: any = item.cardId || '';
-    const last4: any = cardId.slice(-4);
-    const maskedCard: any = `xxxx xxxx xxxx ${last4}`;
+  const result: any = await aggregate.exec();
+
+  // total count
+  const totalAgg = Withdraw.aggregate()
+    .lookup({
+      from: 'users',
+      localField: 'user',
+      foreignField: '_id',
+      as: 'user',
+    })
+    .unwind('$user')
+    .match(match);
+
+  const totalResult: any = await totalAgg.exec();
+
+  const maskedResult = result.map((item: any) => {
+    const cardId: string = item.cardId || '';
+    const last4: string = cardId.slice(-4);
     return {
-      ...item.toObject(), // convert mongoose doc to plain object
-      cardId: maskedCard,
+      ...item,
+      cardId: last4 ? `xxxx xxxx xxxx ${last4}` : '',
     };
   });
 
   return {
     pagination: {
-      total,
+      total: totalResult.length,
       page,
       limit,
-      totalPages: Math.ceil(total / limit),
+      totalPages: Math.ceil(totalResult.length / limit),
     },
     withdrawals: maskedResult,
   };
 };
+
+
 
 
 const sendWithdrawRequest = async (

@@ -26,4 +26,9 @@ router.get('/restaurant-service',
     MetaController.getAdminRestaurantService
 );
 
+router.get('/service/:id', 
+    auth('Admin'),
+    MetaController.getSingleService
+);
+
 export const MetaRoutes = router;

@@ -16,7 +16,7 @@ export interface ICategory {
    _id?: string;     
   primaryCategoryName: PrimaryCategoryType;
   thumbnail?: string;
-  subCategory: ISubCategory[];
+  subCategory?: ISubCategory[];
   createdAt?: Date;
   updatedAt?: Date;
 }

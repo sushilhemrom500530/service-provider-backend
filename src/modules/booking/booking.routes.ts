@@ -50,7 +50,7 @@ router.post(
 // update
 router.patch(
   '/update-status/:id',
-  auth('Provider'),
+  auth('Admin','Provider'),
   validateRequest(BookingRoutesValidations.updateBookingSchema),
   BookingController.updateBookingStatus
 );
@@ -58,7 +58,7 @@ router.patch(
 // update permission
 router.patch(
   '/update-permit/:id',
-  auth('Provider'),
+  auth('Admin','Provider'),
   validateRequest(BookingRoutesValidations.updatePermitBookingSchema),
   BookingController.updatePermitBookingStatus
 );

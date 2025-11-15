@@ -64,7 +64,7 @@ const getSingleSkipPassFromDB = async (id: string, user: JwtPayload) => {
   }
   const result = await SkiPass.findById(id).populate(
     'owner',
-    '_id email profileUrl phoneNumber'
+    '_id fullName email profileUrl phoneNumber'
   );
 
   if (!result) {

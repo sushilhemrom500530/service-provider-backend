@@ -188,7 +188,7 @@ const getAdminDashboard = async (user: JwtPayload, query:any) => {
   };
 };
 
-export const getCommonService = async (user: JwtPayload, query: IQuery) => {
+ const getCommonService = async (user: JwtPayload, query: IQuery) => {
   const isExistUser = await User.findOne({
     email: user?.email,
     role: 'Admin',
@@ -204,13 +204,12 @@ export const getCommonService = async (user: JwtPayload, query: IQuery) => {
 
   const filters: any = { category: { $ne: 'Restaurant' } };
 
-  // Add optional filters
-  if (query.category) filters.category = query.category;
-  if (query.bookingStatus) filters.bookingStatus = query.bookingStatus;
-  if (query.userId) filters.user = query.userId;
+ if (query.bookingStatus) {
+  filters.bookingStatus = { $regex: query.bookingStatus, $options: 'i' };
+}
 
-  // Optional search (by product title or user name)
-  if (query.search) {
+// Optional search by user name/email or product title
+if (query.search) {
   const [users, skiPasses] = await Promise.all([
     User.find(
       {
@@ -232,20 +231,21 @@ export const getCommonService = async (user: JwtPayload, query: IQuery) => {
     { product: { $in: skiPasses.map(p => p._id) } },
   ];
 }
+
   const total = await Booking.countDocuments(filters);
 
   // Query bookings with populate and pagination
   const bookings = await Booking.find(filters)
     .populate({
       path: 'user',
-      select: 'name email phoneNumber role status',
+      select: 'fullName email phoneNumber role status',
     })
     .populate({
       path: 'product',
       select: 'title category owner totalPrice items thumbnail serviceArea',
       populate: {
         path: 'owner',
-        select: 'name email phoneNumber role providerType',
+        select: 'fullName email phoneNumber role providerType',
       },
     })
     .sort({ createdAt: -1 })
@@ -263,8 +263,42 @@ export const getCommonService = async (user: JwtPayload, query: IQuery) => {
   };
 };
 
+const getSingleService = async (user: JwtPayload, serviceId: string) => {
+  // Check if admin exists
+  const isExistUser = await User.findOne({
+    email: user?.email,
+    role: 'Admin',
+  });
 
-export const getRestaurantManagement = async (user: JwtPayload, query: IQuery) => {
+  if (!isExistUser) {
+    throw new AppError(StatusCodes.NOT_FOUND, 'Admin not found.');
+  }
+
+  // Fetch the booking with user and product/owner populated
+  const booking = await Booking.findById(serviceId)
+    .populate({
+      path: 'user',
+      select: '-password', 
+    })
+    .populate({
+      path: 'product',
+      populate: {
+        path: 'owner',
+        select: '-password',  
+      },
+    })
+    .lean();
+
+  if (!booking) {
+    throw new AppError(StatusCodes.NOT_FOUND, 'Booking not found.');
+  }
+ 
+
+  return booking;
+};
+
+
+ const getRestaurantManagement = async (user: JwtPayload, query: IQuery) => {
   const isExistUser = await User.findOne({
     email: user?.email,
     role: 'Admin',
@@ -279,11 +313,11 @@ export const getRestaurantManagement = async (user: JwtPayload, query: IQuery) =
   const limit = Number(query.limit) || 10;
   const skip = (page - 1) * limit;
 
-  const filters: any = { category: 'Restaurant' };
+  const filters: any = { category: 'Restaurant', bookingStatus: 'Pending' };
 
   // Optional filters
-  if (query.bookingStatus) filters.bookingStatus = query.bookingStatus;
-  if (query.userId) filters.user = query.userId;
+  if (query.bookingStatus) filters.bookingStatus = { $regex: query.bookingStatus, $options: 'i' };;
+  if (query.userId)filters.userId = { $regex: query.userId, $options: 'i' };;
 
   if (query.search) {
     const matchedUsers = await User.find(
@@ -333,6 +367,6 @@ export const MetaService = {
   getProviderDashboard,
   getAdminDashboard,
   getCommonService,
-  getRestaurantManagement
-
+  getRestaurantManagement,
+  getSingleService 
 };

@@ -21,12 +21,12 @@ const registerProviderSchema = z.object({
       })
       .min(6, 'Password must be at least 6 characters long'),
 
-    confirmPassword: z
-      .string({
-        required_error: 'Confirm Password is required',
-        invalid_type_error: 'Confirm Password must be a string',
-      })
-      .min(6, 'Confirm Password must be at least 6 characters long'),
+    // confirmPassword: z
+    //   .string({
+    //     required_error: 'Confirm Password is required',
+    //     invalid_type_error: 'Confirm Password must be a string',
+    //   })
+    //   .min(6, 'Confirm Password must be at least 6 characters long'),
 
     providerType: z.enum(
       ['Ski_Pass', 'Ski_Hire', 'Transport', 'Restaurant', 'Massage'],

@@ -19,7 +19,7 @@ const createCategory = z.object({
     thumbnail: z.string().url('Invalid thumbnail URL').optional(),
     subCategory: z
       .array(subCategorySchema)
-      .nonempty('At least one subcategory is required'),
+      .nonempty('At least one subcategory is required').optional(),
   }),
 });
 
