@@ -19,6 +19,19 @@ const getAllSkiPassFromDB = catchAsync(async (req: Request, res: Response) => {
   });
 });
  
+
+const getAllMySkiPassFromDB = catchAsync(async (req: Request, res: Response) => {
+
+  const user = req.user as JwtPayload;
+  
+  const result = await SkiPassService.getAllMySkiPassFromDB(user ,req.query as any)
+  sendResponse(res, {
+    code: StatusCodes.OK,
+    message: 'Ski pass fetched successfully.',
+    data: result,
+  });
+});
+ 
 const getSingleSkipPassFromDB = catchAsync(async (req: Request, res: Response) => {
   const id = req.params.id;
   const user = req.user as JwtPayload;
@@ -79,6 +92,7 @@ const deleteSkiPassIntoDB = catchAsync(async (req: Request, res: Response) => {
 
 export const SkiPassController = {
   getAllSkiPassFromDB,
+  getAllMySkiPassFromDB,
   getSingleSkipPassFromDB,
   addSkiPassIntoDB,
   reviewSkiPass,

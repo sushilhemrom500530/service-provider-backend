@@ -161,8 +161,35 @@ const getBalanceById = async (user: JwtPayload) => {
 
   return result;
 };
+
+
+const getWalletSummary = async (user: JwtPayload) => {
+  const isExistsUser = await User.findOne({ email: user?.email });
+  if (!isExistsUser) {
+    throw new AppError(StatusCodes.NOT_FOUND, 'User not found');
+  }
+
+  const wallet = await Wallet.findOne({ user: isExistsUser._id }).select(
+    '-transactions -__v'
+  );
+
+  if (!wallet) {
+    throw new AppError(StatusCodes.NOT_FOUND, 'Wallet not found');
+  } 
+  const totalIncome = wallet.balance + wallet?.profitCharge; 
+ 
+  return { 
+    totalIncome,
+    totalBalance:wallet?.balance,
+    profit:wallet?.profitCharge,
+  };
+};
+
+
+
 export const WalletService = {
   updateProfit,
   addWallet,
   getBalanceById,
+  getWalletSummary
 };

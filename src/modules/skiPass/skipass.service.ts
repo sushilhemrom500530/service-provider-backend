@@ -28,6 +28,51 @@ const getAllSkiPassFromDB = async (user: JwtPayload, query: any) => {
   const search = query.search || "";
 
  
+  const filters: any = {};
+
+  if (search) {
+    filters.title = { $regex: search, $options: "i" };  
+  }
+
+ 
+  const total = await SkiPass.countDocuments(filters);
+
+  // Fetch paginated result 
+  const result = await SkiPass.find(filters)
+    .skip(skip)
+    .limit(limit)
+    .sort({ createdAt: -1 });  
+
+  return { 
+    pagination: {
+      total,
+      page,
+      limit,
+      totalPages: Math.ceil(total / limit),
+    },
+    result,
+  };
+};
+
+const getAllMySkiPassFromDB = async (user: JwtPayload, query: any) => {
+  const isExistsUser = await User.findOne({ email: user?.email });
+
+  if (!isExistsUser) {
+    throw new AppError(
+      StatusCodes.NOT_FOUND,
+      'You cannot view this data because your account was not found.'
+    );
+  }
+
+  // Pagination
+  const page = Number(query.page) || 1;
+  const limit = Number(query.limit) || 10;
+  const skip = (page - 1) * limit;
+
+  // Search
+  const search = query.search || "";
+
+ 
   const filters: any = { owner: isExistsUser._id };
 
   if (search) {
@@ -37,7 +82,7 @@ const getAllSkiPassFromDB = async (user: JwtPayload, query: any) => {
  
   const total = await SkiPass.countDocuments(filters);
 
-  // Fetch paginated result
+  // Fetch paginated result 
   const result = await SkiPass.find(filters)
     .skip(skip)
     .limit(limit)
@@ -266,6 +311,7 @@ const deleteSkiPassIntoDB = async (id: string, user: JwtPayload) => {
 
 export const SkiPassService = {
   getAllSkiPassFromDB,
+  getAllMySkiPassFromDB,
   addSkiPassIntoDB,
   reviewSkiPass,
   getSingleSkipPassFromDB,

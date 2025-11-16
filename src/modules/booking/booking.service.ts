@@ -19,35 +19,60 @@ import { format } from 'date-fns';
 
 
 
-
-const getAllBookingFromDB = async (user: JwtPayload) => {
+const getAllBookingFromDB = async (user: JwtPayload, query: any) => {
   const isExistsUser = await User.findOne({ email: user?.email });
   if (!isExistsUser) {
     throw new AppError(StatusCodes.NOT_FOUND, 'User not found.');
   }
 
-  // Fetch all bookings first
-  let result = await Booking.find()
+  const page = Number(query?.page) || 1;
+  const limit = Number(query?.limit) || 10;
+  const skip = (page - 1) * limit;
+
+  const search = query?.search || "";
+
+  const filters: any = {};
+
+  if (search) {
+    filters['product.title'] = { $regex: search, $options: 'i' };
+  }
+
+  // Step 1: Build base Booking query (NO product.owner filter here)
+  let bookingQuery = Booking.find(filters)
     .populate({
       path: 'product',
+      match: isExistsUser.role === 'Provider'
+        ? { owner: isExistsUser._id }  // Filter here
+        : {},
       select:
         '-items -totalPrice -serviceArea -__v -reviews -refunds -averageRating -createdAt -updatedAt',
     })
     .populate('user', 'fullName email address phoneNumber')
     .sort({ createdAt: -1 });
 
-  // Filter by provider (if needed)
-  if (isExistsUser?.role === 'Provider') {
-    result = result.filter(
-      (booking: any) =>
-        booking.product?.owner?._id?.toString() === isExistsUser._id.toString()
-    );
-  } else if (isExistsUser.role !== 'Admin') {
-    throw new AppError(StatusCodes.FORBIDDEN, 'Invalid role.');
-  }
+  // Step 2: Execute without pagination to count real results
+  const allBookings = await bookingQuery.clone();
 
-  return result;
+  // Step 3: Remove bookings where product = null (not matched)
+  const filtered = allBookings.filter((b) => b.product !== null);
+
+  const total = filtered.length;
+
+  // Step 4: Apply pagination manually
+  const result = filtered.slice(skip, skip + limit);
+
+  return {
+    pagination: {
+      total,
+      page,
+      limit,
+      totalPages: Math.ceil(total / limit),
+    },
+    result,
+  };
 };
+
+
 
 const getSingleBookingFromDB = async (id: string, user: JwtPayload) => {
   const isExistsUser = await User.findOne({ email: user?.email });
@@ -94,23 +119,33 @@ const getSingleBookingFromDB = async (id: string, user: JwtPayload) => {
 };
 
 
-const getMyBooking = async (user: JwtPayload) => {
+const getMyBooking = async (user: JwtPayload, query: any) => {
   const isExistsUser = await User.findOne({ email: user?.email });
   if (!isExistsUser)
     throw new AppError(StatusCodes.NOT_FOUND, 'User not found.');
-// Get user bookings and populate related data
-const bookings = await Booking.find()
-  .populate({
-    path: 'product',
-    select:
-      '-owner -totalPrice -__v -reviews -refunds -averageRating -createdAt -updatedAt',
-  })
-  .populate(
-    'user',
-    '_id fullName email profileUrl address phoneNumber status'
-  )
-  .sort({ createdAt: -1 })  
 
+  // Get user bookings and populate related data
+  const bookings = await Booking.find({ user: isExistsUser._id })
+    .populate({
+      path: 'product',
+      select:
+        '-owner -totalPrice -__v -reviews -refunds -averageRating -createdAt -updatedAt',
+    })
+    .populate(
+      'user',
+      '_id fullName email profileUrl address phoneNumber status'
+    )
+    .sort({ createdAt: -1 });
+
+  // Pagination
+  const page = Number(query?.page) || 1;
+  const limit = Number(query?.limit) || 10;
+  const startIndex = (page - 1) * limit;
+  const endIndex = startIndex + limit;
+
+  // Search & Category filter
+  const search = query?.search?.toLowerCase() || "";
+  const category = query?.category?.toLowerCase() || "";
 
   const msToTime = (ms: number) => {
     const totalSeconds = Math.floor(ms / 1000);
@@ -119,57 +154,86 @@ const bookings = await Booking.find()
     return `${hours}h ${minutes}m`;
   };
 
-  const now = new Date();
+  // Map and enrich bookings
+  let bookingsWithTimeInfo = bookings.map(booking => {
+    const startTime = new Date(booking?.startDateAndTime);
+    const endTime = new Date(booking?.endDateAndTime);
 
-  const bookingsWithTimeInfo = bookings?.map(booking => {
-  const startTime = new Date(booking?.startDateAndTime);
-  const endTime = new Date(booking?.endDateAndTime);
-
-  let label: string | undefined;
-
-  if (['Ski_Hire', 'Transport'].includes(booking?.category)) {
-    const now = new Date();
-    if (now < endTime) {
-      const timeLeft = endTime.getTime() - now.getTime();
-      label = `Time Left: ${msToTime(timeLeft)}`;
-    } else {
-      const overTime = now.getTime() - endTime.getTime();
-      label = `Over Time: ${msToTime(overTime)}`;
+    let label: string | undefined;
+    if (['Ski_Hire', 'Transport'].includes(booking?.category)) {
+      const now = new Date();
+      if (now < endTime) {
+        const timeLeft = endTime.getTime() - now.getTime();
+        label = `Time Left: ${msToTime(timeLeft)}`;
+      } else {
+        const overTime = now.getTime() - endTime.getTime();
+        label = `Over Time: ${msToTime(overTime)}`;
+      }
     }
-  }
 
-  // Safely get product object
-  const product = booking.product ? (booking.product.toObject?.() || booking.product) : null;
-  const productItems = product?.items || [];
+    const product = booking.product ? (booking.product.toObject?.() || booking.product) : null;
+    const productItems = product?.items || [];
 
-  // Safely map bookingItems
-  const enrichedBookingItems = (booking.bookingItems || []).map((bi: any) => {
-    const matchedItem = productItems.find(
-      (itm: any) => itm?._id?.toString() === bi?.itemId?.toString()
-    );
+    const enrichedBookingItems = (booking.bookingItems || []).map((bi: any) => {
+      const matchedItem = productItems.find(
+        (itm: any) => itm?._id?.toString() === bi?.itemId?.toString()
+      );
+      return {
+        ...(bi ? (bi.toObject?.() || bi) : {}),
+        item: matchedItem ? { ...matchedItem } : null,
+      };
+    });
 
-    return {
-      ...(bi ? (bi.toObject?.() || bi) : {}),
-      item: matchedItem ? { ...matchedItem } : null,
+    if (product) delete product.items;
+
+    const bookingObj: any = {
+      ...booking.toObject(),
+      product,
+      bookingItems: enrichedBookingItems,
     };
+
+    if (label) bookingObj.timeLabel = label;
+
+    return bookingObj;
   });
 
-  // Remove full product items array to avoid duplication
-  if (product) delete product.items;
-
-  const bookingObj: any = {
-    ...booking.toObject(),
-    product,
-    bookingItems: enrichedBookingItems,
+  // Apply search and category filtering
+  if (search) {
+    bookingsWithTimeInfo = bookingsWithTimeInfo.filter(b =>
+      b.product?.title?.toLowerCase().includes(search)
+    );
+  }
+ if (category) {
+  bookingsWithTimeInfo = bookingsWithTimeInfo.filter(b =>
+    b.category?.toLowerCase() === category
+  );
+} else {
+  // If category is NOT provided → ALWAYS return empty array
+  return {
+    pagination: {
+      total: 0,
+      page,
+      limit,
+      totalPages: 0,
+    },
+    result: [],
   };
+}
+  // Apply pagination
+  const paginatedResult = bookingsWithTimeInfo.slice(startIndex, endIndex);
 
-  if (label) bookingObj.timeLabel = label;
-
-  return bookingObj;
-});
- 
-  return bookingsWithTimeInfo;
+  return {
+    pagination: {
+      total: bookingsWithTimeInfo.length,
+      page,
+      limit,
+      totalPages: Math.ceil(bookingsWithTimeInfo.length / limit),
+    },
+    result: paginatedResult,
+  };
 };
+
+
 
 const getMyBookingForHome = async (user: JwtPayload, selectedDate: string) => {
   const isExistsUser = await User.findOne({ email: user?.email });
@@ -491,7 +555,7 @@ const addBookingIntoDB = async (user: JwtPayload, payload: IBooking) => {
   // wallet calculation 
     const ownerWallet = await Wallet.findOne({ user: productOwner?._id });
 
-    if (!ownerWallet) {  
+    if (!ownerWallet) {   
       throw new AppError(StatusCodes.NOT_FOUND, 'Owner wallet not found.');
     }
  
