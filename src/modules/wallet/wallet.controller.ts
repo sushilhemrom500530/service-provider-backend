@@ -44,8 +44,23 @@ const addWallet = catchAsync(async (req: Request, res: Response) => {
   });
 });
 
+
+const getSummary = catchAsync(async (req: Request, res: Response) => {
+
+  const user = req.user as JwtPayload;
+ 
+  const result = await WalletService.getWalletSummary(user);
+
+  sendResponse(res, {
+    code: StatusCodes.OK,
+    message: 'Wallet fetched successfully',
+    data: result,
+  });
+});
+
 export const WalletController = {
   updateWalletProfit,
   addWallet,
-  getBalanceById
+  getBalanceById,
+  getSummary
 };

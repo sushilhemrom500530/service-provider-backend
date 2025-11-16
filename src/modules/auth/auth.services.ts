@@ -46,7 +46,7 @@ const registerUser = async (userData: Partial<IUser>) => {
   if (userData?.providerType === 'Ski_Pass') {
     const existingSkiPassProvider = await User.findOne({
       providerType: 'Ski_Pass',
-    });
+    }); 
     if (existingSkiPassProvider) {
       throw new AppError(
         StatusCodes.BAD_REQUEST,
@@ -133,11 +133,15 @@ const verifyOtp = async (payload: IVerifyOtpData) => {
 
   validateUserStatus(user);
 
-  await OtpService.verifyOTP(
+  const verifyResult = await OtpService.verifyOTP(
     user.email,
     payload.otp
     // user.isResetPassword ? OtpType.RESET_PASSWORD : OtpType.VERIFY
   );
+
+  if (!verifyResult) {
+    throw new AppError(StatusCodes.BAD_REQUEST, 'Invalid OTP.');
+  }
 
   // Update user status based on OTP type
   if (!user.isResetPassword) {
@@ -206,27 +210,24 @@ const resendOtp = async (email: string) => {
 };
 
 
-const resetPassword = async (email: string, password: string) => {
-  const user = await User.findOne({ email });
+const resetPassword = async (email: string, newPassword: string) => {
+  const user = await User.findOne({ email }).select('+password');
   if (!user) {
     throw new AppError(StatusCodes.NOT_FOUND, 'User not found.');
   }
-
-  validateUserStatus(user);
-
     // Verify that password reset was requested
-  // if (!user.isResetPassword) {
-  //   throw new AppError(
-  //     StatusCodes.BAD_REQUEST,
-  //     'Password reset was not requested. Please request password reset first.'
-  //   );
-  // }
+    // if (!user.isResetPassword) {
+    //   throw new AppError(
+    //     StatusCodes.BAD_REQUEST,
+    //     'Password reset was not requested. Please request password reset first.'
+    //   );
+    // }
 
-  const hashed = await bcrypt.hash(password, 10);
-  user.password = hashed;
+  // Hash new password
+  user.password = newPassword;  
   user.isResetPassword = false;
-  // user.security.lastPasswordChange = new Date();
-  await user.save();
+
+  await user.save();  
 
   return {
     message: 'Password reset successfully.',
@@ -234,7 +235,7 @@ const resetPassword = async (email: string, password: string) => {
   };
 };
 
-
+  
 
 const changePassword = async (
   userId: string,

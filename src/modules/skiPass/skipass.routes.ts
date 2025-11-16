@@ -18,6 +18,11 @@ router.get(
   auth('User', 'Admin', 'Provider'),
   SkiPassController.getAllSkiPassFromDB
 );
+router.get(
+  '/my-all',
+  auth('User', 'Admin', 'Provider'),
+  SkiPassController.getAllMySkiPassFromDB
+);
 
 // get single
 router.get(

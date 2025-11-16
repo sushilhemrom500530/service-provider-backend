@@ -24,7 +24,7 @@ router.post(
   auth('Admin'),
   uploads.fields([
     { name: 'thumbnail', maxCount: 1 },
-    { name: 'files', maxCount: 20 },
+    { name: 'files', maxCount: 50 },
   ]),
   convertHeicToPngMiddleware(USER_UPLOADS_FOLDER),
   validateRequest(CategoryValidation.createCategory),
@@ -36,7 +36,7 @@ router.post(
   '/add-sub-category/:id',
   auth('Admin'),
   uploads.fields([  
-    { name: 'files', maxCount: 20 },
+    { name: 'files', maxCount: 50 },
   ]),
   convertHeicToPngMiddleware(USER_UPLOADS_FOLDER),
   // validateRequest(CategoryValidation.createSubCategory),
@@ -48,7 +48,7 @@ router.patch(
   auth('Admin'),
   uploads.fields([
     { name: 'thumbnail', maxCount: 1 },
-    { name: 'files', maxCount: 20 },
+    { name: 'files', maxCount: 50 },
   ]),
   convertHeicToPngMiddleware(USER_UPLOADS_FOLDER),
   validateRequest(CategoryValidation.updateCategory),

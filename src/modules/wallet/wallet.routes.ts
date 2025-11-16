@@ -27,5 +27,12 @@ router.post(
   WalletController.addWallet
 );
 
+
+router.get(
+  '/get-summary',
+  auth('Admin'),
+  WalletController.getSummary
+);
+
  
 export const WalletRoutes = router;

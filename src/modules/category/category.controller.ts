@@ -70,11 +70,24 @@ const updateCategory = catchAsync(async (req, res) => {
 
 const deleteCategory = catchAsync(async (req, res) => {
   const { id } = req.params;
- const result = await CategoryService.deleteCategory(
+ // Read subCategoryIds from query if present
+  let subCategoryIds: string[] | undefined;
+  if (req.query.subCategoryIds) {
+    const queryValue = req.query.subCategoryIds;
+    // queryValue can be string or array (if multiple same query keys)
+    if (Array.isArray(queryValue)) {
+      subCategoryIds = queryValue.flatMap(v => v.split(','));
+    } else {
+      subCategoryIds = queryValue.split(',');
+    }
+  }
+
+  const result = await CategoryService.deleteCategory(
     id,
-    req.body.subCategoryIds,
+    subCategoryIds,
     req.user as JwtPayload
   );
+  
   sendResponse(res, {
     code: StatusCodes.OK,
     message: 'Sub category deleted successfully.',

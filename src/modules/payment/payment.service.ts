@@ -27,7 +27,10 @@ const getAllPayment = async (query: any) => {
     }
 
     if (query.role) {
-      userFilters.role = query.role.trim();
+      userFilters.role = {
+        $regex: query.role.trim(),
+        $options: 'i',
+      };
     }
 
     const matchingUsers = await User.find(userFilters)

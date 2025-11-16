@@ -9,7 +9,7 @@ import { IBooking, BookingStatus } from './booking.interface';
 const getAllBookingFromDB = catchAsync(async (req: Request, res: Response) => {
   const user = req.user as JwtPayload;
 
-  const result = await BookingService.getAllBookingFromDB(user);
+  const result = await BookingService.getAllBookingFromDB(user, req.query as any);
   sendResponse(res, {
     code: StatusCodes.OK,
     message: 'Booking fetched successfully.',
@@ -34,7 +34,7 @@ const getSingleBookingFromDB = catchAsync(
 const getMyBookingIntoDB = catchAsync(async (req: Request, res: Response) => {
   const user = req.user as JwtPayload;
 
-  const result = await BookingService.getMyBooking(user);
+  const result = await BookingService.getMyBooking(user, req.query as any);
 
   sendResponse(res, {
     code: StatusCodes.OK,

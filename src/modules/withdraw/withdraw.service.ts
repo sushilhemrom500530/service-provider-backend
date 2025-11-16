@@ -85,7 +85,11 @@ const getAllFromDB = async (query: any) => {
   const skip = (page - 1) * limit;
 
   const match: any = {};
-  
+  if (query.status)
+    {
+      match.status = { $regex: query.status, $options: 'i' };
+    };
+
   // Build search regex
   if (query.search) {
     const searchRegex = new RegExp(query.search, 'i');
@@ -201,7 +205,7 @@ const acceptWithdrawRequest = async (user: JwtPayload, withdrawId: string) => {
   const adminWallet = await Wallet.findOne({ user: isExistsAdmin?._id });
   if (!adminWallet) {
     throw new AppError(StatusCodes.NOT_FOUND, 'Admin wallet not found');
-  }
+  } 
 
   const withdraw = await Withdraw.findById(withdrawId);
   if (!withdraw) {
