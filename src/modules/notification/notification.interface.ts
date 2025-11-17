@@ -2,11 +2,13 @@ import { Document, Types } from "mongoose";
 
 
 // Define the INotification type
-export type INotification = {
+export interface INotification extends Document {
   senderId: Types.ObjectId;
-  receiverId?: Types.ObjectId; 
+  receiverId?: Types.ObjectId;
   title: string;
   description: string;
   type: string;
   isRead: boolean | false;
-} & Document;
+  createdAt?: Date;
+  updatedAt?: Date;
+}

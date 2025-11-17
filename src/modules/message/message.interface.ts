@@ -61,7 +61,7 @@ export interface IEditHistory {
 
 export interface IMessage {
   _id?: string;
-  // chatId: Types.ObjectId;
+  chatId?: Types.ObjectId;
   senderId: Types.ObjectId;
   receiverId: Types.ObjectId;
   content: IContent;

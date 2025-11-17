@@ -26,17 +26,18 @@ const getAllCategories = catchAsync(async (req, res) => {
 
 const getCategoryById = catchAsync(async (req, res) => {
   const { id } = req.params;
-  const user = await CategoryService.getCategoryById(id);
+  const user = req.user as JwtPayload;
+  // const user = await CategoryService.getCategoryById(id);
+  const category = await CategoryService.getCategoryById(id, user);
   sendResponse(res, {
     code: StatusCodes.OK,
     message: 'Category retrieved successfully.',
-    data: user,
+    data: category,
   });
 });
 
-const createCategory = catchAsync(async (req, res) => {
-  const user = req.user as JwtPayload;
-  const result = await CategoryService.createCategory(req as Request, user);
+const createCategory = catchAsync(async (req, res) => { 
+  const result = await CategoryService.createCategory(req as Request);
   sendResponse(res, {
     code: StatusCodes.OK,
     message: 'Category create successfully.',
@@ -45,7 +46,8 @@ const createCategory = catchAsync(async (req, res) => {
 });
 
 const addSubCategory = catchAsync(async (req, res) => {
-  const result = await CategoryService.addSubCategory(req as Request);
+  // const result = await CategoryService.addSubCategory(req as Request);
+  const result = await CategoryService.addSubCategory(req as Request, res);
   sendResponse(res, {
     code: StatusCodes.OK,
     message: 'Sub category create successfully.',
@@ -74,18 +76,23 @@ const deleteCategory = catchAsync(async (req, res) => {
   let subCategoryIds: string[] | undefined;
   if (req.query.subCategoryIds) {
     const queryValue = req.query.subCategoryIds;
-    // queryValue can be string or array (if multiple same query keys)
     if (Array.isArray(queryValue)) {
-      subCategoryIds = queryValue.flatMap(v => v.split(','));
-    } else {
+    //   subCategoryIds = queryValue.flatMap(v => v.split(','));
+    // } else {
+      subCategoryIds = queryValue.flatMap(v =>
+        (typeof v === 'string' ? v : String(v)).split(',')
+      );
+    } else if (typeof queryValue === 'string') {
       subCategoryIds = queryValue.split(',');
+    } else {
+      subCategoryIds = String(queryValue).split(',');
     }
   }
 
   const result = await CategoryService.deleteCategory(
     id,
-    subCategoryIds,
-    req.user as JwtPayload
+    req.user as JwtPayload,
+    subCategoryIds
   );
   
   sendResponse(res, {

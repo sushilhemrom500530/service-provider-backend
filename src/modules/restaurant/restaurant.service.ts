@@ -222,7 +222,7 @@ const getSingleRestaurantFromDB = async (id: string, user: JwtPayload) => {
 };
 
 const addRestaurantIntoDB = async (req: Request) => {
- const user = req.user as JwtPayload;
+  const user = req.user as JwtPayload;
 
   // Check if user exists
   const isExistsUser = await User.findOne({ email: user?.email });
@@ -239,16 +239,22 @@ const addRestaurantIntoDB = async (req: Request) => {
   if (!category) throw new AppError(StatusCodes.NOT_FOUND, 'Restaurant category not found.');
 
   const subCategoryItems = category?.subCategory || [];
-  const exists = subCategoryItems.some((item: any) => item?._id.toString() === req.body?.category) as boolean;
+  const exists = subCategoryItems.some(
+    (item: any) => item?._id?.toString() === req.body?.category?.toString()
+  ) as boolean;
   if (!exists) throw new AppError(StatusCodes.BAD_REQUEST, 'Invalid sub-category ID.');
 
   // Upload thumbnail
-  const thumbnailFile : any = req.files?.['thumbnail']?.[0];
+  const uploadedFiles = (req as any).files as
+    | { [fieldname: string]: any[] }
+    | undefined;
+
+  const thumbnailFile: any = uploadedFiles?.thumbnail?.[0];
   if (!thumbnailFile) throw new AppError(StatusCodes.BAD_REQUEST, 'Thumbnail file not found.');
   const thumbnailUrl = await s3Services.uploadSingleFileToS3(thumbnailFile, USER_UPLOADS_FOLDER);
 
   // Parse menu items (ICategoryItem[])
- let items: any[] = [];
+  let items: any[] = [];
   if (typeof req.body.items === 'string') {
     items = JSON.parse(req.body.items);
   } else if (Array.isArray(req.body.items)) {
@@ -258,19 +264,19 @@ const addRestaurantIntoDB = async (req: Request) => {
   }
 
   // 🔹 Validate items
-if (items.length !== 2) {
-  throw new AppError(StatusCodes.BAD_REQUEST, 'Items must contain exactly 2 seat types: Normal and VIP.');
-}
+  if (items.length !== 2) {
+    throw new AppError(StatusCodes.BAD_REQUEST, 'Items must contain exactly 2 seat types: Normal and VIP.');
+  }
 
-// Check for duplicate seat names (case-insensitive)
-const seatNames = items.map(i => i.seat?.trim().toLowerCase());
-const duplicateSeat = seatNames.some((seat, index) => seatNames.indexOf(seat) !== index);
-if (duplicateSeat) {
-  throw new AppError(StatusCodes.BAD_REQUEST, 'Duplicate seat types are not allowed.');
-}
+  // Check for duplicate seat names (case-insensitive)
+  const seatNames = items.map(i => i.seat?.trim().toLowerCase());
+  const duplicateSeat = seatNames.some((seat, index) => seatNames.indexOf(seat) !== index);
+  if (duplicateSeat) {
+    throw new AppError(StatusCodes.BAD_REQUEST, 'Duplicate seat types are not allowed.');
+  }
 
   // Upload item photos (1:1 mapping)
-  const itemFiles : any = req.files?.['files'] || [];
+  const itemFiles: any[] = uploadedFiles?.files || [];
   const processedItems = await Promise.all(
     items.map(async (item, index) => {
       const file = itemFiles[index];
@@ -293,7 +299,7 @@ if (duplicateSeat) {
   if (typeof req.body.slots === 'string') slots = JSON.parse(req.body.slots);
   else if (Array.isArray(req.body.slots)) slots = req.body.slots;
 
-  let availableSlots: ISlot[] = []; 
+  let availableSlots: ISlot[] = [];
   if (typeof req.body.slots === 'string') availableSlots = JSON.parse(req.body.slots);
   else if (Array.isArray(req.body.slots)) availableSlots = req.body.slots;
 
@@ -302,7 +308,7 @@ if (duplicateSeat) {
   const isOpenNow = isRestaurantOpen(req.body.openTime, req.body.closeTime);
 
   // Prepare restaurant data
-  const restaurantData: IRestaurant = {
+  const restaurantData: Partial<IRestaurant> = {
     title: req.body.title,
     thumbnail: thumbnailUrl,
     category: req.body.category,
@@ -313,11 +319,11 @@ if (duplicateSeat) {
     foodType: req.body.foodType,
     status: isOpenNow ? 'Open' : 'Closed',
     description: req.body.description,
-    slots, 
+    slots,
     availableSlots,
     items: processedItems,
   };
-  
+
 
   const result = await Restaurant.create(restaurantData);
   return result;
@@ -352,9 +358,10 @@ export const reviewRestaurant = async (
   }
 
   //  (Optional) Prevent duplicate reviews by the same user
-  const alreadyReviewed = restaurant?.reviews.some(
-    review => review?.userId.toString() === isExistsUser?._id.toString()
-  ) || false;
+  const alreadyReviewed =
+    restaurant.reviews?.some(
+      review => review?.userId.toString() === isExistsUser?._id.toString()
+    ) || false;
   if (alreadyReviewed) {
     throw new AppError(
       StatusCodes.BAD_REQUEST,
@@ -370,19 +377,28 @@ export const reviewRestaurant = async (
     createdAt: new Date(),
   } as IReview;
 
-  restaurant?.reviews.push(newReview as IReview);
+  if (!Array.isArray(restaurant.reviews)) {
+    restaurant.reviews = [];
+  }
+
+  restaurant.reviews.push(newReview);
 
   // Recalculate average rating
-  const total : number = restaurant?.reviews.reduce((sum : number, r: IReview) => sum + r?.rating, 0);
-  restaurant?.averageRating = parseFloat(
-    (total / restaurant?.reviews.length || 0).toFixed(1)
-  ) || 0;
+  const total: number = restaurant.reviews.reduce(
+    (sum: number, r: IReview) => sum + (r?.rating || 0),
+    0
+  );
+  restaurant.averageRating = restaurant.reviews.length
+    ? parseFloat((total / restaurant.reviews.length).toFixed(1))
+    : 0;
 
   // Save updated restaurant
   await restaurant.save();
 
   return restaurant;
 };
+
+
 export const updateRestaurantIntoDB = async (req: Request) => {
   const id = req.params.id;
   const user = req.user as JwtPayload;
@@ -410,7 +426,11 @@ export const updateRestaurantIntoDB = async (req: Request) => {
   }
 
   // Upload new thumbnail if provided
-  const thumbnailFile : any = req.files?.['thumbnail']?.[0];
+  const uploadedFilesUpdate = (req as any).files as
+    | { [fieldname: string]: any[] }
+    | undefined;
+
+  const thumbnailFile: any = uploadedFilesUpdate?.thumbnail?.[0];
   if (thumbnailFile) {
     const thumbnailUrl = await s3Services.uploadSingleFileToS3(thumbnailFile, USER_UPLOADS_FOLDER);
     restaurant.thumbnail = thumbnailUrl;
@@ -433,7 +453,7 @@ export const updateRestaurantIntoDB = async (req: Request) => {
       throw new AppError(StatusCodes.BAD_REQUEST, 'Duplicate seat types are not allowed.');
     }
 
-    const itemFiles : any = req.files?.['files'] || [];
+    const itemFiles: any[] = uploadedFilesUpdate?.files || [];
     const processedItems = await Promise.all(
       items.map(async (item, index) => {
         const file = itemFiles[index];

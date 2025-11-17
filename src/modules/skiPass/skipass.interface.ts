@@ -17,7 +17,7 @@ export interface ISkiPass extends Document {
   thumbnail: string;
   owner: Types.ObjectId;
   skiPassType: ISkiPassType;
-  services: IServices;
+  services: IServices[];
   serviceArea: string;
   amount: number;
   description: string;

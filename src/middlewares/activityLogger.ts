@@ -51,12 +51,12 @@ const activityLogger = async (req: Request, res: Response, next: NextFunction) =
   // });
   
   // Listen for errors
-  res.on('error', async (err) => {
-    await logActivity(IActivityLogStatus.FAILURE, {
-      message: err.message,
-      stack: err.stack,
-    });
-  });
+  // res.on('error', async (err) => {
+  //   await logActivity(IActivityLogStatus.FAILURE, {
+  //     message: err.message,
+  //     stack: err.stack,
+  //   });
+  // });
   
   next();
 };

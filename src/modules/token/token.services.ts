@@ -1,5 +1,5 @@
 import { StatusCodes } from 'http-status-codes';
-import jwt, { Secret } from 'jsonwebtoken';
+import jwt, { Secret, SignOptions } from 'jsonwebtoken';
 import { config } from '../../config';
 import { Token } from './token.model';
 import { TokenType } from './token.interface';
@@ -22,7 +22,11 @@ const getExpirationTime = (expiration: string) => {
   return new Date();
 };
 
-const generateToken = (payload: object, secret: Secret, expireTime: string) => {
+const generateToken = (
+  payload: object,
+  secret: Secret,
+  expireTime: SignOptions['expiresIn']
+): string => {
   return jwt.sign(payload, secret, { expiresIn: expireTime });
 };
 
@@ -64,7 +68,7 @@ const verifyToken = async (
 
 const accessAndRefreshToken = async (user: IUser) => {
   const accessTokenPayload: TokenPayload = {
-    userId: user?._id.toString(),
+    userId: (user as any)?._id?.toString(),
     email: user?.email,
     role: user?.role,
   };
@@ -72,19 +76,19 @@ const accessAndRefreshToken = async (user: IUser) => {
   const accessToken = generateToken(
     accessTokenPayload,
     config.jwt.accessSecret as Secret,
-    config.jwt.accessExpiration
+    config.jwt.accessExpiration as SignOptions['expiresIn']
   );
 
   const accessTokenExpires = getExpirationTime(config.jwt.accessExpiration);
   await saveToken(
     accessToken,
-    user?._id.toString(),
+    (user as any)?._id?.toString(),
     TokenType.ACCESS,
     accessTokenExpires
   );
 
   const refreshTokenPayload: TokenPayload = {
-    userId: user._id.toString(),
+    userId: (user as any)?._id?.toString(),
     email: user.email,
     role: user.role,
   };
@@ -92,14 +96,14 @@ const accessAndRefreshToken = async (user: IUser) => {
   const refreshToken = generateToken(
     refreshTokenPayload,
     config.jwt.refreshSecret as Secret,
-    config.jwt.refreshExpiration
+    config.jwt.refreshExpiration as SignOptions['expiresIn']
   );
 
   const refreshTokenExpires = getExpirationTime(config.jwt.refreshExpiration);
 
   await saveToken(
     refreshToken,
-    user?._id.toString(),
+    (user as any)?._id?.toString(),
     TokenType.REFRESH,
     refreshTokenExpires
   );
@@ -109,14 +113,14 @@ const accessAndRefreshToken = async (user: IUser) => {
 
 const createResetPasswordToken = async (user: IUser) => {
   const resetPasswordTokenPayload: TokenPayload = {
-    userId: user?._id.toString(),
+    userId: (user as any)?._id?.toString(),
     email: user?.email,
     role: user?.role,
   };
   const resetPasswordToken = generateToken(
     resetPasswordTokenPayload,
     config.token.TokenSecret as Secret,
-    config.token.resetPasswordTokenExpiration
+    config.token.resetPasswordTokenExpiration as SignOptions['expiresIn']
   );
 
   const resetPasswordExpires = getExpirationTime(
@@ -125,7 +129,7 @@ const createResetPasswordToken = async (user: IUser) => {
 
   await saveToken(
     resetPasswordToken,
-    user?._id.toString(),
+    (user as any)?._id?.toString(),
     TokenType.RESET_PASSWORD,
     resetPasswordExpires
   );

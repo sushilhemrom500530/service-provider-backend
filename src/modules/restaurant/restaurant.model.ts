@@ -80,8 +80,8 @@ const restaurantSchema = new Schema<IRestaurant>(
       required: true,
     },
     foodType: {
-      type: String,
-      required: true, 
+      type: String, 
+      default:"" 
     },
     status: {
       type: String,

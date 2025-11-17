@@ -196,9 +196,10 @@ export const reviewSkiPass = async (
   }
 
   //  (Optional) Prevent duplicate reviews by the same user
-  const alreadyReviewed = skiPass?.reviews.some(
-    review => review.userId.toString() === isExistsUser._id.toString()
-  ) as boolean;
+  const alreadyReviewed =
+    skiPass.reviews?.some(
+      review => review.userId.toString() === isExistsUser._id.toString()
+    ) || false;
   if (alreadyReviewed) {
     throw new AppError(
       StatusCodes.BAD_REQUEST,
@@ -214,13 +215,20 @@ export const reviewSkiPass = async (
     createdAt: new Date(),
   };
 
+  if (!Array.isArray(skiPass.reviews)) {
+    skiPass.reviews = [];
+  }
+
   skiPass.reviews.push(newReview as IReview);
 
   // Recalculate average rating
-  const total = skiPass.reviews.reduce((sum : number, r : IReview) => sum + r.rating, 0);
-  skiPass.averageRating = parseFloat(
-    (total / skiPass.reviews.length || 0).toFixed(1)
+  const total = skiPass.reviews.reduce(
+    (sum: number, r: IReview) => sum + (r.rating || 0),
+    0
   );
+  skiPass.averageRating = skiPass.reviews.length
+    ? parseFloat((total / skiPass.reviews.length).toFixed(1))
+    : 0;
 
   // Save updated SkiPass
   await skiPass.save();

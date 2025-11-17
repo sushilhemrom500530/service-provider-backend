@@ -50,7 +50,8 @@ const globalErrorHandler = (
   res: Response,
   next: NextFunction
 ) => {
-  let statusCode = status.INTERNAL_SERVER_ERROR;
+  // Fix: Explicitly type statusCode as number to allow different status codes (400, 401, 500, etc.)
+  let statusCode: number = status.INTERNAL_SERVER_ERROR;
   let success = false;
   let message = err.message || 'Something went wrong!';
   let error: any = err;

@@ -4,12 +4,11 @@ import { IMessage, IMessageModel, MessageType } from './message.interface';
 
 const messageSchema = new Schema<IMessage>(
   {
-    // chatId: {
-    //   type: mongoose.Schema.Types.ObjectId,
-    //   ref: 'Chat',
-    //   required: [true, 'Chat ID is required'],
-
-    // },
+    chatId: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: 'Chat',
+      required: false,
+    },
     senderId: {
       type: mongoose.Schema.Types.ObjectId,
       ref: 'User',

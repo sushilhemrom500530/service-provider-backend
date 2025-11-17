@@ -311,9 +311,10 @@ export const reviewTransport = async (
   }
 
   //  (Optional) Prevent duplicate reviews by the same user
-  const alreadyReviewed = transport?.reviews.some(
-    (review :any) => review?.userId.toString() === isExistsUser._id.toString()
-  ) as boolean;
+  const alreadyReviewed =
+    transport.reviews?.some(
+      (review: any) => review?.userId.toString() === isExistsUser._id.toString()
+    ) || false;
   if (alreadyReviewed) {
     throw new AppError(
       StatusCodes.BAD_REQUEST,
@@ -327,15 +328,22 @@ export const reviewTransport = async (
     rating: payload?.rating,
     comment: payload?.comment,
     createdAt: new Date(),
-  } as IReview || {};
+  } as IReview;
 
-  transport.reviews.push(newReview as IReview);
+  if (!Array.isArray(transport.reviews)) {
+    transport.reviews = [];
+  }
+
+  transport.reviews.push(newReview);
 
   // Recalculate average rating
-  const total = transport?.reviews.reduce((sum :number, r:any) => sum + r.rating, 0);
-  transport.averageRating = parseFloat(
-    (total / transport?.reviews.length || 0).toFixed(1)
+  const total = transport?.reviews.reduce(
+    (sum: number, r: IReview) => sum + (r?.rating || 0),
+    0
   );
+  transport.averageRating = transport?.reviews.length
+    ? parseFloat((total / transport?.reviews.length).toFixed(1))
+    : 0;
 
   // Save updated transport
   await transport.save();

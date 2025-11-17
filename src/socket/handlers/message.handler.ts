@@ -421,7 +421,7 @@ export const searchMessages = async (
 
     const options = { page, limit, sortBy: 'createdAt:desc' };
     const messages = await MessageService.searchMessages(
-      chat?._id as string,
+      chat?._id?.toString() as string,
       searchTerm,
       options
     );

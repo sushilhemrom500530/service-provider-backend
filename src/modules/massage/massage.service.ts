@@ -51,7 +51,7 @@ const getAllMassageFromDB = async (user: JwtPayload, query: any) => {
     }
   }
 
-  const filters = { 
+  const filters = {
     ...search,
     ...categoryFilter,
   };
@@ -87,7 +87,7 @@ const getAllMassageFromDB = async (user: JwtPayload, query: any) => {
     })
   );
 
-  return { 
+  return {
     pagination: {
       total,
       page,
@@ -174,7 +174,7 @@ const getAllMyMassageFromDB = async (user: JwtPayload, query: any) => {
     })
   );
 
-  return { 
+  return {
     pagination: {
       total,
       page,
@@ -198,7 +198,7 @@ const getSingleMassageFromDB = async (id: string, user: JwtPayload) => {
     path: 'owner',
     select: '-isDeleted -agreeTermsCondition -__v -createdAt -updatedAt',
   });
-  if (!massage) throw new AppError(StatusCodes.NOT_FOUND, 'Massage not found.');
+  if (!massage) throw new AppError(StatusCodes.NOT_FOUND, 'Massage data not found.');
 
   // manually populate subcategory
   const categoryDoc = await Category.findOne(
@@ -252,9 +252,10 @@ const addMassageIntoDB = async (req: Request) => {
   }
 
   const subCategoryItems = category?.subCategory || [];
-
-  const exists = subCategoryItems.some(
-    item => item?._id.toString() === req.body?.category.toString()
+  // const exists = subCategoryItems.some(
+  //   item => item?._id.toString() === req.body?.category.toString()
+  const exists = subCategoryItems.some(item =>
+    item?._id ? item._id.toString() === req.body?.category?.toString() : false
   );
 
   if (!exists) {
@@ -276,7 +277,7 @@ const addMassageIntoDB = async (req: Request) => {
 
   const updateData = {
     ...req?.body,
-    owner: isExistsUser?._id as Types.ObjectId, 
+    owner: isExistsUser?._id as Types.ObjectId,
   };
 
   const result = await Massage.create(updateData);
@@ -309,7 +310,7 @@ export const reviewMassage = async (
   // Find the SkiPass product
   const massage = await Massage.findById(id);
   if (!massage) {
-    throw new AppError(StatusCodes.NOT_FOUND, 'Massage not found');
+    throw new AppError(StatusCodes.NOT_FOUND, 'Massage data not found');
   }
 
   //  (Optional) Prevent duplicate reviews by the same user
@@ -330,15 +331,29 @@ export const reviewMassage = async (
     rating: payload?.rating,
     comment: payload?.comment,
     createdAt: new Date(),
-  } || [];
+  } as IReview;
 
-  massage.reviews.push(newReview as IReview);
+  // massage.reviews.push(newReview as IReview);
+  if (!Array.isArray(massage.reviews)) {
+    massage.reviews = [];
+  }
 
-  // Recalculate average rating
-  const total = massage?.reviews.reduce((sum: number, r: IReview) => sum + r?.rating, 0);
+  massage.reviews.push(newReview);
+
+  
+  // total balance
+  // const total = massage?.reviews.reduce((sum: number, r: IReview) => sum + r?.
+  // rating, 0);
+  const total = massage.reviews.reduce(
+    (sum: number, r: IReview) => sum + (r?.rating || 0),
+    0
+  );
+   
+
+ // Recalculate average rating
   massage.averageRating = parseFloat(
-    (total / massage?.reviews.length).toFixed(1)
-  ) || 0;
+    (total / (massage.reviews.length || 1)).toFixed(1)
+  );
 
   // Save updated massage
   await massage.save();
@@ -353,7 +368,7 @@ const updateMassageIntoDB = async (req: Request) => {
   const isExistsMassage = await Massage.findById(id);
 
   if (!isExistsMassage) {
-    throw new AppError(StatusCodes.NOT_FOUND, 'Massage not found.');
+    throw new AppError(StatusCodes.NOT_FOUND, 'Massage data not found.');
   }
 
   // check user
@@ -374,9 +389,11 @@ const updateMassageIntoDB = async (req: Request) => {
     }
 
     const subCategoryItems = isExistsCategory?.subCategory || [];
+    // const brandExists = subCategoryItems.some(
+    //   item => item?._id.toString() === req.body?.category.toString()
 
-    const brandExists = subCategoryItems.some(
-      item => item?._id.toString() === req.body?.category.toString()
+    const brandExists = subCategoryItems.some(item =>
+      item?._id ? item._id.toString() === req.body?.category?.toString() : false
     );
 
     if (!brandExists) {
@@ -416,7 +433,7 @@ const deleteMassageIntoDB = async (id: string, user: JwtPayload) => {
 
   const massage = await Massage.findById(id);
   if (!massage) {
-    throw new AppError(StatusCodes.NOT_FOUND, 'Massage not found.');
+    throw new AppError(StatusCodes.NOT_FOUND, 'Massage data not found.');
   }
 
   if (massage?.owner?.toString() !== isExistsUser?._id.toString()) {

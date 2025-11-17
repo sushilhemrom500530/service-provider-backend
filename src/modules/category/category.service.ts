@@ -42,7 +42,7 @@ const getCategoryById = async (id: string, user: JwtPayload) => {
 };
 
 
-const createCategory = async (req: Request, res: Response) => {
+const createCategory = async (req: Request) => {
   const user = req.user as JwtPayload;
 
   // check user
@@ -56,7 +56,19 @@ const createCategory = async (req: Request, res: Response) => {
 
   const { primaryCategoryName } = req.body;
 
-  const thumbnailFile = req.files?.['thumbnail']?.[0];
+  // Normalize uploaded files structure
+  const uploadedFiles = (req as any).files as
+    | { [fieldname: string]: Express.Multer.File[] }
+    | undefined;
+
+  const thumbnailFile = uploadedFiles?.thumbnail?.[0];
+  if (!thumbnailFile) {
+    throw new AppError(
+      StatusCodes.BAD_REQUEST,
+      'Thumbnail image is required.'
+    );
+  }
+
   const thumbnailUrl = await s3Services.uploadSingleFileToS3(
     thumbnailFile,
     USER_UPLOADS_FOLDER
@@ -76,7 +88,7 @@ const createCategory = async (req: Request, res: Response) => {
     );
   }
 
-  let subCategory: ICategory[] = [];
+  let subCategory: ISubCategory[] = [];
 
   if (typeof req.body?.subCategory === 'string') {
     try {
@@ -92,7 +104,7 @@ const createCategory = async (req: Request, res: Response) => {
   }
 
   //  Upload subCategory images if any
-  const subCategoryFiles = req.files?.['files'] || [];
+  const subCategoryFiles = uploadedFiles?.files || [];
   let processedSubCategory: any[] = [];
 
   if (subCategory.length > 0) {
@@ -187,7 +199,11 @@ const addSubCategory = async (req: Request, res: Response) => {
   }
 
   
-  const subCategoryFiles = req.files?.['files'] || [];
+  const uploadedFiles = (req as any).files as
+    | { [fieldname: string]: Express.Multer.File[] }
+    | undefined;
+
+  const subCategoryFiles = uploadedFiles?.files || [];
   if (subCategoryFiles.length > 0 && subCategory.length !== subCategoryFiles.length) {
     throw new AppError(
       StatusCodes.BAD_REQUEST,
@@ -236,7 +252,10 @@ const updateCategory = async (req: Request, id: string, user: JwtPayload) => {
 
   
   let thumbnailUrl = isExistsCategory.thumbnail;
-  const thumbnailFile = req.files?.['thumbnail']?.[0];
+  const uploadedFiles2 = (req as any).files as
+    | { [fieldname: string]: Express.Multer.File[] }
+    | undefined;
+  const thumbnailFile = uploadedFiles2?.thumbnail?.[0];
   if (thumbnailFile) {
     thumbnailUrl = await s3Services.uploadSingleFileToS3(thumbnailFile, USER_UPLOADS_FOLDER);
   }
@@ -256,10 +275,10 @@ const updateCategory = async (req: Request, id: string, user: JwtPayload) => {
   }
 
   
-  const subCategoryFiles = req.files?.['files'] || [];
+  const subCategoryFiles2 = uploadedFiles2?.files || [];
   const processedSubCategory = await Promise.all(
     subCategory.map(async (item, index) => {
-      const subFile = subCategoryFiles[index];
+      const subFile = subCategoryFiles2[index];
       const categoryPhoto = subFile
         ? await s3Services.uploadSingleFileToS3(subFile, USER_UPLOADS_FOLDER)
         : item.categoryPhoto;
@@ -284,8 +303,8 @@ const updateCategory = async (req: Request, id: string, user: JwtPayload) => {
 
 const deleteCategory = async (
   categoryId: string,
-  subCategoryIds?: string[],
-  user: JwtPayload
+  user: JwtPayload,
+  subCategoryIds?: string[]
 ) => {
   const isExistsUser = await User.findOne({
     email: user?.email,
@@ -305,10 +324,12 @@ const deleteCategory = async (
   }
 
   // If subCategoryIds provided, delete only those
+  const subCategoryList = category.subCategory || [];
+
   if (subCategoryIds && subCategoryIds.length > 0) {
-    const existingIds = category.subCategory
-      .filter(sub => subCategoryIds!.includes(sub._id.toString()))
-      .map(sub => sub._id.toString());
+    const existingIds = subCategoryList
+      .filter(sub => subCategoryIds!.includes(sub._id!.toString()))
+      .map(sub => sub._id!.toString());
 
     if (existingIds.length === 0) {
       throw new AppError(
@@ -328,7 +349,7 @@ const deleteCategory = async (
 
   // If no subCategoryIds provided, delete the whole category
   await Category.findByIdAndDelete(categoryId);
-  return { deletedCount: category.subCategory.length };
+  return { deletedCount: subCategoryList.length };
 };
 
 

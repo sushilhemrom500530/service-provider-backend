@@ -6,7 +6,7 @@ import { s3Services } from './../../aws/s3Service';
 import { User } from './../user/user.model';
 import { JwtPayload } from 'jsonwebtoken';
 import { Booking } from './booking.model';
-import { IBooking, BookingStatus } from './booking.interface';
+import { IBooking, BookingStatus, ProductModelName } from './booking.interface';
 import { SkiPass } from './../skiPass/skipass.model';
 import { SkiHire } from './../skiHire/skihire.model';
 import { Transport } from './../transport/transport.model';
@@ -16,6 +16,7 @@ import { processToPayment } from './../common/common.payment';
 import { Wallet } from './../wallet/wallet.model';
 import { WalletTransactionType } from './../wallet/wallet.interface';
 import { format } from 'date-fns';
+import { IRefund } from '../common/common.interface';
 
 
 
@@ -95,10 +96,11 @@ const getSingleBookingFromDB = async (id: string, user: JwtPayload) => {
     throw new AppError(StatusCodes.NOT_FOUND, 'Booking not found.');
   }
 
-  const product = booking?.product;
+  const product = booking?.product as any;
+  // const product = booking?.product || [];
   const productItems = product?.items || [];
-
-  const enrichedBookingItems = booking?.bookingItems.map((bi: any) => {
+  // const enrichedBookingItems = booking?.bookingItems.map((bi: any) => {
+  const enrichedBookingItems = (booking?.bookingItems || []).map((bi: any) => {
     const matchedItem = productItems.find(
       (itm: any) => itm._id.toString() === bi.itemId.toString()
     ) || null;
@@ -156,11 +158,14 @@ const getMyBooking = async (user: JwtPayload, query: any) => {
 
   // Map and enrich bookings
   let bookingsWithTimeInfo = bookings.map(booking => {
-    const startTime = new Date(booking?.startDateAndTime);
-    const endTime = new Date(booking?.endDateAndTime);
+    // const startTime = new Date(booking?.startDateAndTime);
+    // const endTime = new Date(booking?.endDateAndTime);
+    const startTime = booking?.startDateAndTime ? new Date(booking.startDateAndTime) : undefined;
+    const endTime = booking?.endDateAndTime ? new Date(booking.endDateAndTime) : undefined;
 
     let label: string | undefined;
-    if (['Ski_Hire', 'Transport'].includes(booking?.category)) {
+    // if (['Ski_Hire', 'Transport'].includes(booking?.category)) {
+    if (['Ski_Hire', 'Transport'].includes(booking?.category) && endTime) {
       const now = new Date();
       if (now < endTime) {
         const timeLeft = endTime.getTime() - now.getTime();
@@ -170,8 +175,8 @@ const getMyBooking = async (user: JwtPayload, query: any) => {
         label = `Over Time: ${msToTime(overTime)}`;
       }
     }
-
-    const product = booking.product ? (booking.product.toObject?.() || booking.product) : null;
+    // const product = booking.product ? (booking?.product.toObject?.() || booking?.product) : null;
+    const product = booking.product ? (booking.product as any) : null;
     const productItems = product?.items || [];
 
     const enrichedBookingItems = (booking.bookingItems || []).map((bi: any) => {
@@ -392,8 +397,8 @@ const addBookingIntoDB = async (user: JwtPayload, payload: IBooking) => {
         'This product does not support booking items.'
       );
     }
-
-    for (const bookedItem of payload?.bookingItems) {
+    // for (const bookedItem of payload?.bookingItems) {
+    for (const bookedItem of payload?.bookingItems ?? []) {
       const foundItem = product?.items.find(
         (menuItem: any) => menuItem?._id.toString() === bookedItem?.itemId
       );
@@ -442,7 +447,7 @@ const addBookingIntoDB = async (user: JwtPayload, payload: IBooking) => {
   }
 
   // Determine productModel
-  let productModel: string;
+  let productModel: ProductModelName;
   switch (productOwner?.providerType) {
     case 'Ski_Pass':
       productModel = 'SkiPass';
@@ -524,16 +529,25 @@ const addBookingIntoDB = async (user: JwtPayload, payload: IBooking) => {
       throw new AppError(StatusCodes.NOT_FOUND, 'Ski Hire product not found.');
 
     const updatedItems = skiHire.items.map(item => {
-      const booked = bookingItems.find(b => b.itemId.toString() === item._id.toString());
+      // const booked = bookingItems.find(b => b.itemId.toString() === item?._id.toString());
+      const itemIdStr = (item as any)?._id?.toString();
+      const booked = bookingItems.find(
+        b => itemIdStr && b.itemId.toString() === itemIdStr
+      );
       if (booked) {
-        if (item.availableQty < booked.quantity)
+        // if (item?.availableQty < booked.quantity)
+        const availableQty = item?.availableQty ?? 0;
+        if (availableQty < booked.quantity)
           throw new AppError(
             StatusCodes.BAD_REQUEST,
-            `Insufficient quantity for ${item.productName}. Available: ${item.availableQty}`
+            `Insufficient quantity for ${item.productName}. Available: ${availableQty}`
           );
+        const itemObj = (item as any)?.toObject?.() ?? item;
         return {
-          ...item.toObject(),
-          availableQty: item.availableQty - booked.quantity,
+          // ...item.toObject(),
+          // availableQty: item?.availableQty - booked.quantity,
+          ...itemObj,
+          availableQty: availableQty - booked?.quantity,
         };
       }
       return item;
@@ -600,11 +614,11 @@ const addBookingIntoDB = async (user: JwtPayload, payload: IBooking) => {
     );
   // Process to payment
   const paymentRequest = await processToPayment({
-    bookingId: result?._id,
-    userId: isExistsUser?._id,
+    bookingId: result?._id as string,
+    userId: isExistsUser?._id?.toString(),
     amount: result.totalPrice,
     category: result?.category,
-    ownerId: productOwner?._id,
+    ownerId: productOwner?._id?.toString(),
   });
 
   return paymentRequest;
@@ -629,15 +643,12 @@ const updateBookingIntoDB = async (
   if (!existsBooking) {
     throw new AppError(StatusCodes.NOT_FOUND, 'Booking not found.');
   }
-
-  const ownerId = existsBooking.product?.owner?.toString();
+  // const ownerId = existsBooking.product?.owner?.toString();
+  const productDoc = existsBooking.product as any;
+  const ownerId = productDoc?.owner?.toString?.();
  
 
-  // ------------------------------------------
-  // ALLOWED:
-  // 1. Admin can update everything
-  // 2. Owner can update only own bookings
-  // ------------------------------------------ 
+  // allow condition 
 if (user.role !== "Admin" && ownerId !== isExistsUser?._id.toString()) {
   throw new AppError(
     StatusCodes.FORBIDDEN,
@@ -679,8 +690,11 @@ const updatePermitBookingIntoDB = async (
   }
 
   // Check ownership
-  const owner = existsBooking?.product?.owner;
-  if (owner?.toString() !== isExistsUser._id.toString()) {
+  // const owner = existsBooking?.product?.owner;
+  // if (owner?.toString() !== isExistsUser._id.toString()) {
+  const productDoc = existsBooking.product as any;
+  const owner = productDoc?.owner;
+  if (owner?.toString?.() !== isExistsUser._id.toString()) {
     throw new AppError(
       StatusCodes.FORBIDDEN,
       'You are not the owner of this product. Cannot update booking status.'
@@ -763,7 +777,7 @@ const refundBookingIntoDB = async (
 
   // Prevent duplicate refunds
   const alreadyRefunded = product.refunds?.some(
-    (refund: IReview) =>
+    (refund: IRefund) =>
       refund.userId.toString() === isExistsUser._id.toString()
   );
 
@@ -775,11 +789,11 @@ const refundBookingIntoDB = async (
   }
 
   // Add refund info
-  const newRefund: IReview = {
+  const newRefund= {
     userId: isExistsUser._id,
     reason: payload.reason,
     createdAt: new Date(),
-  } as IReview;
+  } as IRefund;
 
   if (!product.refunds) product.refunds = [];
   product.refunds.push(newRefund);

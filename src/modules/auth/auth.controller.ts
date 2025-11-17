@@ -5,15 +5,16 @@ import { config } from '../../config';
 import moment from 'moment';
 import bcrypt from 'bcrypt';
 import { User } from '../user/user.model';
-import { AuthMethod, IUser, UserStatus } from '../user/user.interface';
+import { IUser, UserStatus } from '../user/user.interface';
 import AppError from '../../errors/AppErro';
 import { TokenService } from '../token/token.services';
 import { AuthService } from './auth.services';
 import { OtpService } from '../otp/otp.services';
-import { SocialAuthService } from './socialAuth.services';
+// import { SocialAuthService } from './socialAuth.services';
 import { s3Services } from './../../aws/s3Service';
 import { Request, Response } from 'express'; 
-import { USER_UPLOAD_FOLDER } from './../user/user.constant';
+import { JwtPayload } from 'jsonwebtoken';
+import { CustomJwtPayload } from '../../types';
 
 // Moved validateUserStatus to AuthService to avoid circular dependency
 const validateUserStatus = (user: IUser) => {
@@ -55,7 +56,11 @@ const register = catchAsync(async (req: Request, res: Response) => {
 });
 
 const updateProfile = catchAsync(async (req: Request, res: Response) => {
-  const { email } = req.user; // if JWT middleware populates req.user
+  // Fix: Use optional chaining and type assertion to ensure req.user has email property
+  const email = (req.user as CustomJwtPayload)?.email;
+  if (!email) {
+    throw new AppError(StatusCodes.UNAUTHORIZED, 'User not authenticated');
+  }
   const result = await AuthService.updateUserProfile(email, req.body);
 
   sendResponse(res, {

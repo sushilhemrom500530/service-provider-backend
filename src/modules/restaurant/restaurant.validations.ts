@@ -40,7 +40,7 @@ const categoryItemDetailSchema = z.object({
   description: z.string().optional(),
 });
 
- 
+
 // Main Restaurant Validation
 export const createRestaurant = z.object({
   body: z.object({
@@ -75,7 +75,8 @@ export const createRestaurant = z.object({
       .string({
         required_error: "Food type is required",
       })
-      .min(1, "Food type cannot be empty"),
+      .min(1, "Food type cannot be empty")
+      .optional(),
 
     items: z
       .array(categoryItemDetailSchema, {
@@ -96,13 +97,13 @@ export const createRestaurant = z.object({
         invalid_type_error: "Slots must be an array",
       })
       .nonempty("At least one slot is required"),
-   
+
   }),
 });
 
 
 const updateRestaurant = z.object({
-   body: z.object({
+  body: z.object({
     title: z.string().min(1, "Title cannot be empty").optional(),
     thumbnail: z.string().url("Thumbnail must be a valid URL").optional(),
     category: z.string().min(1, "Category ID cannot be empty").optional(),
@@ -114,7 +115,7 @@ const updateRestaurant = z.object({
     status: z.enum(["Open", "Closed"]).optional(),
     items: z.array(categoryItemDetailSchema).optional(),
     description: z.string().optional(),
-    slots: z.array(slotSchema).optional(), 
+    slots: z.array(slotSchema).optional(),
   }),
 });
 
