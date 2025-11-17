@@ -8,18 +8,20 @@ const NotificationSchema: Schema = new Schema(
       ref: "User",
       required: true,
     },
-    receiverIds: [
+    receiverId:
       {
         type: Schema.Types.ObjectId,
         ref: "User",
       },
-    ],
     title: {
       type: String,
     },
     description: {
       type: String,
     },
+    type: {
+      type: String,
+    }
     isRead: {
       type: Boolean,
       default: false,

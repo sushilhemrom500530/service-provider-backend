@@ -5,6 +5,7 @@ import { updateOrCreateWallet } from './../wallet/wallet.service';
 import { Types } from 'mongoose';
 import { Payment } from './../payment/payment.model';
 import { Booking } from './../booking/booking.model';
+import { Notification } from './../notification/notification.model';
 import {
   TransactionStatus,
   PaymentGateway,
@@ -75,6 +76,27 @@ export const processToPayment = async (payload: IProcessPaymentPayload) => {
     };
     // create payment
     await Payment.create(paymentPayload);
+
+    // create for provider notification
+     await Notification.create({
+       title: 'Payment Success',
+       description: 'Your payment was successful.',
+       receiverId: ownerId,
+       type: 'payment',
+       isRead: false,
+       senderId: userId, 
+     })
+
+    // create for provider notification
+     await Notification.create({
+       title: 'Booking Success',
+       description: 'Your booking was successful.',
+       receiverId: userId,
+       type: 'payment',
+       isRead: false,
+       senderId: ownerId, 
+     })
+
 
     // update booking status
       await Booking.findByIdAndUpdate(bookingId, {

@@ -54,6 +54,93 @@ const getAllRestaurantFromDB = async (user: JwtPayload, query: any) => {
   }
 
   const filters = {
+    ...search,
+    ...categoryFilter,
+  };
+
+  // Total after filters
+  const total = await Restaurant.countDocuments(filters);
+
+  // Fetch paginated restaurant data
+  const restaurantList = await Restaurant.find(filters)
+    .skip(skip)
+    .limit(limit)
+    .populate({
+      path: "owner",
+      select: "-isDeleted -agreeTermsCondition -__v -createdAt -updatedAt",
+    })
+    .sort({ createdAt: -1 });
+
+  // Attach category data (kept exactly as your logic)
+  const result = await Promise.all(
+    restaurantList.map(async (item) => {
+      const categoryDoc = await Category.findOne(
+        {
+          primaryCategoryName: "Restaurant",
+          "subCategory._id": item.category,
+        },
+        { "subCategory.$": 1 }
+      );
+
+      return {
+        ...item.toObject(),
+        category: categoryDoc?.subCategory?.[0] || null,
+      };
+    })
+  );
+
+  return {
+    pagination: {
+      total,
+      page,
+      limit,
+      totalPages: Math.ceil(total / limit),
+    },
+    result,
+  };
+};
+
+
+const getAllMyRestaurantFromDB = async (user: JwtPayload, query: any) => {
+  const isExistsUser = await User.findOne({ email: user?.email });
+  if (!isExistsUser) {
+    throw new AppError(StatusCodes.NOT_FOUND, 'User not found.');
+  }
+
+  // Pagination
+  const page = Number(query.page) || 1;
+  const limit = Number(query.limit) || 10;
+  const skip = (page - 1) * limit;
+
+  // Search filter
+  const search = query.search
+    ? { title: { $regex: query.search, $options: "i" } }
+    : {};
+
+  // Category filter
+  let categoryFilter = {};
+  if (query.category) {
+    const categories = await Category.find(
+      {
+        primaryCategoryName: "Restaurant",
+        "subCategory.name": { $regex: query.category, $options: "i" },
+      },
+      { "subCategory.$": 1 }
+    );
+
+    const categoryIds = categories.map((c) => c.subCategory?.[0]?._id);
+
+    if (categoryIds.length > 0) {
+      categoryFilter = { category: { $in: categoryIds } };
+    } else {
+      return {
+        data: [],
+        pagination: { total: 0, page, limit, totalPages: 0 },
+      };
+    }
+  }
+
+  const filters = {
     owner: isExistsUser._id,
     ...search,
     ...categoryFilter,
@@ -428,6 +515,7 @@ const deleteRestaurantIntoDB = async (id: string, user: JwtPayload) => {
 
 export const RestaurantService = {
   getAllRestaurantFromDB,
+  getAllMyRestaurantFromDB,
   addRestaurantIntoDB,
   reviewRestaurant,
   getSingleRestaurantFromDB,

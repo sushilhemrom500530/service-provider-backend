@@ -152,8 +152,15 @@ const addSubCategory = async (req: Request, res: Response) => {
   if (!isExistsCategory) {
     throw new AppError(StatusCodes.NOT_FOUND, 'Category not found.');
   }
+   if(isExistsCategory.primaryCategoryName === "Ski_Pass"){
+    throw new AppError(
+      StatusCodes.BAD_REQUEST,
+      'The "Ski_Pass" category cannot be created or updated.'
+    );
+   }
 
   let subCategory: ISubCategory[] = [];
+  
   if (req.body.subCategory) {
     if (typeof req.body.subCategory === 'string') {
       try {

@@ -51,6 +51,89 @@ const getAllTransportFromDB = async (user: JwtPayload, query: any) => {
     }
   }
 
+  const filters = { 
+    ...search,
+    ...categoryFilter,
+  };
+
+  // Total count after filters
+  const total = await Transport.countDocuments(filters);
+
+  // Fetch paginated data
+  const transportList = await Transport.find(filters)
+    .skip(skip)
+    .limit(limit)
+    .sort({ createdAt: -1 });
+
+  // Attach category data (your original logic)
+  const result = await Promise.all(
+    transportList.map(async (item) => {
+      const categoryDoc = await Category.findOne(
+        {
+          primaryCategoryName: "Transport",
+          "subCategory._id": item.category,
+        },
+        { "subCategory.$": 1 }
+      );
+
+      return {
+        ...item.toObject(),
+        category: categoryDoc?.subCategory?.[0] || null,
+      };
+    })
+  );
+
+  return { 
+    pagination: {
+      total,
+      page,
+      limit,
+      totalPages: Math.ceil(total / limit),
+    },
+    result,
+  };
+};
+
+
+const getAllMyTransportFromDB = async (user: JwtPayload, query: any) => {
+  const isExistsUser = await User.findOne({ email: user?.email });
+  if (!isExistsUser) {
+    throw new AppError(StatusCodes.NOT_FOUND, 'User not found.');
+  }
+
+  // Pagination
+  const page = Number(query.page) || 1;
+  const limit = Number(query.limit) || 10;
+  const skip = (page - 1) * limit;
+
+  // filter
+  const search = query.search
+    ? { title: { $regex: query.search, $options: "i" } }
+    : {};
+
+  // Category filter
+  let categoryFilter = {};
+  if (query.category) {
+    const categories = await Category.find(
+      {
+        primaryCategoryName: "Transport",
+        "subCategory.name": { $regex: query.category, $options: "i" },
+      },
+      { "subCategory.$": 1 }
+    );
+
+    const categoryIds = categories.map(c => c.subCategory?.[0]?._id);
+
+    if (categoryIds.length > 0) {
+      categoryFilter = { category: { $in: categoryIds } };
+    } else {
+      return {
+        data: [],
+        pagination: { total: 0, page, limit, totalPages: 0 },
+      };
+    }
+  }
+
   const filters = {
     owner: isExistsUser._id,
     ...search,
@@ -356,6 +439,7 @@ const deleteTransportIntoDB = async (id: string, user: JwtPayload) => {
 
 export const TransportService = {
   getAllTransportFromDB,
+  getAllMyTransportFromDB,
   addTransportIntoDB,
   reviewTransport,
   getSingleTransportFromDB,

@@ -49,6 +49,84 @@ const getAllSkiHireFromDB = async (user: JwtPayload, query: any) => {
   }
 
   const filters = {
+    ...search,
+    ...categoryFilter,
+  };
+
+  // Total count
+  const total = await SkiHire.countDocuments(filters);
+
+  // Fetch paginated data
+  const skiHireList = await SkiHire.find(filters)
+    .skip(skip)
+    .limit(limit)
+    .populate({
+      path: "owner",
+      select: "-isDeleted -agreeTermsCondition -__v -createdAt -updatedAt",
+    });
+
+  // Attach matched category (your original logic)
+  const result = await Promise.all(
+    skiHireList.map(async (item) => {
+      const categoryDoc = await Category.findOne(
+        { primaryCategoryName: "Ski_Hire", "subCategory._id": item.category },
+        { "subCategory.$": 1 }
+      );
+      return {
+        ...item.toObject(),
+        category: categoryDoc?.subCategory?.[0] || null,
+      };
+    })
+  );
+
+  return { 
+    pagination: {
+      total,
+      page,
+      limit,
+      totalPages: Math.ceil(total / limit),
+    },
+    result,
+  };
+};
+
+const getAllMySkiHireFromDB = async (user: JwtPayload, query: any) => {
+  const isExistsUser = await User.findOne({ email: user?.email });
+  if (!isExistsUser) {
+    throw new AppError(StatusCodes.NOT_FOUND, 'User not found.');
+  }
+
+  // Pagination
+  const page = Number(query.page) || 1;
+  const limit = Number(query.limit) || 10;
+  const skip = (page - 1) * limit;
+
+  // Search filter
+  const search = query.search ? { title: { $regex: query.search, $options: "i" } } : {};
+
+  // Category filter
+  let categoryFilter = {};
+  if (query.category) {
+    const categories = await Category.find(
+      {
+        primaryCategoryName: "Ski_Hire",
+        "subCategory.name": { $regex: query.category, $options: "i" },
+      },
+      { "subCategory.$": 1 }
+    );
+
+    const categoryIds = categories.map(c => c.subCategory?.[0]?._id);
+    if (categoryIds.length > 0) {
+      categoryFilter = { category: { $in: categoryIds } };
+    } else {
+      return {
+        data: [],
+        pagination: { total: 0, page, limit, totalPages: 0 },
+      };
+    }
+  }
+
+  const filters = {
     owner: isExistsUser._id,
     ...search,
     ...categoryFilter,
@@ -446,6 +524,7 @@ const deleteSkiHireIntoDB = async (id: string, user: JwtPayload) => {
 
 export const SkiHireService = {
   getAllSkiHireFromDB,
+  getAllMySkiHireFromDB,
   getSingleSkiHireFromDB,
   addSkiHireIntoDB,
   reviewSkiHire,
