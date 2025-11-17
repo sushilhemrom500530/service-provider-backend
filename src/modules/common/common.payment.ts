@@ -78,14 +78,14 @@ export const processToPayment = async (payload: IProcessPaymentPayload) => {
     await Payment.create(paymentPayload);
 
     // create for provider notification
-     await Notification.create({
-       title: 'Payment Success',
-       description: 'Your payment was successful.',
-       receiverId: ownerId,
-       type: 'payment',
-       isRead: false,
-       senderId: userId, 
-     })
+    await Notification.create({
+      title: 'Payment Success',
+      description: 'Your payment was successful.',
+      receiverId: ownerId,
+      type: 'payment',
+      isRead: false,
+      senderId: userId, 
+    })
 
     // create for provider notification
      await Notification.create({
@@ -95,7 +95,7 @@ export const processToPayment = async (payload: IProcessPaymentPayload) => {
        type: 'payment',
        isRead: false,
        senderId: ownerId, 
-     })
+     });
 
 
     // update booking status

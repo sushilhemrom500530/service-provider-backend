@@ -21,7 +21,7 @@ const NotificationSchema: Schema = new Schema(
     },
     type: {
       type: String,
-    }
+    },
     isRead: {
       type: Boolean,
       default: false,

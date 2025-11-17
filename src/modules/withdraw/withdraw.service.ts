@@ -10,74 +10,8 @@ import { JwtPayload } from 'jsonwebtoken';
 import {WalletTransactionType} from './../wallet/wallet.interface'
 import { Withdraw } from './withdraw.model';
 import { IWithdraw } from './withdraw.inteface';
-
-// export const updateOrCreateWallet = async (
-//   ownerId: string, // provider
-//   senderId: string, // customer
-//   amount: number
-// ) => {
-//   // Find admin user
-//   const admin = await User.findOne({ role: 'Admin' });
-//   if (!admin) {
-//     throw new AppError('Admin user not found', StatusCodes.NOT_FOUND);
-//   }
-
-//   //  Update or create admin wallet
-//   let adminWallet = await Wallet.findOne({ user: admin._id });
-
-//   if (!adminWallet) {
-//     adminWallet = await Wallet.create({
-//       user: admin._id,
-//       balance: amount,
-//       transactions: [
-//         {
-//           user: new Types.ObjectId(senderId),
-//           balance: amount,
-//           type: 'Earn',
-//           createdAt: new Date(),
-//         },
-//       ],
-//     });
-//   } else {
-//     adminWallet.balance += amount;
-//     adminWallet.transactions.push({
-//       user: new Types.ObjectId(senderId),
-//       balance: amount,
-//       type: 'Earn',
-//       createdAt: new Date(),
-//     });
-//     await adminWallet.save();
-//   }
-
-//   // Update or create provider wallet
-//   let providerWallet = await Wallet.findOne({ user: ownerId });
-
-//   if (!providerWallet) {
-//     providerWallet = await Wallet.create({
-//       user: new Types.ObjectId(ownerId),
-//       balance: amount,
-//       transactions: [
-//         {
-//           user: new Types.ObjectId(senderId),
-//           balance: amount,
-//           type: 'Earn',
-//           createdAt: new Date(),
-//         },
-//       ],
-//     });
-//   } else {
-//     providerWallet.balance += amount;
-//     providerWallet.transactions.push({
-//       user: new Types.ObjectId(senderId),
-//       balance: amount,
-//       type: 'Earn',
-//       createdAt: new Date(),
-//     });
-//     await providerWallet.save();
-//   }
-
-//   return { adminWallet, providerWallet };
-// };
+import { Notification } from './../notification/notification.model';
+ 
 
 const getAllFromDB = async (query: any) => {
   const page = Number(query.page) || 1;
@@ -170,6 +104,12 @@ const sendWithdrawRequest = async (
       'Only providers can withdraw funds'
     );
 
+    const adminUser = await User.findOne({ role: 'Admin' });
+    if (!adminUser) {
+      throw new AppError(StatusCodes.NOT_FOUND, 'Admin user not found');
+    }
+    const ownerId = adminUser?._id || '';
+
   const wallet = await Wallet.findOne({ user: isExistsUser._id });
   if (!wallet) throw new AppError(StatusCodes.NOT_FOUND, 'Wallet not found');
 
@@ -192,6 +132,16 @@ const sendWithdrawRequest = async (
     transactionId: generateTransactionId('WD'),
     profitCharge: wallet?.profitCharge || 0,
   };
+  // create notification
+     await Notification.create({
+       title: 'Withdrawal Request',
+       description: 'You have a new withdrawal request',
+       receiverId: ownerId,
+       type: 'withdrawal',
+       isRead: false,
+       senderId: isExistsUser?._id, 
+     })
+
   const result = await Withdraw.create(withdrawData);
   return result;
 };
@@ -260,6 +210,16 @@ const acceptWithdrawRequest = async (user: JwtPayload, withdrawId: string) => {
  
   withdraw.status = 'Paid'; 
   await withdraw.save();
+
+   // create notification
+     await Notification.create({
+       title: 'Accepted Withdrawal Request',
+       description: 'Your withdrawal request has been accepted',
+       receiverId: providerWallet?.user,
+       type: 'withdrawal',
+       isRead: false,
+       senderId: isExistsAdmin?._id, 
+     })
 
   return withdraw;
 };
