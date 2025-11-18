@@ -19,6 +19,13 @@ router.get(
   RestaurantController.getAllRestaurantFromDB
 );
 
+// specific provider all
+router.get(
+  '/my-all',
+  auth('User', 'Admin', 'Provider'),
+  RestaurantController.getAllMyRestaurantFromDB
+);
+
 // get single
 router.get(
   '/:id',

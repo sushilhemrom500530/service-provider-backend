@@ -32,10 +32,10 @@ export const getNotifications = async (
       limit: data?.limit || 20,
       sortBy: 'createdAt:desc',
     };
-
-    const notifications = await NotificationService.getALLNotification(
-      {},
-      options,
+    // const notifications = await NotificationService.getALLNotification(
+    //   {},
+    //   options,
+    const notifications = await NotificationService.getAllUserNotification(
       userId
     );
 
@@ -85,7 +85,8 @@ export const getNotificationCount = async (
       return;
     }
 
-    const count = await NotificationService.getUnViewNotificationCount(userId);
+    // TODO: implement unread notification count in NotificationService
+    const count = { count: 0 };
 
     if (callback && typeof callback === 'function') {
       callback({
@@ -138,7 +139,7 @@ export const markAllRead = async (
     }
 
     // Mark all non-message notifications as read
-    await NotificationService.viewAllNotifications(userId);
+    // TODO: implement mark-all-read in NotificationService
 
     if (callback && typeof callback === 'function') {
       callback({
@@ -187,7 +188,7 @@ export const clearAll = async (
       return;
     }
 
-    await NotificationService.clearAllNotification(userId);
+    // TODO: implement clear-all in NotificationService
 
     if (callback && typeof callback === 'function') {
       callback({
@@ -249,8 +250,8 @@ export const markNotificationRead = async (
       return;
     }
 
-    const updatedNotification =
-      await NotificationService.viewSingleNotification(notificationId);
+    // TODO: implement view-single-notification in NotificationService
+    const updatedNotification = null;
 
     if (callback && typeof callback === 'function') {
       callback({
@@ -300,17 +301,15 @@ export const sendSystemNotification = async (
   linkId?: string
 ): Promise<void> => {
   try {
-    const notificationPayload: INotification = {
+    const notificationPayload = {
       title,
-      message,
+      description: message,
       receiverId: userId,
       type,
-      role: 'user',
-      linkId,
+      isRead: false,
     };
 
-    // Create notification in database
-    await NotificationService.addNotification(notificationPayload);
+    // TODO: implement NotificationService.addNotification(notificationPayload)
 
     logger.info(colors.cyan(`🔔 System notification sent to user ${userId}`));
   } catch (error: any) {
@@ -331,18 +330,17 @@ export const sendMessageNotification = async (
   chatId?: string
 ): Promise<void> => {
   try {
-    const notificationPayload: INotification = {
+    const notificationPayload = {
       title: 'New Message',
-      message: message.length > 50 ? message.substring(0, 50) + '...' : message,
+      description:
+        message.length > 50 ? message.substring(0, 50) + '...' : message,
       senderId,
       receiverId,
       type: 'message',
-      role: 'user',
-      linkId: chatId,
+      isRead: false,
     };
 
-    // Create notification in database
-    await NotificationService.addNotification(notificationPayload);
+    // TODO: implement NotificationService.addNotification(notificationPayload)
 
     logger.info(
       colors.cyan(

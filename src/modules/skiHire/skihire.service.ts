@@ -49,6 +49,84 @@ const getAllSkiHireFromDB = async (user: JwtPayload, query: any) => {
   }
 
   const filters = {
+    ...search,
+    ...categoryFilter,
+  };
+
+  // Total count
+  const total = await SkiHire.countDocuments(filters);
+
+  // Fetch paginated data
+  const skiHireList = await SkiHire.find(filters)
+    .skip(skip)
+    .limit(limit)
+    .populate({
+      path: "owner",
+      select: "-isDeleted -agreeTermsCondition -__v -createdAt -updatedAt",
+    });
+
+  // Attach matched category (your original logic)
+  const result = await Promise.all(
+    skiHireList.map(async (item) => {
+      const categoryDoc = await Category.findOne(
+        { primaryCategoryName: "Ski_Hire", "subCategory._id": item.category },
+        { "subCategory.$": 1 }
+      );
+      return {
+        ...item.toObject(),
+        category: categoryDoc?.subCategory?.[0] || null,
+      };
+    })
+  );
+
+  return { 
+    pagination: {
+      total,
+      page,
+      limit,
+      totalPages: Math.ceil(total / limit),
+    },
+    result,
+  };
+};
+
+const getAllMySkiHireFromDB = async (user: JwtPayload, query: any) => {
+  const isExistsUser = await User.findOne({ email: user?.email });
+  if (!isExistsUser) {
+    throw new AppError(StatusCodes.NOT_FOUND, 'User not found.');
+  }
+
+  // Pagination
+  const page = Number(query.page) || 1;
+  const limit = Number(query.limit) || 10;
+  const skip = (page - 1) * limit;
+
+  // Search filter
+  const search = query.search ? { title: { $regex: query.search, $options: "i" } } : {};
+
+  // Category filter
+  let categoryFilter = {};
+  if (query.category) {
+    const categories = await Category.find(
+      {
+        primaryCategoryName: "Ski_Hire",
+        "subCategory.name": { $regex: query.category, $options: "i" },
+      },
+      { "subCategory.$": 1 }
+    );
+
+    const categoryIds = categories.map(c => c.subCategory?.[0]?._id);
+    if (categoryIds.length > 0) {
+      categoryFilter = { category: { $in: categoryIds } };
+    } else {
+      return {
+        data: [],
+        pagination: { total: 0, page, limit, totalPages: 0 },
+      };
+    }
+  }
+
+  const filters = {
     owner: isExistsUser._id,
     ...search,
     ...categoryFilter,
@@ -107,7 +185,7 @@ const getSingleSkiHireFromDB = async (id: string, user: JwtPayload) => {
     select: '-isDeleted -agreeTermsCondition -__v -createdAt -updatedAt',
   });
   if (!skiHire)
-    throw new AppError(StatusCodes.NOT_FOUND, 'Ski Hire not found.');
+    throw new AppError(StatusCodes.NOT_FOUND, 'Ski Hire data not found.');
 
   // manually populate subcategory
   const categoryDoc = await Category.findOne(
@@ -160,7 +238,7 @@ const addSkiHireIntoDB = async (req: Request) => {
   const subCategoryItems = category?.subCategory || [];
 
   const exists = subCategoryItems.some(
-    (item: any) => item?._id.toString() === categoryId
+    (item: any) => item?._id?.toString() === categoryId?.toString()
   );
 
   if (!exists) {
@@ -170,7 +248,11 @@ const addSkiHireIntoDB = async (req: Request) => {
     );
   }
 
-  const thumbnailFile : any = req.files?.['thumbnail']?.[0];
+  const uploadedFiles = (req as any).files as
+    | { [fieldname: string]: any[] }
+    | undefined;
+
+  const thumbnailFile: any = uploadedFiles?.thumbnail?.[0];
   if (!thumbnailFile) {
     throw new AppError(StatusCodes.BAD_REQUEST, 'Thumbnail file not found.');
   }
@@ -195,7 +277,7 @@ const addSkiHireIntoDB = async (req: Request) => {
   }
 
   //  Upload product item images
-  const productItemFiles: any = req.files?.['images'] || [];
+  const productItemFiles: any[] = uploadedFiles?.images || [];
 
   const processedProductItems = await Promise.all(
     productItems.map(async (item: any, index: number) => {
@@ -267,13 +349,14 @@ export const reviewSkiHire = async (
   // Find the SkiPass product
   const skiHire = await SkiHire.findById(id);
   if (!skiHire) {
-    throw new AppError(StatusCodes.NOT_FOUND, 'Ski Hire not found');
+    throw new AppError(StatusCodes.NOT_FOUND, 'Ski Hire data not found');
   }
 
   //  (Optional) Prevent duplicate reviews by the same user
-  const alreadyReviewed = skiHire?.reviews.some(
-    review => review.userId.toString() === isExistsUser._id.toString()
-  ) as boolean;
+  const alreadyReviewed =
+    skiHire.reviews?.some(
+      review => review.userId.toString() === isExistsUser._id.toString()
+    ) || false;
   if (alreadyReviewed) {
     throw new AppError(
       StatusCodes.BAD_REQUEST,
@@ -289,13 +372,20 @@ export const reviewSkiHire = async (
     createdAt: new Date(),
   };
 
+  if (!Array.isArray(skiHire.reviews)) {
+    skiHire.reviews = [];
+  }
+
   skiHire.reviews.push(newReview as IReview);
 
   // Recalculate average rating
-  const total : number = skiHire?.reviews.reduce((sum: number, r: IReview) => sum + r.rating, 0);
-  skiHire?.averageRating = parseFloat(
-    (total / skiHire?.reviews.length|| 0).toFixed(1)
-  ) || 0;
+  const total: number = skiHire.reviews.reduce(
+    (sum: number, r: IReview) => sum + (r.rating || 0),
+    0
+  );
+  skiHire.averageRating = skiHire.reviews.length
+    ? parseFloat((total / skiHire.reviews.length).toFixed(1))
+    : 0;
 
   // Save updated skiHire
   await skiHire.save();
@@ -310,7 +400,7 @@ const updateSkiHireIntoDB = async (req: Request) => {
   // Check if ski hire exists
   const isExistsSkiHire = await SkiHire.findById(id);
   if (!isExistsSkiHire) {
-    throw new AppError(StatusCodes.NOT_FOUND, 'Ski Hire not found.');
+    throw new AppError(StatusCodes.NOT_FOUND, 'Ski Hire data not found.');
   }
 
   // Verify user
@@ -333,8 +423,12 @@ const updateSkiHireIntoDB = async (req: Request) => {
     );
   }
 
-  if (req.files?.['thumbnail']?.[0]) {
-    const thumbnailFile : any = req.files['thumbnail'][0];
+  const uploadedFilesUpdate = (req as any).files as
+    | { [fieldname: string]: any[] }
+    | undefined;
+
+  if (uploadedFilesUpdate?.thumbnail?.[0]) {
+    const thumbnailFile: any = uploadedFilesUpdate.thumbnail[0];
     const thumbnailUrl = await s3Services.uploadSingleFileToS3(
       thumbnailFile,
       USER_UPLOADS_FOLDER
@@ -356,7 +450,7 @@ const updateSkiHireIntoDB = async (req: Request) => {
       );
     }
 
-    const existingLength = isExistsSkiHire?.productItems.length;
+    const existingLength = isExistsSkiHire.items.length;
 
     if (productItems.length !== existingLength) {
       throw new AppError(
@@ -365,7 +459,7 @@ const updateSkiHireIntoDB = async (req: Request) => {
       );
     }
 
-    const productItemFiles : any = req.files?.['images'] || [];
+    const productItemFiles: any[] = uploadedFilesUpdate?.images || [];
 
     const processedProductItems = await Promise.all(
       productItems.map(async (item: any, index: number) => {
@@ -430,7 +524,7 @@ const deleteSkiHireIntoDB = async (id: string, user: JwtPayload) => {
 
   const skiHire = await SkiHire.findById(id);
   if (!skiHire) {
-    throw new AppError(StatusCodes.NOT_FOUND, 'Ski Hire not found.');
+    throw new AppError(StatusCodes.NOT_FOUND, 'Ski Hire data not found.');
   }
 
   if (skiHire?.owner.toString() !== isExistsUser?._id.toString()) {
@@ -446,6 +540,7 @@ const deleteSkiHireIntoDB = async (id: string, user: JwtPayload) => {
 
 export const SkiHireService = {
   getAllSkiHireFromDB,
+  getAllMySkiHireFromDB,
   getSingleSkiHireFromDB,
   addSkiHireIntoDB,
   reviewSkiHire,

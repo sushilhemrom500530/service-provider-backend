@@ -1,6 +1,6 @@
 import { StatusCodes } from 'http-status-codes';
 import AppError from '../../errors/AppErro';
-import { IUser, UserStatus, IUpdateData } from './user.interface';
+import { IUser, UserStatus, IUpdateData, UserModel } from './user.interface';
 import { User } from './user.model';
 import { IPaginationOptions, IPaginationResult } from '../../types/pagination';
 import { JwtPayload } from 'jsonwebtoken'; 
@@ -34,7 +34,7 @@ const getAllUsers = async (
   options.sortBy = options.sortBy || 'createdAt';
   options.select = '-password -__v';
 
-  const result = await User.paginate(query, options);
+  const result = await (User as UserModel).paginate(query, options);
   return result;
 };
 

@@ -25,7 +25,7 @@ const getAllChatsByUserId = async (
 
     if (!user) {
       return {
-        data: [],
+        results: [],
         pagination: {
           page: 0,
           limit: 0,

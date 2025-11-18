@@ -5,15 +5,16 @@ import { config } from '../../config';
 import moment from 'moment';
 import bcrypt from 'bcrypt';
 import { User } from '../user/user.model';
-import { AuthMethod, IUser, UserStatus } from '../user/user.interface';
+import { IUser, UserStatus } from '../user/user.interface';
 import AppError from '../../errors/AppErro';
 import { TokenService } from '../token/token.services';
 import { AuthService } from './auth.services';
 import { OtpService } from '../otp/otp.services';
-import { SocialAuthService } from './socialAuth.services';
+// import { SocialAuthService } from './socialAuth.services';
 import { s3Services } from './../../aws/s3Service';
-import { Request, Response } from 'express'; 
-import { USER_UPLOAD_FOLDER } from './../user/user.constant';
+import { Request, Response } from 'express';
+import { JwtPayload } from 'jsonwebtoken';
+import { CustomJwtPayload } from '../../types';
 
 // Moved validateUserStatus to AuthService to avoid circular dependency
 const validateUserStatus = (user: IUser) => {
@@ -29,7 +30,6 @@ const validateUserStatus = (user: IUser) => {
     throw new AppError(StatusCodes.BAD_REQUEST, 'User account is deleted.');
   }
 };
-
 
 const register = catchAsync(async (req: Request, res: Response) => {
   //  if (req.file) {
@@ -55,7 +55,11 @@ const register = catchAsync(async (req: Request, res: Response) => {
 });
 
 const updateProfile = catchAsync(async (req: Request, res: Response) => {
-  const { email } = req.user; // if JWT middleware populates req.user
+  // Fix: Use optional chaining and type assertion to ensure req.user has email property
+  const email = (req.user as CustomJwtPayload)?.email;
+  if (!email) {
+    throw new AppError(StatusCodes.UNAUTHORIZED, 'User not authenticated');
+  }
   const result = await AuthService.updateUserProfile(email, req.body);
 
   sendResponse(res, {
@@ -65,24 +69,20 @@ const updateProfile = catchAsync(async (req: Request, res: Response) => {
   });
 });
 
-
-
- 
-
-const login = catchAsync(async (req, res) => {
+const login = catchAsync(async (req: Request, res: Response) => {
   const { email, password } = req.body;
   const user = await User.findOne({ email }).select('+password');
   if (!user) {
     throw new AppError(StatusCodes.BAD_REQUEST, 'Invalid credentials.');
   }
- // Validate user status
+  // Validate user status
   validateUserStatus(user);
-  
-  const isPasswordValid = await bcrypt.compare(password, user.password); 
+
+  const isPasswordValid = await bcrypt.compare(password, user.password);
   if (!isPasswordValid) {
     throw new AppError(StatusCodes.BAD_REQUEST, 'password is incorrect.');
   }
- 
+
   if (user?.status === UserStatus.Unverified) {
     await OtpService.createVerificationEmailOtp(user?.email);
     sendResponse(res, {
@@ -116,7 +116,7 @@ const login = catchAsync(async (req, res) => {
     role: user?.role,
     providerType: user?.providerType,
     phoneNumber: user?.phoneNumber,
-    profileUrl: user?.profileUrl, 
+    profileUrl: user?.profileUrl,
     service: user?.service,
     address: user?.address,
     status: user?.status,
@@ -132,9 +132,7 @@ const login = catchAsync(async (req, res) => {
   });
 });
 
-
-
-const verifyOtp = catchAsync(async (req, res) => {
+const verifyOtp = catchAsync(async (req: Request, res: Response) => {
   const { email, otp } = req.body;
   const result = await AuthService.verifyOtp({ email, otp });
   sendResponse(res, {
@@ -144,7 +142,7 @@ const verifyOtp = catchAsync(async (req, res) => {
   });
 });
 
-const resendOtp = catchAsync(async (req, res) => {
+const resendOtp = catchAsync(async (req: Request, res: Response) => {
   const { email } = req.body;
   const result = await AuthService.resendOtp(email);
   sendResponse(res, {
@@ -154,7 +152,7 @@ const resendOtp = catchAsync(async (req, res) => {
   });
 });
 
-const forgotPassword = catchAsync(async (req, res) => {
+const forgotPassword = catchAsync(async (req: Request, res: Response) => {
   const result = await AuthService.forgotPassword(req.body.email);
   sendResponse(res, {
     code: StatusCodes.OK,
@@ -162,14 +160,14 @@ const forgotPassword = catchAsync(async (req, res) => {
     data: result,
   });
 });
- 
-const changePassword = catchAsync(async (req, res) => {
+
+const changePassword = catchAsync(async (req: Request, res: Response) => {
   const userId = req.user?.userId;
   if (!userId) {
     throw new AppError(StatusCodes.UNAUTHORIZED, 'User not authenticated');
   }
-  const { currentPassword, newPassword  } = req.body;
-// mfaToken
+  const { currentPassword, newPassword } = req.body;
+  // mfaToken
   await User.findById(userId).select('+mfaSecret');
 
   const result = await AuthService.changePassword(
@@ -184,7 +182,7 @@ const changePassword = catchAsync(async (req, res) => {
   });
 });
 
-const resetPassword = catchAsync(async (req, res) => {
+const resetPassword = catchAsync(async (req: Request, res: Response) => {
   const { email, newPassword } = req.body;
   const result = await AuthService.resetPassword(email, newPassword);
   sendResponse(res, {
@@ -194,7 +192,7 @@ const resetPassword = catchAsync(async (req, res) => {
   });
 });
 
-const logout = catchAsync(async (req, res) => {
+const logout = catchAsync(async (req: Request, res: Response) => {
   //get refresh token from cookies
   const { refreshToken } = req.body;
   if (!refreshToken) {
@@ -208,7 +206,7 @@ const logout = catchAsync(async (req, res) => {
   });
 });
 
-const refreshToken = catchAsync(async (req, res) => {
+const refreshToken = catchAsync(async (req: Request, res: Response) => {
   const { refreshToken } = req.body;
   if (!refreshToken) {
     throw new AppError(StatusCodes.BAD_REQUEST, 'Refresh token is required.');
@@ -234,10 +232,6 @@ const refreshToken = catchAsync(async (req, res) => {
   });
 });
 
- 
- 
- 
-
 export const AuthController = {
   register,
   updateProfile,
@@ -248,5 +242,5 @@ export const AuthController = {
   changePassword,
   refreshToken,
   forgotPassword,
-  resetPassword,  
+  resetPassword,
 };

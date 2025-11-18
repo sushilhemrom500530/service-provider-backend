@@ -54,14 +54,14 @@ const bookingSchema = new Schema<IBooking>(
 
     bookingItems: [bookingItemSchema],
 
-    bookingSeatCount:{ type: Number },
+    bookingSeatCount: { type: Number },
     slots: [
-    {
-      type: Schema.Types.ObjectId,
-      ref: 'slots',
-      required: true,
-    },
-  ], 
+      {
+        type: Schema.Types.ObjectId,
+        ref: 'slots',
+        required: true,
+      },
+    ],
     duration: { type: String },
     bookingAgentText: { type: String }, // For booking agent
 

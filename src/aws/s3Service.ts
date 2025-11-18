@@ -880,6 +880,7 @@ const uploadFilesToS3 = async (
         const fileUrl = await uploadSingleFileToS3(
           file,
           uploadsFolder,
+          undefined,
           enableCompression
         );
 

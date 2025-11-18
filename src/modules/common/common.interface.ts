@@ -9,6 +9,6 @@ export interface IReview {
 }
 export interface IRefund {
   userId: Types.ObjectId;
-  reason: number; 
+  reason: string; 
   createdAt?: Date;
 }

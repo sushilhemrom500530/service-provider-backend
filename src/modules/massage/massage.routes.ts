@@ -19,6 +19,14 @@ router.get(
   MassageController.getAllMassageFromDB
 );
 
+
+// specific provider all
+router.get(
+  '/my-all',
+  auth('User', 'Admin', 'Provider'),
+  MassageController.getAllMyMassageFromDB
+);
+
 // get single
 router.get(
   '/:id',

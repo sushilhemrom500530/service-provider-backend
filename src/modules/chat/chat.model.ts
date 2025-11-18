@@ -1,5 +1,5 @@
 import mongoose, { Schema } from 'mongoose';
-import { ChatType, IChat } from './chat.interface';
+import { ChatType, IChat, IChatModel } from './chat.interface';
 import paginationPlugin from '../../common/plugins/pagination.plugin';
 
 const chatSchema = new Schema<IChat>(
@@ -64,8 +64,9 @@ const chatSchema = new Schema<IChat>(
 
 chatSchema.plugin(paginationPlugin);
 
-export const Chat: Model<IChat> =
-  mongoose.models.SkiPass || mongoose.model<IChat>('Chat', chatSchema);
+export const Chat =
+  (mongoose.models.Chat as IChatModel) ||
+  mongoose.model<IChat, IChatModel>('Chat', chatSchema);
 
 // const Chat = mongoose.model<IChat, IChatModel>('Chat', chatSchema);
 // export default Chat;

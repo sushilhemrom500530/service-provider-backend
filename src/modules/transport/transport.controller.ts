@@ -8,10 +8,19 @@ import { TransportService } from './transport.service';
 
 
 const getAllTransportFromDB = catchAsync(async (req: Request, res: Response) => {
-
   const user = req.user as JwtPayload;
-  
   const result = await TransportService.getAllTransportFromDB(user, req.query as any)
+  sendResponse(res, {
+    code: StatusCodes.OK,
+    message: 'Transport fetched successfully.',
+    data: result,
+  });
+});
+
+
+const getAllMyTransportFromDB = catchAsync(async (req: Request, res: Response) => {
+  const user = req.user as JwtPayload;
+  const result = await TransportService.getAllMyTransportFromDB(user, req.query as any)
   sendResponse(res, {
     code: StatusCodes.OK,
     message: 'Transport fetched successfully.',
@@ -79,6 +88,7 @@ const deleteTransportIntoDB = catchAsync(async (req: Request, res: Response) => 
 
 export const TransportController = {
   getAllTransportFromDB,
+  getAllMyTransportFromDB,
   getSingleTransportFromDB,
   addTransportIntoDB,
   reviewTransport,

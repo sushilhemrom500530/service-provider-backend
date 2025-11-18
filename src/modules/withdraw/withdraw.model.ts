@@ -1,17 +1,17 @@
-import { Schema, model, Types } from 'mongoose'; 
+import { Schema, model } from 'mongoose';
 import { v4 as uuidv4 } from 'uuid';
 import { IWithdraw } from './withdraw.inteface';
 
 const WithdrawSchema = new Schema<IWithdraw>(
   {
-   user: {
-      type: Types.ObjectId,
+    user: {
+      type: Schema.Types.ObjectId,
       ref: 'User',
       required: true,
     },
     wallet: {
-      type: Types.ObjectId,
-      ref: 'Wallet', 
+      type: Schema.Types.ObjectId,
+      ref: 'Wallet',
     },
     cardId: {
       type: String,

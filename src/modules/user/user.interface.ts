@@ -39,7 +39,10 @@ export interface IUser extends Document {
   address: string;
   role: 'User' | 'Provider' | 'Admin';
   isAgreedTermsConditions: boolean;
+  isModified(path?: keyof IUser | string): boolean;
   isDeleted: boolean;
+  isResetPassword?: boolean;
+  banExpiresAt?: Date;
   createdAt?: Date;
   updatedAt?: Date;
 
@@ -64,3 +67,5 @@ export interface UserModel extends Model<IUser> {
     options?: IPaginationOptions
   ): Promise<IPaginationResult<IUser>>;
 }
+
+ 

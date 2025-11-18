@@ -19,6 +19,13 @@ router.get(
   TransportController.getAllTransportFromDB
 );
 
+// specific provider all
+router.get(
+  '/my-all',
+  auth('User', 'Admin', 'Provider'),
+  TransportController.getAllMyTransportFromDB
+);
+
 // get single
 router.get(
   '/:id',

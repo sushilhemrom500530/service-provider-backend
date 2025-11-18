@@ -51,6 +51,89 @@ const getAllTransportFromDB = async (user: JwtPayload, query: any) => {
     }
   }
 
+  const filters = { 
+    ...search,
+    ...categoryFilter,
+  };
+
+  // Total count after filters
+  const total = await Transport.countDocuments(filters);
+
+  // Fetch paginated data
+  const transportList = await Transport.find(filters)
+    .skip(skip)
+    .limit(limit)
+    .sort({ createdAt: -1 });
+
+  // Attach category data (your original logic)
+  const result = await Promise.all(
+    transportList.map(async (item) => {
+      const categoryDoc = await Category.findOne(
+        {
+          primaryCategoryName: "Transport",
+          "subCategory._id": item.category,
+        },
+        { "subCategory.$": 1 }
+      );
+
+      return {
+        ...item.toObject(),
+        category: categoryDoc?.subCategory?.[0] || null,
+      };
+    })
+  );
+
+  return { 
+    pagination: {
+      total,
+      page,
+      limit,
+      totalPages: Math.ceil(total / limit),
+    },
+    result,
+  };
+};
+
+
+const getAllMyTransportFromDB = async (user: JwtPayload, query: any) => {
+  const isExistsUser = await User.findOne({ email: user?.email });
+  if (!isExistsUser) {
+    throw new AppError(StatusCodes.NOT_FOUND, 'User not found.');
+  }
+
+  // Pagination
+  const page = Number(query.page) || 1;
+  const limit = Number(query.limit) || 10;
+  const skip = (page - 1) * limit;
+
+  // filter
+  const search = query.search
+    ? { title: { $regex: query.search, $options: "i" } }
+    : {};
+
+  // Category filter
+  let categoryFilter = {};
+  if (query.category) {
+    const categories = await Category.find(
+      {
+        primaryCategoryName: "Transport",
+        "subCategory.name": { $regex: query.category, $options: "i" },
+      },
+      { "subCategory.$": 1 }
+    );
+
+    const categoryIds = categories.map(c => c.subCategory?.[0]?._id);
+
+    if (categoryIds.length > 0) {
+      categoryFilter = { category: { $in: categoryIds } };
+    } else {
+      return {
+        data: [],
+        pagination: { total: 0, page, limit, totalPages: 0 },
+      };
+    }
+  }
+
   const filters = {
     owner: isExistsUser._id,
     ...search,
@@ -228,9 +311,10 @@ export const reviewTransport = async (
   }
 
   //  (Optional) Prevent duplicate reviews by the same user
-  const alreadyReviewed = transport?.reviews.some(
-    (review :any) => review?.userId.toString() === isExistsUser._id.toString()
-  ) as boolean;
+  const alreadyReviewed =
+    transport.reviews?.some(
+      (review: any) => review?.userId.toString() === isExistsUser._id.toString()
+    ) || false;
   if (alreadyReviewed) {
     throw new AppError(
       StatusCodes.BAD_REQUEST,
@@ -244,15 +328,22 @@ export const reviewTransport = async (
     rating: payload?.rating,
     comment: payload?.comment,
     createdAt: new Date(),
-  } as IReview || {};
+  } as IReview;
 
-  transport.reviews.push(newReview as IReview);
+  if (!Array.isArray(transport.reviews)) {
+    transport.reviews = [];
+  }
+
+  transport.reviews.push(newReview);
 
   // Recalculate average rating
-  const total = transport?.reviews.reduce((sum :number, r:any) => sum + r.rating, 0);
-  transport.averageRating = parseFloat(
-    (total / transport?.reviews.length || 0).toFixed(1)
+  const total = transport?.reviews.reduce(
+    (sum: number, r: IReview) => sum + (r?.rating || 0),
+    0
   );
+  transport.averageRating = transport?.reviews.length
+    ? parseFloat((total / transport?.reviews.length).toFixed(1))
+    : 0;
 
   // Save updated transport
   await transport.save();
@@ -356,6 +447,7 @@ const deleteTransportIntoDB = async (id: string, user: JwtPayload) => {
 
 export const TransportService = {
   getAllTransportFromDB,
+  getAllMyTransportFromDB,
   addTransportIntoDB,
   reviewTransport,
   getSingleTransportFromDB,

@@ -8,7 +8,7 @@ import {
 const WalletTransactionSchema = new Schema<IWalletTransaction>(
   {
     user: {
-      type: Types.ObjectId,
+      type: Schema.Types.ObjectId,
       ref: 'User',
       required: true,
     },
@@ -53,7 +53,7 @@ const WalletAccountSchema = new Schema<IWalletAccount>(
 const WalletSchema = new Schema<IWallet>(
   {
     user: {
-      type: Types.ObjectId,
+      type: Schema.Types.ObjectId,
       ref: 'User',
       required: true,
     },

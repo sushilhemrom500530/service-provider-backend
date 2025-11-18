@@ -70,9 +70,10 @@ const updateMyProfile = catchAsync(async (req, res) => {
       USER_UPLOADS_FOLDER
     );
     req.body.profileUrl = fileUrl;
-  } else {
-    throw new Error('File not found');
-  }
+  } 
+  // else {
+  //   throw new Error('File not found');
+  // }
 
   const updateData = req?.body;
 

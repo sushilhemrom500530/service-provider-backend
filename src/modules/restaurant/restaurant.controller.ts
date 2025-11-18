@@ -19,6 +19,20 @@ const getAllRestaurantFromDB = catchAsync(async (req: Request, res: Response) =>
   });
 });
  
+ 
+
+const getAllMyRestaurantFromDB = catchAsync(async (req: Request, res: Response) => {
+
+  const user = req.user as JwtPayload;
+  
+  const result = await RestaurantService.getAllMyRestaurantFromDB(user, req.query as any)
+  sendResponse(res, {
+    code: StatusCodes.OK,
+    message: 'Restaurant fetched successfully.',
+    data: result,
+  });
+});
+ 
 const getSingleRestaurantFromDB = catchAsync(async (req: Request, res: Response) => {
   const id = req.params.id;
   const user = req.user as JwtPayload;
@@ -78,6 +92,7 @@ const deleteRestaurantIntoDB = catchAsync(async (req: Request, res: Response) =>
 
 export const RestaurantController = {
   getAllRestaurantFromDB,
+  getAllMyRestaurantFromDB,
   getSingleRestaurantFromDB,
   addRestaurantIntoDB,
   reviewRestaurant,

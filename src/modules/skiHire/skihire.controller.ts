@@ -19,6 +19,19 @@ const getAllSkiHireFromDB = catchAsync(async (req: Request, res: Response) => {
   });
 });
  
+
+const getAllMySkiHireFromDB = catchAsync(async (req: Request, res: Response) => {
+
+  const user = req.user as JwtPayload;
+  
+  const result = await SkiHireService.getAllMySkiHireFromDB(user, req.query as any)
+  sendResponse(res, {
+    code: StatusCodes.OK,
+    message: 'Ski Hire fetched successfully.',
+    data: result,
+  });
+});
+ 
 const getSingleSkiHireFromDB = catchAsync(async (req: Request, res: Response) => {
   const id = req.params.id;
   const user = req.user as JwtPayload;
@@ -78,6 +91,7 @@ const deleteSkiHireIntoDB = catchAsync(async (req: Request, res: Response) => {
 
 export const SkiHireController = {
   getAllSkiHireFromDB,
+  getAllMySkiHireFromDB,
   getSingleSkiHireFromDB,
   addSkiHireIntoDB,
   reviewSkiHire,

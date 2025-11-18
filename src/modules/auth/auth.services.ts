@@ -5,7 +5,7 @@ import { OtpType } from '../otp/otp.interface';
 import moment from 'moment';
 import { Token } from '../token/token.model';
 import AppError from '../../errors/AppErro';
-import { AuthMethod, IUser, UserStatus } from '../user/user.interface';
+import { IUser, UserStatus } from '../user/user.interface';
 import { StatusCodes } from 'http-status-codes';
 import { OtpService } from '../otp/otp.services';
 import { TokenService } from '../token/token.services';
@@ -46,7 +46,7 @@ const registerUser = async (userData: Partial<IUser>) => {
   if (userData?.providerType === 'Ski_Pass') {
     const existingSkiPassProvider = await User.findOne({
       providerType: 'Ski_Pass',
-    }); 
+    });
     if (existingSkiPassProvider) {
       throw new AppError(
         StatusCodes.BAD_REQUEST,
@@ -55,11 +55,11 @@ const registerUser = async (userData: Partial<IUser>) => {
     }
   }
 
-  if(userData?.role === "Admin"){
-     throw new AppError(
-        StatusCodes.BAD_REQUEST,
-        'One Admin is already exists. please create another type of role (provider or user).'
-      );
+  if (userData?.role === "Admin") {
+    throw new AppError(
+      StatusCodes.BAD_REQUEST,
+      'One Admin is already exists. please create another type of role (provider or user).'
+    );
   }
   // // check password and confirm password
   // if (userData?.password !== userData?.confirmPassword) {
@@ -71,7 +71,7 @@ const registerUser = async (userData: Partial<IUser>) => {
 
   const newUser = await User.create(userData);
 
-  if (newUser?.role === 'Provider') {
+  if (newUser) {
     await Wallet.create({
       user: newUser?._id,
       balance: 0,
@@ -151,13 +151,14 @@ const verifyOtp = async (payload: IVerifyOtpData) => {
   await user.save();
 
   return {
-    message: user.isResetPassword
-      ? 'OTP verified. You can now reset your password.'
-      : 'Email verified successfully. Your account is now active.',
+    message: 'Email verified successfully. Your account is now active.',
     email: user.email,
     verified: true,
   };
 };
+
+
+
 
 const forgotPassword = async (email: string) => {
   const user = await User.findOne({ email });
@@ -185,7 +186,7 @@ const resendOtp = async (email: string) => {
 
   validateUserStatus(user);
 
-  let message: string;
+  let message: string = "";
 
   if (user) {
     await OtpService.createResetPasswordOtp(user.email);
@@ -215,19 +216,19 @@ const resetPassword = async (email: string, newPassword: string) => {
   if (!user) {
     throw new AppError(StatusCodes.NOT_FOUND, 'User not found.');
   }
-    // Verify that password reset was requested
-    // if (!user.isResetPassword) {
-    //   throw new AppError(
-    //     StatusCodes.BAD_REQUEST,
-    //     'Password reset was not requested. Please request password reset first.'
-    //   );
-    // }
+  // Verify that password reset was requested
+  // if (!user.isResetPassword) {
+  //   throw new AppError(
+  //     StatusCodes.BAD_REQUEST,
+  //     'Password reset was not requested. Please request password reset first.'
+  //   );
+  // }
 
   // Hash new password
-  user.password = newPassword;  
+  user.password = newPassword;
   user.isResetPassword = false;
 
-  await user.save();  
+  await user.save();
 
   return {
     message: 'Password reset successfully.',
@@ -235,7 +236,7 @@ const resetPassword = async (email: string, newPassword: string) => {
   };
 };
 
-  
+
 
 const changePassword = async (
   userId: string,
@@ -307,7 +308,7 @@ const refreshAuth = async (refreshToken: string) => {
   validateUserStatus(user);
 
   // Update last login metadata
-  user.metadata.lastLoginAt = new Date();
+  // user.metadata.lastLoginAt = new Date();
   await user.save();
 
   // Delete old refresh token
@@ -322,8 +323,8 @@ const refreshAuth = async (refreshToken: string) => {
       _id: user._id,
       email: user.email,
       role: user.role,
-      authMethods: user.authMethods,
-      primaryAuthMethod: user.primaryAuthMethod,
+      // authMethods: user.authMethods,
+      // primaryAuthMethod: user.primaryAuthMethod,
     },
   };
 };

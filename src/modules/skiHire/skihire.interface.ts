@@ -3,6 +3,7 @@ import { IReview,IRefund } from './../common/common.interface';
 
 
 export interface IProductItems {
+  _id?: Types.ObjectId;
   productName: string;
   productPhoto: string; 
   price: number;

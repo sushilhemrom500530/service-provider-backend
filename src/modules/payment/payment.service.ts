@@ -13,7 +13,7 @@ const getAllPayment = async (query: any) => {
   const skip = (page - 1) * limit;
 
   // Initialize payment filters
-  const paymentFilters: IPaymentFilters = {};
+  const paymentFilters: any = {};
 
   // Handle user filters (name and role)
   if (query.name || query.role) {

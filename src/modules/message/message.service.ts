@@ -82,8 +82,7 @@ const viewAllMessages = async (chatId: string, receiverId: string) => {
       deliveryStatus: 'sent',
       isDeleted: false,
     },
-    { seenBy: [receiverId], deliveryStatus: 'seen' },
-    { new: true }
+    { seenBy: [receiverId], deliveryStatus: 'seen' }
   );
 
   return result;
@@ -423,15 +422,24 @@ const removeReaction = async (
 
 // Reply to a message
 const replyToMessage = async (
-  payload: IMessage,
+  payload: Partial<IMessage>,
   replyToId: string
 ): Promise<IMessage> => {
   const replyToMessage = await Message.findById(replyToId);
   if (!replyToMessage) {
     throw new AppError(StatusCodes.NOT_FOUND, 'Message to reply to not found');
   }
+  if (!payload.senderId || !payload.receiverId || !payload.content) {
+    throw new AppError(
+      StatusCodes.BAD_REQUEST,
+      'Missing required fields for reply.'
+    );
+  }
+
   const newMessage = await Message.create({
-    ...payload,
+    senderId: payload.senderId,
+    receiverId: payload.receiverId,
+    content: payload.content,
     replyTo: new Types.ObjectId(replyToId),
     deliveryStatus: 'sent',
   });

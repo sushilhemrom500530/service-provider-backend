@@ -1,8 +1,8 @@
- 
-import mongoose, { Schema, Document, Model } from 'mongoose';
+
+import mongoose, { Schema } from 'mongoose';
 import bcrypt from 'bcrypt';
 import { config } from '../../config';
-import { IService, IUser, UserStatus } from './user.interface';
+import { IService, IUser, UserStatus, UserModel } from './user.interface';
 import paginationPlugin from './../../common/plugins/pagination.plugin';
 
 // Service schema
@@ -17,15 +17,36 @@ const serviceSchema = new Schema<IService>(
 // User schema
 const userSchema = new Schema<IUser>(
   {
-    fullName: { type: String, trim: true },
-    email: { type: String, required: true, unique: true, lowercase: true },
-    password: { type: String, required: true, select: false },
+    fullName: {
+      type: String,
+      trim: true,
+      default: ""
+    },
+    email: {
+      type: String,
+      required: true,
+      unique: true,
+      lowercase: true
+    },
+    password: {
+      type: String,
+      required: true,
+      select: false
+    },
     // confirmPassword: { type: String, required: true, select: false },
-    providerType: { type: String,  trim: true},
-    phoneNumber: { type: String },
-    profileUrl: { type: String },
+    providerType: {
+      type: String,
+      trim: true
+    },
+    phoneNumber: {
+      type: String
+    },
+    profileUrl: {
+      type: String,
+      default: "https://iter-bene.s3.eu-north-1.amazonaws.com/uploads/users/ea97d957-1bf9-4e4a-b84c-f00525e0cca3.webp"
+    },
     service: { type: serviceSchema },
-    address: { type: String },
+    address: { type: String, default: "" },
     status: {
       type: String,
       enum: Object.values(UserStatus),
@@ -39,9 +60,11 @@ const userSchema = new Schema<IUser>(
     },
     isDeleted: { type: Boolean, default: false },
     isAgreedTermsConditions: { type: Boolean, default: false },
+    isResetPassword: { type: Boolean, default: false },
+    banExpiresAt: { type: Date },
   },
   {
-    timestamps: true,  
+    timestamps: true,
   }
 );
 
@@ -49,24 +72,40 @@ const userSchema = new Schema<IUser>(
 userSchema.plugin(paginationPlugin);
 
 // Hash password before save
+// userSchema.pre<IUser>('save', async function (next) {
+//   // if (!this.isModified('password')) return next();
+
+//   // if (this.password !== this.confirmPassword) {
+//   //   return next(new Error('Password and confirm password do not match'));
+//   // }
+
+//   try {
+//     const salt = await bcrypt.genSalt(config.bcrypt.saltRounds);
+//     this.password = await bcrypt.hash(this.password, salt);
+
+//     // this.confirmPassword = undefined as unknown as string;
+
+//     next();
+//   } catch (error) {
+//     next(error as Error);
+//   }
+// });
+
+
 userSchema.pre<IUser>('save', async function (next) {
-  if (!this.isModified('password')) return next();
- 
-  // if (this.password !== this.confirmPassword) {
-  //   return next(new Error('Password and confirm password do not match'));
-  // }
+  if (!this.isModified('password') || !this.password) {
+    return next();
+  }
 
   try {
     const salt = await bcrypt.genSalt(config.bcrypt.saltRounds);
     this.password = await bcrypt.hash(this.password, salt);
- 
-    // this.confirmPassword = undefined as unknown as string;
-
     next();
   } catch (error) {
     next(error as Error);
   }
 });
+
 
 
 userSchema.methods.comparePassword = async function (
@@ -75,5 +114,6 @@ userSchema.methods.comparePassword = async function (
   return bcrypt.compare(password, this.password);
 };
 
-export const User: Model<IUser> =
-  mongoose.models.User || mongoose.model<IUser>('User', userSchema);
+export const User =
+  (mongoose.models.User as UserModel) ||
+  mongoose.model<IUser, UserModel>('User', userSchema);
