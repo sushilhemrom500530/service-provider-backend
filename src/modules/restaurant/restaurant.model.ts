@@ -11,39 +11,47 @@ const slotsSchema = new Schema({
     type: String,
     required: true,
   },
-})
-
-const categoryItemsSchema = new Schema<ICategoryItemDetail>({
-      seat: {
-        type: String,
-        required: true,
-        enum: ["VIP", "Normal"],
-      },
-      photo: {
-        type: String,
-        required: true,
-      },
-      totalQty: {
-        type: Number,
-        required: true,
-        min: 0,
-      },
-      availableQty: {
-        type: Number,
-        required: true,
-        default: 0,
-      },
-      price: {
-        type: Number,
-        required: true,
-        min: 1,
-      },
-      description: {
-        type: String,
-        default: "",
-      },
 });
 
+const availableSlotSchema = new Schema(
+  {
+    _id: mongoose.Types.ObjectId,  
+    startTime: String,
+    endTime: String,
+  },
+  { _id: false }  
+);
+
+const categoryItemsSchema = new Schema<ICategoryItemDetail>({
+  seat: {
+    type: String,
+    required: true,
+    enum: ['VIP', 'Normal'],
+  },
+  photo: {
+    type: String,
+    required: true,
+  },
+  totalQty: {
+    type: Number,
+    required: true,
+    min: 0,
+  },
+  availableQty: {
+    type: Number,
+    required: true,
+    default: 0,
+  },
+  price: {
+    type: Number,
+    required: true,
+    min: 1,
+  },
+  description: {
+    type: String,
+    default: '',
+  },
+});
 
 const restaurantSchema = new Schema<IRestaurant>(
   {
@@ -80,8 +88,8 @@ const restaurantSchema = new Schema<IRestaurant>(
       required: true,
     },
     foodType: {
-      type: String, 
-      default:"" 
+      type: String,
+      default: '',
     },
     status: {
       type: String,
@@ -96,15 +104,15 @@ const restaurantSchema = new Schema<IRestaurant>(
       type: String,
       required: true,
       trim: true,
-  },
-  slots: {
-    type: [slotsSchema],
-    required: true,
-  },
-  availableSlots: {
-    type: [slotsSchema],
-    default: [],
-  },
+    },
+    slots: {
+      type: [slotsSchema],
+      required: true,
+    },
+    availableSlots: {
+      type: [availableSlotSchema],
+      default: [],
+    },
     // optional fields for later updates
     averageRating: {
       type: Number,
@@ -131,6 +139,15 @@ restaurantSchema.pre('save', function (next) {
     const total = this.reviews.reduce((sum, r) => sum + r.rating, 0);
     this.averageRating = parseFloat((total / this.reviews.length).toFixed(1));
   }
+
+  if (!this.availableSlots || this.availableSlots.length === 0) {
+    this.availableSlots = this.slots.map(slot => ({
+      _id: slot._id, 
+      startTime: slot.startTime,
+      endTime: slot.endTime,
+    }));
+  }
+
   next();
 });
 

@@ -28,7 +28,7 @@ const seedUsers = async () => {
   try {
     const usersData = [
       {
-        email: 'admin@demo.com',
+        email: 'sushil500530@gmail.com',
         password: '12345678',
         role: 'Admin',
         status: 'Active',

@@ -18,8 +18,6 @@ import { WalletTransactionType } from './../wallet/wallet.interface';
 import { format } from 'date-fns';
 import { IRefund } from '../common/common.interface';
 
-
-
 const getAllBookingFromDB = async (user: JwtPayload, query: any) => {
   const isExistsUser = await User.findOne({ email: user?.email });
   if (!isExistsUser) {
@@ -30,7 +28,7 @@ const getAllBookingFromDB = async (user: JwtPayload, query: any) => {
   const limit = Number(query?.limit) || 10;
   const skip = (page - 1) * limit;
 
-  const search = query?.search || "";
+  const search = query?.search || '';
 
   const filters: any = {};
 
@@ -42,9 +40,10 @@ const getAllBookingFromDB = async (user: JwtPayload, query: any) => {
   let bookingQuery = Booking.find(filters)
     .populate({
       path: 'product',
-      match: isExistsUser.role === 'Provider'
-        ? { owner: isExistsUser._id }  // Filter here
-        : {},
+      match:
+        isExistsUser.role === 'Provider'
+          ? { owner: isExistsUser._id } // Filter here
+          : {},
       select:
         '-items -totalPrice -serviceArea -__v -reviews -refunds -averageRating -createdAt -updatedAt',
     })
@@ -55,7 +54,7 @@ const getAllBookingFromDB = async (user: JwtPayload, query: any) => {
   const allBookings = await bookingQuery.clone();
 
   // Step 3: Remove bookings where product = null (not matched)
-  const filtered = allBookings.filter((b) => b.product !== null);
+  const filtered = allBookings.filter(b => b.product !== null);
 
   const total = filtered.length;
 
@@ -72,8 +71,6 @@ const getAllBookingFromDB = async (user: JwtPayload, query: any) => {
     result,
   };
 };
-
-
 
 const getSingleBookingFromDB = async (id: string, user: JwtPayload) => {
   const isExistsUser = await User.findOne({ email: user?.email });
@@ -101,9 +98,10 @@ const getSingleBookingFromDB = async (id: string, user: JwtPayload) => {
   const productItems = product?.items || [];
   // const enrichedBookingItems = booking?.bookingItems.map((bi: any) => {
   const enrichedBookingItems = (booking?.bookingItems || []).map((bi: any) => {
-    const matchedItem = productItems.find(
-      (itm: any) => itm._id.toString() === bi.itemId.toString()
-    ) || null;
+    const matchedItem =
+      productItems.find(
+        (itm: any) => itm._id.toString() === bi.itemId.toString()
+      ) || null;
 
     return {
       ...bi,
@@ -111,15 +109,23 @@ const getSingleBookingFromDB = async (id: string, user: JwtPayload) => {
     };
   });
 
+  const slots = (booking?.slots || [])
+    .map((slotId: any) => {
+      return product.slots.find(
+        (s: any) => s._id.toString() === slotId.toString()
+      );
+    })
+    .filter(Boolean);
+
   delete product.items;
 
   return {
     ...booking,
     product,
     bookingItems: enrichedBookingItems,
+    slots,
   };
 };
-
 
 const getMyBooking = async (user: JwtPayload, query: any) => {
   const isExistsUser = await User.findOne({ email: user?.email });
@@ -146,8 +152,8 @@ const getMyBooking = async (user: JwtPayload, query: any) => {
   const endIndex = startIndex + limit;
 
   // Search & Category filter
-  const search = query?.search?.toLowerCase() || "";
-  const category = query?.category?.toLowerCase() || "";
+  const search = query?.search?.toLowerCase() || '';
+  const category = query?.category?.toLowerCase() || '';
 
   const msToTime = (ms: number) => {
     const totalSeconds = Math.floor(ms / 1000);
@@ -158,48 +164,69 @@ const getMyBooking = async (user: JwtPayload, query: any) => {
 
   // Map and enrich bookings
   let bookingsWithTimeInfo = bookings.map(booking => {
-    // const startTime = new Date(booking?.startDateAndTime);
-    // const endTime = new Date(booking?.endDateAndTime);
-    const startTime = booking?.startDateAndTime ? new Date(booking.startDateAndTime) : undefined;
-    const endTime = booking?.endDateAndTime ? new Date(booking.endDateAndTime) : undefined;
-
-    let label: string | undefined;
-    // if (['Ski_Hire', 'Transport'].includes(booking?.category)) {
-    if (['Ski_Hire', 'Transport'].includes(booking?.category) && endTime) {
-      const now = new Date();
-      if (now < endTime) {
-        const timeLeft = endTime.getTime() - now.getTime();
-        label = `Time Left: ${msToTime(timeLeft)}`;
-      } else {
-        const overTime = now.getTime() - endTime.getTime();
-        label = `Over Time: ${msToTime(overTime)}`;
-      }
-    }
-    // const product = booking.product ? (booking?.product.toObject?.() || booking?.product) : null;
     const product = booking.product ? (booking.product as any) : null;
-    const productItems = product?.items || [];
 
-    const enrichedBookingItems = (booking.bookingItems || []).map((bi: any) => {
-      const matchedItem = productItems.find(
-        (itm: any) => itm?._id?.toString() === bi?.itemId?.toString()
+    // Map booked slots IDs to full slot objects
+    let fullSlots: any[] = [];
+    if (product && booking.slots) {
+      fullSlots = booking.slots
+        .map(slotId =>
+          product.slots.find((s: any) => s._id.toString() === slotId.toString())
+        )
+        .filter(Boolean);
+    }
+
+    // Clean booking items
+    const enrichedBookingItems = (booking.bookingItems || []).map(bi => {
+      const matchedItem = product?.items?.find(
+        (i: any) => i._id.toString() === bi.itemId.toString()
       );
       return {
-        ...(bi ? (bi.toObject?.() || bi) : {}),
-        item: matchedItem ? { ...matchedItem } : null,
+        itemId: bi.itemId,
+        quantity: bi.quantity,
+        item: matchedItem
+          ? {
+              _id: matchedItem._id,
+              seat: matchedItem.seat,
+              photo: matchedItem.photo,
+              totalQty: matchedItem.totalQty,
+              availableQty: matchedItem.availableQty,
+              price: matchedItem.price,
+              description: matchedItem.description,
+            }
+          : null,
       };
     });
 
-    if (product) delete product.items;
+    // Clean product (remove items array, keep only necessary fields)
+    const cleanProduct = product
+      ? {
+          _id: product._id,
+          title: product.title,
+          thumbnail: product.thumbnail,
+          category: product.category,
+          openTime: product.openTime,
+          closeTime: product.closeTime,
+          serviceArea: product.serviceArea, 
+          status: product.status, 
+        }
+      : null;
 
-    const bookingObj: any = {
-      ...booking.toObject(),
-      product,
+    return {
+      _id: booking._id,
+      user: booking.user,
+      product: cleanProduct,
+      productModel: booking.productModel,
+      category: booking.category,
+      date: booking.date,
       bookingItems: enrichedBookingItems,
+      slots: fullSlots,
+      bookingStatus: booking.bookingStatus,
+      totalPrice: booking.totalPrice,
+      isPermitted: booking.isPermitted,
+      createdAt: booking.createdAt,
+      updatedAt: booking.updatedAt, 
     };
-
-    if (label) bookingObj.timeLabel = label;
-
-    return bookingObj;
   });
 
   // Apply search and category filtering
@@ -208,22 +235,22 @@ const getMyBooking = async (user: JwtPayload, query: any) => {
       b.product?.title?.toLowerCase().includes(search)
     );
   }
- if (category) {
-  bookingsWithTimeInfo = bookingsWithTimeInfo.filter(b =>
-    b.category?.toLowerCase() === category
-  );
-} else {
-  // If category is NOT provided → ALWAYS return empty array
-  return {
-    pagination: {
-      total: 0,
-      page,
-      limit,
-      totalPages: 0,
-    },
-    result: [],
-  };
-}
+  if (category) {
+    bookingsWithTimeInfo = bookingsWithTimeInfo.filter(
+      b => b.category?.toLowerCase() === category
+    );
+  } else {
+    // If category is NOT provided → ALWAYS return empty array
+    return {
+      pagination: {
+        total: 0,
+        page,
+        limit,
+        totalPages: 0,
+      },
+      result: [],
+    };
+  }
   // Apply pagination
   const paginatedResult = bookingsWithTimeInfo.slice(startIndex, endIndex);
 
@@ -237,8 +264,6 @@ const getMyBooking = async (user: JwtPayload, query: any) => {
     result: paginatedResult,
   };
 };
-
-
 
 const getMyBookingForHome = async (user: JwtPayload, selectedDate: string) => {
   const isExistsUser = await User.findOne({ email: user?.email });
@@ -298,7 +323,10 @@ const getMyBookingForHome = async (user: JwtPayload, selectedDate: string) => {
   // Simplify data output
   const simplified = filtered.map(b => {
     const type =
-      b.category?.replace('_', '')?.replace(/([A-Z])/g, ' $1')?.trim() || '';
+      b.category
+        ?.replace('_', '')
+        ?.replace(/([A-Z])/g, ' $1')
+        ?.trim() || '';
     const person = b.personCount || 0;
 
     let time = '';
@@ -347,7 +375,7 @@ const addBookingIntoDB = async (user: JwtPayload, payload: IBooking) => {
     Massage,
   };
   let product = null;
-  let foundModelName: string | null = null; 
+  let foundModelName: string | null = null;
 
   if (payload?.productId) {
     for (const [name, Model] of Object.entries(models)) {
@@ -365,7 +393,7 @@ const addBookingIntoDB = async (user: JwtPayload, payload: IBooking) => {
         'Product not found in any collection.'
       );
   }
-  
+
   // Product owner check
   const productOwner = await User.findById(product?.owner);
   if (!productOwner)
@@ -425,7 +453,7 @@ const addBookingIntoDB = async (user: JwtPayload, payload: IBooking) => {
         total: foundItem?.price * bookedItem.quantity,
       });
     }
- 
+
     for (const item of validatedItems) {
       const index = product?.items.findIndex(
         (i: any) => i?._id.toString() === item?.itemId.toString()
@@ -475,16 +503,19 @@ const addBookingIntoDB = async (user: JwtPayload, payload: IBooking) => {
     product: payload?.productId,
     user: isExistsUser._id,
     category: productOwner?.providerType,
-    productModel, 
+    productModel,
   };
 
   // return {bookingData, product, validatedItems};
- 
-//  Restaurant slot validation & update
+
+  //  Restaurant slot validation & update
   if (productOwner?.providerType === 'Restaurant') {
     const { slots = [] } = payload;
     if (!slots.length)
-      throw new AppError(StatusCodes.BAD_REQUEST, 'At least one slot is required.');
+      throw new AppError(
+        StatusCodes.BAD_REQUEST,
+        'At least one slot is required.'
+      );
 
     const bookedIds = slots.map(id => id.toString());
     const available = product.availableSlots || [];
@@ -521,7 +552,10 @@ const addBookingIntoDB = async (user: JwtPayload, payload: IBooking) => {
   if (productOwner?.providerType === 'Ski_Hire') {
     const bookingItems = payload.bookingItems || [];
     if (!bookingItems.length)
-      throw new AppError(StatusCodes.BAD_REQUEST, 'At least one booking item is required.');
+      throw new AppError(
+        StatusCodes.BAD_REQUEST,
+        'At least one booking item is required.'
+      );
 
     // Fetch current SkiHire data again (to ensure fresh state)
     const skiHire = await SkiHire.findById(product._id);
@@ -565,34 +599,33 @@ const addBookingIntoDB = async (user: JwtPayload, payload: IBooking) => {
     return result;
   }
 
+  // wallet calculation
+  const ownerWallet = await Wallet.findOne({ user: productOwner?._id });
 
-  // wallet calculation 
-    const ownerWallet = await Wallet.findOne({ user: productOwner?._id });
-
-    if (!ownerWallet) {   
-      throw new AppError(StatusCodes.NOT_FOUND, 'Owner wallet not found.');
-    }
- 
-   const userWallet = await Wallet.findOne({ user: isExistsUser._id });
-  if (!userWallet) {
-    throw new AppError(StatusCodes.NOT_FOUND, 'User wallet not found.');
+  if (!ownerWallet) {
+    throw new AppError(StatusCodes.NOT_FOUND, 'Owner wallet not found.');
   }
 
-  if (userWallet.balance < totalPrice) {
-    throw new AppError(
-      StatusCodes.BAD_REQUEST,
-      'Insufficient wallet balance for this booking.'
-    );
-  }
+  //  const userWallet = await Wallet.findOne({ user: isExistsUser._id });
+  // if (!userWallet) {
+  //   throw new AppError(StatusCodes.NOT_FOUND, 'User wallet not found.');
+  // }
+
+  // if (userWallet.balance < totalPrice) {
+  //   throw new AppError(
+  //     StatusCodes.BAD_REQUEST,
+  //     'Insufficient wallet balance for this booking.'
+  //   );
+  // }
 
   // Decrease user wallet balance
-  userWallet.balance -= totalPrice;
-  userWallet.transactions.push({
-    user: isExistsUser._id,
-    balance: totalPrice,
-    type: WalletTransactionType.WITHDRAW,
-  });
-  await userWallet.save();
+  // userWallet.balance -= totalPrice;
+  // userWallet.transactions.push({
+  //   user: isExistsUser._id,
+  //   balance: totalPrice,
+  //   type: WalletTransactionType.WITHDRAW,
+  // });
+  // await userWallet.save();
 
   // Increase owner wallet balance
 
@@ -605,7 +638,7 @@ const addBookingIntoDB = async (user: JwtPayload, payload: IBooking) => {
     });
     await ownerWallet.save();
   }
- 
+
   const result = await Booking.create(bookingData);
   if (!result)
     throw new AppError(
@@ -646,16 +679,14 @@ const updateBookingIntoDB = async (
   // const ownerId = existsBooking.product?.owner?.toString();
   const productDoc = existsBooking.product as any;
   const ownerId = productDoc?.owner?.toString?.();
- 
 
-  // allow condition 
-if (user.role !== "Admin" && ownerId !== isExistsUser?._id.toString()) {
-  throw new AppError(
-    StatusCodes.FORBIDDEN,
-    'You are not allowed to update this booking.'
-  );
-}
-
+  // allow condition
+  if (user.role !== 'Admin' && ownerId !== isExistsUser?._id.toString()) {
+    throw new AppError(
+      StatusCodes.FORBIDDEN,
+      'You are not allowed to update this booking.'
+    );
+  }
   // Update booking status
   const result = await Booking.findByIdAndUpdate(
     bookingId,
@@ -667,7 +698,6 @@ if (user.role !== "Admin" && ownerId !== isExistsUser?._id.toString()) {
 
   return result;
 };
-
 
 const updatePermitBookingIntoDB = async (
   user: JwtPayload,
@@ -789,7 +819,7 @@ const refundBookingIntoDB = async (
   }
 
   // Add refund info
-  const newRefund= {
+  const newRefund = {
     userId: isExistsUser._id,
     reason: payload.reason,
     createdAt: new Date(),
@@ -803,9 +833,7 @@ const refundBookingIntoDB = async (
   return result;
 };
 
-
 const deleteBookingIntoDB = async (id: string, user: JwtPayload) => {
-
   const isExistsUser = await User.findOne({ email: user?.email });
   if (!isExistsUser) {
     throw new AppError(StatusCodes.NOT_FOUND, 'User not found.');
@@ -845,7 +873,6 @@ const deleteBookingIntoDB = async (id: string, user: JwtPayload) => {
 
   return result;
 };
-
 
 export const BookingService = {
   getAllBookingFromDB,

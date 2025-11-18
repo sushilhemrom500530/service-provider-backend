@@ -4,6 +4,7 @@ import { IReview,IRefund } from './../common/common.interface';
 
 
 export interface ISlot {
+  _id?:Types.ObjectId;
   startTime: string;
   endTime: string;
 }
