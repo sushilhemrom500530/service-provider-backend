@@ -10,8 +10,6 @@ import { Transport } from './transport.model';
 import { USER_UPLOADS_FOLDER } from './transport.constant';
 import { Category } from './../category/category.model';
 
-
-
 const getAllTransportFromDB = async (user: JwtPayload, query: any) => {
   const isExistsUser = await User.findOne({ email: user?.email });
   if (!isExistsUser) {
@@ -25,7 +23,7 @@ const getAllTransportFromDB = async (user: JwtPayload, query: any) => {
 
   // filter
   const search = query.search
-    ? { title: { $regex: query.search, $options: "i" } }
+    ? { title: { $regex: query.search, $options: 'i' } }
     : {};
 
   // Category filter
@@ -33,10 +31,10 @@ const getAllTransportFromDB = async (user: JwtPayload, query: any) => {
   if (query.category) {
     const categories = await Category.find(
       {
-        primaryCategoryName: "Transport",
-        "subCategory.name": { $regex: query.category, $options: "i" },
+        primaryCategoryName: 'Transport',
+        'subCategory.name': { $regex: query.category, $options: 'i' },
       },
-      { "subCategory.$": 1 }
+      { 'subCategory.$': 1 }
     );
 
     const categoryIds = categories.map(c => c.subCategory?.[0]?._id);
@@ -51,7 +49,7 @@ const getAllTransportFromDB = async (user: JwtPayload, query: any) => {
     }
   }
 
-  const filters = { 
+  const filters = {
     ...search,
     ...categoryFilter,
   };
@@ -67,13 +65,13 @@ const getAllTransportFromDB = async (user: JwtPayload, query: any) => {
 
   // Attach category data (your original logic)
   const result = await Promise.all(
-    transportList.map(async (item) => {
+    transportList.map(async item => {
       const categoryDoc = await Category.findOne(
         {
-          primaryCategoryName: "Transport",
-          "subCategory._id": item.category,
+          primaryCategoryName: 'Transport',
+          'subCategory._id': item.category,
         },
-        { "subCategory.$": 1 }
+        { 'subCategory.$': 1 }
       );
 
       return {
@@ -83,7 +81,7 @@ const getAllTransportFromDB = async (user: JwtPayload, query: any) => {
     })
   );
 
-  return { 
+  return {
     pagination: {
       total,
       page,
@@ -93,7 +91,6 @@ const getAllTransportFromDB = async (user: JwtPayload, query: any) => {
     result,
   };
 };
-
 
 const getAllMyTransportFromDB = async (user: JwtPayload, query: any) => {
   const isExistsUser = await User.findOne({ email: user?.email });
@@ -108,7 +105,7 @@ const getAllMyTransportFromDB = async (user: JwtPayload, query: any) => {
 
   // filter
   const search = query.search
-    ? { title: { $regex: query.search, $options: "i" } }
+    ? { title: { $regex: query.search, $options: 'i' } }
     : {};
 
   // Category filter
@@ -116,10 +113,10 @@ const getAllMyTransportFromDB = async (user: JwtPayload, query: any) => {
   if (query.category) {
     const categories = await Category.find(
       {
-        primaryCategoryName: "Transport",
-        "subCategory.name": { $regex: query.category, $options: "i" },
+        primaryCategoryName: 'Transport',
+        'subCategory.name': { $regex: query.category, $options: 'i' },
       },
-      { "subCategory.$": 1 }
+      { 'subCategory.$': 1 }
     );
 
     const categoryIds = categories.map(c => c.subCategory?.[0]?._id);
@@ -151,13 +148,13 @@ const getAllMyTransportFromDB = async (user: JwtPayload, query: any) => {
 
   // Attach category data (your original logic)
   const result = await Promise.all(
-    transportList.map(async (item) => {
+    transportList.map(async item => {
       const categoryDoc = await Category.findOne(
         {
-          primaryCategoryName: "Transport",
-          "subCategory._id": item.category,
+          primaryCategoryName: 'Transport',
+          'subCategory._id': item.category,
         },
-        { "subCategory.$": 1 }
+        { 'subCategory.$': 1 }
       );
 
       return {
@@ -167,7 +164,7 @@ const getAllMyTransportFromDB = async (user: JwtPayload, query: any) => {
     })
   );
 
-  return { 
+  return {
     pagination: {
       total,
       page,
@@ -178,7 +175,6 @@ const getAllMyTransportFromDB = async (user: JwtPayload, query: any) => {
   };
 };
 
-
 const getSingleTransportFromDB = async (id: string, user: JwtPayload) => {
   const isExistsUser = await User.findOne({ email: user?.email });
   if (!isExistsUser) {
@@ -187,10 +183,19 @@ const getSingleTransportFromDB = async (id: string, user: JwtPayload) => {
       'You cannot view this data because your account was not found.'
     );
   }
-  const transport = await Transport.findById(id).populate({
-    path: 'owner',
-    select: '-isDeleted -agreeTermsCondition -__v -createdAt -updatedAt',
-  });
+  const transport = await Transport.findById(id)
+    .populate({
+      path: 'owner',
+      select: '-isDeleted -agreeTermsCondition -__v -createdAt -updatedAt',
+    })
+    .populate({
+      path: 'reviews.userId',
+      select: 'fullName email phoneNumber profileUrl createdAt', // choose what you want
+    })
+    .populate({
+      path: 'refunds.userId',
+      select: 'fullName email phoneNumber profileUrl createdAt',
+    });
 
   if (!transport)
     throw new AppError(StatusCodes.NOT_FOUND, 'Transport not found.');
@@ -249,7 +254,7 @@ const addTransportIntoDB = async (req: Request) => {
   const subCategoryItems = category?.subCategory || [];
 
   const exists = subCategoryItems.some(
-    (item : any) => item?._id.toString() === req.body?.category.toString()
+    (item: any) => item?._id.toString() === req.body?.category.toString()
   );
 
   if (!exists) {
@@ -383,7 +388,7 @@ const updateTransportIntoDB = async (req: Request) => {
     const subCategoryItems = category?.subCategory || [];
 
     const brandExists = subCategoryItems.some(
-      ( item :any) => item?._id.toString() === req.body?.category.toString()
+      (item: any) => item?._id.toString() === req.body?.category.toString()
     );
 
     if (!brandExists) {

@@ -10,8 +10,6 @@ import { SkiHire } from './skihire.model';
 import { Category } from './../category/category.model';
 import { USER_UPLOADS_FOLDER } from './skihire.constant';
 
-
-
 const getAllSkiHireFromDB = async (user: JwtPayload, query: any) => {
   const isExistsUser = await User.findOne({ email: user?.email });
   if (!isExistsUser) {
@@ -24,17 +22,19 @@ const getAllSkiHireFromDB = async (user: JwtPayload, query: any) => {
   const skip = (page - 1) * limit;
 
   // Search filter
-  const search = query.search ? { title: { $regex: query.search, $options: "i" } } : {};
+  const search = query.search
+    ? { title: { $regex: query.search, $options: 'i' } }
+    : {};
 
   // Category filter
   let categoryFilter = {};
   if (query.category) {
     const categories = await Category.find(
       {
-        primaryCategoryName: "Ski_Hire",
-        "subCategory.name": { $regex: query.category, $options: "i" },
+        primaryCategoryName: 'Ski_Hire',
+        'subCategory.name': { $regex: query.category, $options: 'i' },
       },
-      { "subCategory.$": 1 }
+      { 'subCategory.$': 1 }
     );
 
     const categoryIds = categories.map(c => c.subCategory?.[0]?._id);
@@ -61,16 +61,16 @@ const getAllSkiHireFromDB = async (user: JwtPayload, query: any) => {
     .skip(skip)
     .limit(limit)
     .populate({
-      path: "owner",
-      select: "-isDeleted -agreeTermsCondition -__v -createdAt -updatedAt",
+      path: 'owner',
+      select: '-isDeleted -agreeTermsCondition -__v -createdAt -updatedAt',
     });
 
   // Attach matched category (your original logic)
   const result = await Promise.all(
-    skiHireList.map(async (item) => {
+    skiHireList.map(async item => {
       const categoryDoc = await Category.findOne(
-        { primaryCategoryName: "Ski_Hire", "subCategory._id": item.category },
-        { "subCategory.$": 1 }
+        { primaryCategoryName: 'Ski_Hire', 'subCategory._id': item.category },
+        { 'subCategory.$': 1 }
       );
       return {
         ...item.toObject(),
@@ -79,7 +79,7 @@ const getAllSkiHireFromDB = async (user: JwtPayload, query: any) => {
     })
   );
 
-  return { 
+  return {
     pagination: {
       total,
       page,
@@ -102,17 +102,19 @@ const getAllMySkiHireFromDB = async (user: JwtPayload, query: any) => {
   const skip = (page - 1) * limit;
 
   // Search filter
-  const search = query.search ? { title: { $regex: query.search, $options: "i" } } : {};
+  const search = query.search
+    ? { title: { $regex: query.search, $options: 'i' } }
+    : {};
 
   // Category filter
   let categoryFilter = {};
   if (query.category) {
     const categories = await Category.find(
       {
-        primaryCategoryName: "Ski_Hire",
-        "subCategory.name": { $regex: query.category, $options: "i" },
+        primaryCategoryName: 'Ski_Hire',
+        'subCategory.name': { $regex: query.category, $options: 'i' },
       },
-      { "subCategory.$": 1 }
+      { 'subCategory.$': 1 }
     );
 
     const categoryIds = categories.map(c => c.subCategory?.[0]?._id);
@@ -140,16 +142,16 @@ const getAllMySkiHireFromDB = async (user: JwtPayload, query: any) => {
     .skip(skip)
     .limit(limit)
     .populate({
-      path: "owner",
-      select: "-isDeleted -agreeTermsCondition -__v -createdAt -updatedAt",
+      path: 'owner',
+      select: '-isDeleted -agreeTermsCondition -__v -createdAt -updatedAt',
     });
 
   // Attach matched category (your original logic)
   const result = await Promise.all(
-    skiHireList.map(async (item) => {
+    skiHireList.map(async item => {
       const categoryDoc = await Category.findOne(
-        { primaryCategoryName: "Ski_Hire", "subCategory._id": item.category },
-        { "subCategory.$": 1 }
+        { primaryCategoryName: 'Ski_Hire', 'subCategory._id': item.category },
+        { 'subCategory.$': 1 }
       );
       return {
         ...item.toObject(),
@@ -158,7 +160,7 @@ const getAllMySkiHireFromDB = async (user: JwtPayload, query: any) => {
     })
   );
 
-  return { 
+  return {
     pagination: {
       total,
       page,
@@ -169,8 +171,6 @@ const getAllMySkiHireFromDB = async (user: JwtPayload, query: any) => {
   };
 };
 
-
-
 const getSingleSkiHireFromDB = async (id: string, user: JwtPayload) => {
   const isExistsUser = await User.findOne({ email: user?.email });
   if (!isExistsUser) {
@@ -180,10 +180,19 @@ const getSingleSkiHireFromDB = async (id: string, user: JwtPayload) => {
     );
   }
 
-  const skiHire = await SkiHire.findById(id).populate({
-    path: 'owner',
-    select: '-isDeleted -agreeTermsCondition -__v -createdAt -updatedAt',
-  });
+  const skiHire = await SkiHire.findById(id)
+    .populate({
+      path: 'owner',
+      select: '-isDeleted -agreeTermsCondition -__v -createdAt -updatedAt',
+    })
+    .populate({
+      path: 'reviews.userId',
+      select: 'fullName email phoneNumber profileUrl createdAt', // choose what you want
+    })
+    .populate({
+      path: 'refunds.userId',
+      select: 'fullName email phoneNumber profileUrl createdAt',
+    });
   if (!skiHire)
     throw new AppError(StatusCodes.NOT_FOUND, 'Ski Hire data not found.');
 
@@ -318,7 +327,7 @@ const addSkiHireIntoDB = async (req: Request) => {
     totalPrice,
     serviceArea: req.body.serviceArea,
     items: processedProductItems,
-  }; 
+  };
 
   const result = await SkiHire.create(skiHireData);
   return result;

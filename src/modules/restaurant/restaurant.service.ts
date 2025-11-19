@@ -193,10 +193,20 @@ const getSingleRestaurantFromDB = async (id: string, user: JwtPayload) => {
       'You cannot view this data because your account was not found.'
     );
   }
-  const restaurant = await Restaurant.findById(id).populate({
-    path: 'owner',
-    select: '-isDeleted -agreeTermsCondition -__v -createdAt -updatedAt',
-  });
+  const restaurant = await Restaurant.findById(id)
+    .populate({
+      path: 'owner',
+      select: '-isDeleted -agreeTermsCondition -__v -createdAt -updatedAt',
+    })
+    .populate({
+      path: 'reviews.userId',
+      select: 'fullName email phoneNumber profileUrl createdAt', // choose what you want
+    })
+    .populate({
+      path: 'refunds.userId',
+      select: 'fullName email phoneNumber profileUrl createdAt',
+    });
+    
   if (!restaurant)
     throw new AppError(StatusCodes.NOT_FOUND, 'Restaurant not found.');
 
@@ -324,9 +334,8 @@ const addRestaurantIntoDB = async (req: Request) => {
   if (typeof req.body.slots === 'string') slots = JSON.parse(req.body.slots);
   else if (Array.isArray(req.body.slots)) slots = req.body.slots;
 
-  // coppy available slots on slots 
+  // coppy available slots on slots
   let availableSlots = slots;
- 
 
   // Calculate status
   const isOpenNow = isRestaurantOpen(req.body.openTime, req.body.closeTime);
@@ -343,7 +352,7 @@ const addRestaurantIntoDB = async (req: Request) => {
     foodType: req.body.foodType,
     status: isOpenNow ? 'Open' : 'Closed',
     description: req.body.description,
-    slots, 
+    slots,
     items: processedItems,
   };
 
