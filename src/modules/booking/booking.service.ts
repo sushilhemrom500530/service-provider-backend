@@ -164,93 +164,63 @@ const getMyBooking = async (user: JwtPayload, query: any) => {
 
   // Map and enrich bookings
   let bookingsWithTimeInfo = bookings.map(booking => {
-    const product = booking.product ? (booking.product as any) : null;
+    const startTime = new Date(booking?.startDateAndTime);
+    const endTime = new Date(booking?.endDateAndTime);
 
-    // Map booked slots IDs to full slot objects
-    let fullSlots: any[] = [];
-    if (product && booking.slots) {
-      fullSlots = booking.slots
-        .map(slotId =>
-          product.slots.find((s: any) => s._id.toString() === slotId.toString())
-        )
-        .filter(Boolean);
+    let label: string | undefined;
+    if (['Ski_Hire', 'Transport'].includes(booking?.category)) {
+      const now = new Date();
+      if (now < endTime) {
+        const timeLeft = endTime.getTime() - now.getTime();
+        label = `Time Left: ${msToTime(timeLeft)}`;
+      } else {
+        const overTime = now.getTime() - endTime.getTime();
+        label = `Over Time: ${msToTime(overTime)}`;
+      }
     }
 
-    // Clean booking items
-    const enrichedBookingItems = (booking.bookingItems || []).map(bi => {
-      const matchedItem = product?.items?.find(
-        (i: any) => i._id.toString() === bi.itemId.toString()
+    const product = booking.product
+      ? booking.product.toObject?.() || booking.product
+      : null;
+    const productItems = product?.items || [];
+
+    const enrichedBookingItems = (booking.bookingItems || []).map((bi: any) => {
+      const matchedItem = productItems.find(
+        (itm: any) => itm?._id?.toString() === bi?.itemId?.toString()
       );
       return {
-        itemId: bi.itemId,
-        quantity: bi.quantity,
-        item: matchedItem
-          ? {
-              _id: matchedItem._id,
-              seat: matchedItem.seat,
-              photo: matchedItem.photo,
-              totalQty: matchedItem.totalQty,
-              availableQty: matchedItem.availableQty,
-              price: matchedItem.price,
-              description: matchedItem.description,
-            }
-          : null,
+        ...(bi ? bi.toObject?.() || bi : {}),
+        item: matchedItem ? { ...matchedItem } : null,
       };
     });
 
-    // Clean product (remove items array, keep only necessary fields)
-    const cleanProduct = product
-      ? {
-          _id: product._id,
-          title: product.title,
-          thumbnail: product.thumbnail,
-          category: product.category,
-          openTime: product.openTime,
-          closeTime: product.closeTime,
-          serviceArea: product.serviceArea, 
-          status: product.status, 
-        }
-      : null;
+    if (product) delete product.items;
 
-    return {
-      _id: booking._id,
-      user: booking.user,
-      product: cleanProduct,
-      productModel: booking.productModel,
-      category: booking.category,
-      date: booking.date,
+    const bookingObj: any = {
+      ...booking.toObject(),
+      product,
       bookingItems: enrichedBookingItems,
-      slots: fullSlots,
-      bookingStatus: booking.bookingStatus,
-      totalPrice: booking.totalPrice,
-      isPermitted: booking.isPermitted,
-      createdAt: booking.createdAt,
-      updatedAt: booking.updatedAt, 
     };
+
+    if (label) bookingObj.timeLabel = label;
+
+    return bookingObj;
   });
 
-  // Apply search and category filtering
+  // Apply search filter
   if (search) {
     bookingsWithTimeInfo = bookingsWithTimeInfo.filter(b =>
       b.product?.title?.toLowerCase().includes(search)
     );
   }
+
+  // FIXED BUG: category optional
   if (category) {
     bookingsWithTimeInfo = bookingsWithTimeInfo.filter(
       b => b.category?.toLowerCase() === category
     );
-  } else {
-    // If category is NOT provided → ALWAYS return empty array
-    return {
-      pagination: {
-        total: 0,
-        page,
-        limit,
-        totalPages: 0,
-      },
-      result: [],
-    };
   }
+
   // Apply pagination
   const paginatedResult = bookingsWithTimeInfo.slice(startIndex, endIndex);
 

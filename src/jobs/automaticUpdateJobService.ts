@@ -5,6 +5,7 @@ import moment from 'moment';
 import { isRestaurantOpen } from './../utils/restaurentTimeConvert';
 import mongoose from 'mongoose';
 
+// all common booking status
 const startBookingStatusJob = () => {
   // runs every 5 minutes
   cron.schedule('*/5 * * * *', async () => {
@@ -18,7 +19,8 @@ const startBookingStatusJob = () => {
 
   // console.log('=====> Booking auto-update cron job started.');
 };
-
+ 
+// restaurant booking status
 const startRestaurantStatusJob = () => {
   cron.schedule('*/5 * * * *', async () => {
     try {
@@ -83,6 +85,51 @@ const startRestaurantStatusJob = () => {
   });
 
   // console.log('=====> Restaurant status cron job started.');
+};
+
+//  ski hire booking status 
+const startSkiHireRestoreJob = () => {
+  cron.schedule('*/5 * * * *', async () => {
+    try {
+      const now = new Date();
+
+      // Find all expired bookings that are not completed yet
+      const expiredBookings = await Booking.find({
+        endDateAndTime: { $lt: now },
+        bookingStatus: { $ne: 'Completed' },
+        productModel: 'SkiHire',
+      });
+
+      for (const booking of expiredBookings) {
+        const skiHire = await SkiHire.findById(booking.product);
+
+        if (!skiHire) continue;
+
+        // Restore item quantities
+        booking.bookingItems.forEach(bItem => {
+          const item = skiHire.items.find(
+            it => it._id.toString() === bItem.itemId.toString()
+          );
+
+          if (item) {
+            item.availableQty += bItem.quantity;
+          }
+        });
+
+        await skiHire.save();
+
+        // Set booking status to completed
+        booking.bookingStatus = 'Completed';
+        await booking.save();
+      }
+
+      console.log('===> Ski Hire qty restored & bookings updated');
+    } catch (error) {
+      console.error('❌ Error in Ski Hire restore cron:', error);
+    }
+  });
+
+  // console.log('===> Ski Hire restore cron job started...');
 };
 
 export const startAllCronJobs = () => {

@@ -498,7 +498,8 @@ const updateSkiHireIntoDB = async (req: Request) => {
           productName: item.productName,
           productPhoto,
           price: Number(item.price),
-          quantity: Number(item.quantity),
+          totalQty: Number(item.quantity),
+          availableQty: Number(item.quantity),
         };
       })
     );

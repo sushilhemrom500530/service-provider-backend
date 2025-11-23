@@ -68,7 +68,7 @@ const bookingSchema = new Schema<IBooking>(
     bookingStatus: {
       type: String,
       enum: ['Active', 'Pending', 'Completed', 'Cancelled', 'Deleted'],
-      default: 'Pending',
+      default: 'Active',
       required: true,
     },
 
@@ -86,7 +86,7 @@ const bookingSchema = new Schema<IBooking>(
 
     isPermitted: {
       type: Boolean,
-      default: false,
+      default: true,
     },
   },
   {
