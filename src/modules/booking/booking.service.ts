@@ -317,6 +317,7 @@ const getMyBookingForHome = async (user: JwtPayload, selectedDate: string) => {
 };
 
 const addBookingIntoDB = async (user: JwtPayload, payload: IBooking) => {
+  const { totalPrice: transportPrice } = payload;
   // check user
   const isExistsUser = await User.findOne({ email: user?.email });
   if (!isExistsUser) {
@@ -432,7 +433,7 @@ const addBookingIntoDB = async (user: JwtPayload, payload: IBooking) => {
     }
 
     totalPrice = validatedItems.reduce((sum, item) => sum + item.total, 0);
-  } else {
+  } else if (productOwner?.providerType === 'Transport') {
     // Booking without items (just personCount, date, time)
     // if (!payload?.personCount || !payload?.date || !payload?.time) {
     //   throw new AppError(
@@ -440,7 +441,8 @@ const addBookingIntoDB = async (user: JwtPayload, payload: IBooking) => {
     //     'personCount, date, and time are required for this booking type.'
     //   );
     // }
-
+    totalPrice = transportPrice || 0;
+  } else {
     totalPrice = product?.amount || 0; // fallback to product price if exists
   }
 
@@ -496,7 +498,7 @@ const addBookingIntoDB = async (user: JwtPayload, payload: IBooking) => {
     if (invalid.length)
       throw new AppError(
         StatusCodes.BAD_REQUEST,
-        `Invalid or unavailable slot(s): ${invalid.join(', ')}`
+        `Invalid or unavailable slot(s) id : ${invalid.join(', ')}`
       );
 
     // Remove booked slots from availableSlots
@@ -623,6 +625,7 @@ const addBookingIntoDB = async (user: JwtPayload, payload: IBooking) => {
     category: result?.category,
     ownerId: productOwner?._id?.toString(),
   });
+// create invite url hitt 
 
   return paymentRequest;
 };

@@ -28,6 +28,7 @@ export interface IRestaurant extends Document {
   openTime: string;
   closeTime: string;
   serviceArea: string;
+  serviceFee?: number;
   foodType: string;
   status: "Open" | "Closed";
   items: ICategoryItemDetail[];

@@ -36,7 +36,7 @@ router.get(
 // create
 router.post(
   '/create',
-  auth('Admin', 'Provider'), 
+  auth('Admin', 'Provider'),
   uploads.fields([
     { name: 'thumbnail', maxCount: 1 },
     { name: 'files', maxCount: 20 },
@@ -57,7 +57,7 @@ router.post(
 // update
 router.patch(
   '/update/:id',
-  auth('Admin', 'Provider'), 
+  auth('Admin', 'Provider'),
   uploads.fields([
     { name: 'thumbnail', maxCount: 1 },
     { name: 'files', maxCount: 20 },
@@ -65,6 +65,14 @@ router.patch(
   convertHeicToPngMiddleware(USER_UPLOADS_FOLDER),
   validateRequest(RestaurantValidations.updateRestaurant),
   RestaurantController.updateRestaurantIntoDB
+);
+
+// update service fee
+router.patch(
+  '/service-fee/update',
+  auth('Admin'),
+  validateRequest(RestaurantValidations.updateServiceFee),
+  RestaurantController.updateRestaurantServiceFee
 );
 
 // delete

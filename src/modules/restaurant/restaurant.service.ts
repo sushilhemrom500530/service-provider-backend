@@ -206,7 +206,7 @@ const getSingleRestaurantFromDB = async (id: string, user: JwtPayload) => {
       path: 'refunds.userId',
       select: 'fullName email phoneNumber profileUrl createdAt',
     });
-    
+
   if (!restaurant)
     throw new AppError(StatusCodes.NOT_FOUND, 'Restaurant not found.');
 
@@ -603,6 +603,12 @@ const deleteRestaurantIntoDB = async (id: string, user: JwtPayload) => {
   return result;
 };
 
+const updateServiceFee = async (payload: any) => {
+  const { serviceFee } = payload;
+  const result = await Restaurant.updateMany({}, { $set: { serviceFee } });
+  return result;
+};
+
 export const RestaurantService = {
   getAllRestaurantFromDB,
   getAllMyRestaurantFromDB,
@@ -611,4 +617,5 @@ export const RestaurantService = {
   getSingleRestaurantFromDB,
   updateRestaurantIntoDB,
   deleteRestaurantIntoDB,
+  updateServiceFee,
 };
