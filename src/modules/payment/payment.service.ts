@@ -1,10 +1,9 @@
 import { Types } from 'mongoose';
 import AppError from '../../errors/AppErro';
-import { StatusCodes } from 'http-status-codes'; 
+import { StatusCodes } from 'http-status-codes';
 import { User } from '../user/user.model';
 import { Payment } from './payment.model';
 import { Booking } from './../booking/booking.model';
- 
 
 const getAllPayment = async (query: any) => {
   // Pagination setup
@@ -33,38 +32,34 @@ const getAllPayment = async (query: any) => {
       };
     }
 
-    const matchingUsers = await User.find(userFilters)
-      .select('_id')
-      .lean();
+    const matchingUsers = await User.find(userFilters).select('_id').lean();
 
     if (matchingUsers.length === 0) {
       return {
-        pagination: { 
-          total: 0, 
-          page, 
-          limit, 
+        pagination: {
+          total: 0,
+          page,
+          limit,
           totalPages: 0,
-          hasNextPage: false,
-          hasPrevPage: false,
         },
         payments: [],
       };
     }
 
-    paymentFilters.user = { 
-      $in: matchingUsers.map(u => u._id) 
+    paymentFilters.user = {
+      $in: matchingUsers.map(u => u._id),
     };
   }
 
   // Handle booking date filter - search across date, startDateAndTime, and endDateAndTime
   if (query.date) {
     const parsedDate = new Date(query.date);
-    
+
     if (!isNaN(parsedDate.getTime())) {
       // Create date range for the entire day
       const startOfDay = new Date(parsedDate);
       startOfDay.setHours(0, 0, 0, 0);
-      
+
       const endOfDay = new Date(parsedDate);
       endOfDay.setHours(23, 59, 59, 999);
 
@@ -72,27 +67,27 @@ const getAllPayment = async (query: any) => {
       const bookingFilters = {
         $or: [
           // Match exact date field (for Ski_Pass)
-          { 
+          {
             date: {
               $gte: startOfDay,
-              $lte: endOfDay
-            }
+              $lte: endOfDay,
+            },
           },
           // Match startDateAndTime field (for Ski_Hire)
-          { 
+          {
             startDateAndTime: {
               $gte: startOfDay,
-              $lte: endOfDay
-            }
+              $lte: endOfDay,
+            },
           },
           // Match endDateAndTime field (for Ski_Hire)
-          { 
+          {
             endDateAndTime: {
               $gte: startOfDay,
-              $lte: endOfDay
-            }
-          }
-        ]
+              $lte: endOfDay,
+            },
+          },
+        ],
       };
 
       const matchingBookings = await Booking.find(bookingFilters)
@@ -101,20 +96,18 @@ const getAllPayment = async (query: any) => {
 
       if (matchingBookings.length === 0) {
         return {
-          pagination: { 
-            total: 0, 
-            page, 
-            limit, 
+          pagination: {
+            total: 0,
+            page,
+            limit,
             totalPages: 0,
-            hasNextPage: false,
-            hasPrevPage: false,
           },
           payments: [],
         };
       }
 
-      paymentFilters.booking = { 
-        $in: matchingBookings.map(b => b._id) 
+      paymentFilters.booking = {
+        $in: matchingBookings.map(b => b._id),
       };
     }
   }
@@ -129,7 +122,8 @@ const getAllPayment = async (query: any) => {
       })
       .populate({
         path: 'booking',
-        select: 'category totalPrice bookingStatus date time startDateAndTime endDateAndTime personCount',
+        select:
+          'category totalPrice bookingStatus date time startDateAndTime endDateAndTime personCount',
       })
       .sort({ createdAt: -1 })
       .skip(skip)
@@ -137,16 +131,12 @@ const getAllPayment = async (query: any) => {
       .lean(),
   ]);
 
-  const totalPages = Math.ceil(total / limit);
-
   return {
     pagination: {
       total,
       page,
       limit,
-      totalPages,
-      hasNextPage: page < totalPages,
-      hasPrevPage: false,
+      totalPages: Math.ceil(total / limit),
     },
     payments,
   };
@@ -154,17 +144,17 @@ const getAllPayment = async (query: any) => {
 
 const paymentFindById = async (paymentId: string) => {
   const payment = await Payment.findById(paymentId)
-  .populate({ path: 'user', select: 'name email phoneNumber role' })
+    .populate({ path: 'user', select: 'name email phoneNumber role' })
     .populate({
       path: 'booking',
       select: 'category totalPrice bookingStatus date time personCount',
     });
-    
-  if(!payment){
+
+  if (!payment) {
     throw new AppError(StatusCodes.NOT_FOUND, 'Payment Data not found.');
   }
   return payment;
-}
+};
 
 const deletePaymentById = async (paymentId: string) => {
   // Validate ObjectId
@@ -179,13 +169,12 @@ const deletePaymentById = async (paymentId: string) => {
   }
 
   // Delete payment
- const result =  await Payment.deleteOne({ _id: paymentId });
- return result ;
-
-}
+  const result = await Payment.deleteOne({ _id: paymentId });
+  return result;
+};
 
 export const PaymentService = {
   getAllPayment,
   paymentFindById,
-  deletePaymentById
+  deletePaymentById,
 };

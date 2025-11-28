@@ -541,11 +541,37 @@ export const updateRestaurantIntoDB = async (req: Request) => {
 
   // Update slots if provided
   if (req.body.slots) {
-    let slots: ISlot[] = [];
-    if (typeof req.body.slots === 'string') slots = JSON.parse(req.body.slots);
-    else if (Array.isArray(req.body.slots)) slots = req.body.slots;
-    restaurant.slots = slots;
-    restaurant.availableSlots = slots; // Reset availableSlots to new slots
+    let newSlots: ISlot[] = [];
+
+    if (typeof req.body.slots === 'string') {
+      newSlots = JSON.parse(req.body.slots);
+    } else if (Array.isArray(req.body.slots)) {
+      newSlots = req.body.slots;
+    }
+
+    const oldSlots = restaurant.slots || [];
+
+    const mergedSlots: ISlot[] = [];
+
+    //  Keep existing IDs for old slots 
+    newSlots.forEach((slot, index) => {
+      if (oldSlots[index]) {
+        mergedSlots.push({
+          _id: oldSlots[index]._id, 
+          startTime: slot.startTime,
+          endTime: slot.endTime,
+        });
+      } else {
+        mergedSlots.push({
+          startTime: slot.startTime,
+          endTime: slot.endTime,
+        } as ISlot);
+      }
+    });
+
+    // Assign updated slots
+    restaurant.slots = mergedSlots;
+    restaurant.availableSlots = mergedSlots; // MATCH EXACTLY
   }
 
   // Update other fields

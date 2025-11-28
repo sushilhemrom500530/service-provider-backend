@@ -17,6 +17,14 @@ import { Wallet } from './../wallet/wallet.model';
 import { WalletTransactionType } from './../wallet/wallet.interface';
 import { format } from 'date-fns';
 import { IRefund } from '../common/common.interface';
+import { isPastDate } from './../../utils/isPassTimeCheck';
+import { Payment } from './../payment/payment.model';
+import { generateTransactionId } from './../../utils/generateTransactionId';
+import {
+  TransactionStatus,
+  PaymentGateway,
+  IPayment,
+} from './../payment/payment.interface';
 
 const getAllBookingFromDB = async (user: JwtPayload, query: any) => {
   const isExistsUser = await User.findOne({ email: user?.email });
@@ -317,13 +325,12 @@ const getMyBookingForHome = async (user: JwtPayload, selectedDate: string) => {
 };
 
 const addBookingIntoDB = async (user: JwtPayload, payload: IBooking) => {
-  // -----------------------------
-  // 1. USER VALIDATION
-  // -----------------------------
+  const { userId, transactionId } = payload;
+  // user validation
   const dbUser = await User.findOne({ email: user?.email });
   if (!dbUser) throw new AppError(StatusCodes.NOT_FOUND, 'User not found.');
 
-  if (!dbUser._id.equals(payload.userId))
+  if (!dbUser._id.equals(userId))
     throw new AppError(StatusCodes.UNAUTHORIZED, 'User ID mismatch.');
 
   if (
@@ -333,9 +340,7 @@ const addBookingIntoDB = async (user: JwtPayload, payload: IBooking) => {
   )
     throw new AppError(StatusCodes.UNAUTHORIZED, 'User status is not active.');
 
-  // -----------------------------
-  // 2. DYNAMIC PRODUCT MODEL MAPPING
-  // -----------------------------
+  // product model mapping
   const models: Record<string, any> = {
     SkiPass,
     SkiHire,
@@ -364,14 +369,62 @@ const addBookingIntoDB = async (user: JwtPayload, payload: IBooking) => {
   if (!productOwner)
     throw new AppError(StatusCodes.NOT_FOUND, 'Product owner not found.');
 
-  // -----------------------------
-  // 3. CATEGORY / MODEL SWITCHER
-  // -----------------------------
+  // date validation for all Service
+  const now = new Date();
+
+  // Ski Pass, Restaurant, Massage need only 1 date
+  if (
+    ['Ski_Pass', 'Restaurant', 'Massage'].includes(productOwner.providerType)
+  ) {
+    if (payload.date && isPastDate(payload.date)) {
+      throw new AppError(
+        StatusCodes.BAD_REQUEST,
+        'Booking date cannot be in the past.'
+      );
+    }
+  }
+
+  // Transport requires start + end date validation
+  if (productOwner.providerType === 'Transport') {
+    if (!payload.startDateAndTime || !payload.endDateAndTime) {
+      throw new AppError(
+        StatusCodes.BAD_REQUEST,
+        'Start and end date/time required.'
+      );
+    }
+
+    const start = new Date(payload.startDateAndTime);
+    const end = new Date(payload.endDateAndTime);
+
+    if (isPastDate(start)) {
+      throw new AppError(
+        StatusCodes.BAD_REQUEST,
+        'Start date/time cannot be in the past.'
+      );
+    }
+
+    if (end <= start) {
+      throw new AppError(
+        StatusCodes.BAD_REQUEST,
+        'End date must be later than start date.'
+      );
+    }
+  }
+  // Ski Hire optional date check
+  if (productOwner.providerType === 'Ski_Hire') {
+    if (payload.date && isPastDate(payload.date)) {
+      throw new AppError(
+        StatusCodes.BAD_REQUEST,
+        'Booking date cannot be in the past.'
+      );
+    }
+  }
+  // model swhicher
   let totalPrice = 0;
   let validatedItems: any[] = [];
 
   switch (productOwner.providerType) {
-    // RESTAURANT BOOKING
+    // Restaurant
     case 'Restaurant': {
       if (!payload.slots?.length)
         throw new AppError(StatusCodes.BAD_REQUEST, 'Slots are required.');
@@ -379,42 +432,50 @@ const addBookingIntoDB = async (user: JwtPayload, payload: IBooking) => {
       if (!payload.bookingItems?.length)
         throw new AppError(StatusCodes.BAD_REQUEST, 'Booking items required.');
 
-      // Validate booking items
-      payload.bookingItems.forEach(booked => {
-        const itemInMenu = matchedProduct.items.find(
-          (i: any) => i._id.toString() === booked.itemId
+      const updatedItems = matchedProduct.items.map((item: any) => {
+        const booked = payload.bookingItems.find(
+          (b: any) => b.itemId.toString() === item._id.toString()
         );
 
-        if (!itemInMenu)
-          throw new AppError(
-            StatusCodes.BAD_REQUEST,
-            `Menu item not found: ${booked.itemId}`
-          );
+        if (booked) {
+          // Check quantity
+          if (item.availableQty < booked.quantity) {
+            throw new AppError(
+              StatusCodes.BAD_REQUEST,
+              `Insufficient quantity for ${item.seat}. Only ${item.availableQty} available.`
+            );
+          }
 
-        if (booked.quantity > itemInMenu.quantity)
-          throw new AppError(
-            StatusCodes.BAD_REQUEST,
-            `Insufficient quantity for ${itemInMenu.name}`
-          );
+          const newAvailableQty = item.availableQty - booked.quantity;
 
-        validatedItems.push({
-          itemId: itemInMenu._id,
-          name: itemInMenu.name,
-          quantity: booked.quantity,
-          price: itemInMenu.price,
-          total: itemInMenu.price * booked.quantity,
-        });
+          validatedItems.push({
+            itemId: item._id,
+            seat: item.seat,
+            quantity: booked.quantity,
+            price: item.price,
+            total: item.price * booked.quantity,
+          });
+
+          // Return updated item
+          return {
+            ...item.toObject(),
+            availableQty: newAvailableQty,
+          };
+        }
+        return item;
       });
+      // collect again total price with service fee
+      const newTotalPrice = validatedItems.reduce((a, b) => a + b.total, 0);
+      totalPrice = newTotalPrice + matchedProduct?.serviceFee || 0;
 
-      totalPrice = validatedItems.reduce((a, b) => a + b.total, 0);
+      // totalPrice = validatedItems.reduce((a, b) => a + b.total, 0);
 
-      // Validate slots
       const validSlotIds = matchedProduct.availableSlots.map((s: any) =>
         s._id.toString()
       );
 
       const invalid = payload.slots.filter(
-        s => !validSlotIds.includes(s.toString())
+        (s: string) => !validSlotIds.includes(s.toString())
       );
 
       if (invalid.length)
@@ -428,15 +489,19 @@ const addBookingIntoDB = async (user: JwtPayload, payload: IBooking) => {
         (s: any) => !payload.slots.includes(s._id.toString())
       );
 
+      //  Update both items
       await Restaurant.updateOne(
         { _id: matchedProduct._id },
-        { $set: { availableSlots: remainingSlots } }
+        {
+          $set: {
+            items: updatedItems,
+            availableSlots: remainingSlots,
+          },
+        }
       );
-
       break;
     }
-
-    // SKI HIRE
+    // ski hire
     case 'Ski_Hire': {
       if (!payload.bookingItems?.length)
         throw new AppError(StatusCodes.BAD_REQUEST, 'Booking items required.');
@@ -462,21 +527,17 @@ const addBookingIntoDB = async (user: JwtPayload, payload: IBooking) => {
             availableQty: item.availableQty - booked.quantity,
           };
         }
-
         return item;
       });
 
-      console.log("update product items :", updatedItems);
-
-      // await SkiHire.updateOne(
-      //   { _id: matchedProduct._id },
-      //   { $set: { items: updatedItems } }
-      // );
+      await SkiHire.updateOne(
+        { _id: matchedProduct._id },
+        { $set: { items: updatedItems } }
+      );
 
       break;
     }
-
-    // TRANSPORT
+    // transport
     case 'Transport': {
       if (!payload.startDateAndTime || !payload.endDateAndTime)
         throw new AppError(
@@ -487,23 +548,21 @@ const addBookingIntoDB = async (user: JwtPayload, payload: IBooking) => {
       totalPrice = matchedProduct.amount || 0;
       break;
     }
-
-    // SKI PASS & MASSAGE
+    // ski pass
     case 'Ski_Pass': {
       totalPrice = matchedProduct.amount || 0;
       break;
     }
-
+    // massage
     case 'Massage': {
       totalPrice = payload.totalPrice || 0;
       break;
     }
-
     default:
       throw new AppError(StatusCodes.BAD_REQUEST, 'Invalid provider type.');
   }
 
-  // CREATE BOOKING DATA
+  // creat booking data
   const bookingData: Partial<IBooking> = {
     ...payload,
     user: dbUser._id,
@@ -511,29 +570,38 @@ const addBookingIntoDB = async (user: JwtPayload, payload: IBooking) => {
     productModel: productModelName,
     category: productOwner.providerType,
     totalPrice,
+  }; 
+
+  // create booking
+  const newBooking = await Booking.create(bookingData);
+
+  if (!newBooking)
+    throw new AppError(StatusCodes.BAD_REQUEST, 'Booking not created.');
+
+  // WALLET UPDATE
+  const wallet = await Wallet.findOne({ user: productOwner?._id });
+  if (wallet) {
+    wallet.balance += totalPrice;
+    wallet.transactions.push({
+      user: productOwner._id,
+      balance: totalPrice,
+      type: WalletTransactionType.EARN,
+    });
+    await wallet.save();
+  }
+  const paymentPayload: IPayment = {
+    booking: new Types.ObjectId(newBooking?._id),
+    user: new Types.ObjectId(userId),
+    transactionId: generateTransactionId(),
+    amount: totalPrice,
+    status: TransactionStatus.PAID,
+    gateway: PaymentGateway.STRIPE,
+    paymentMethodType: 'Card',
   };
+  // create payment
+  await Payment.create(paymentPayload);
 
-  return bookingData;
-
-  // CREATE BOOKING
-  // const newBooking = await Booking.create(bookingData);
-
-  // if (!newBooking)
-  //   throw new AppError(StatusCodes.BAD_REQUEST, 'Booking not created.');
-
-  // // WALLET UPDATE
-  // const wallet = await Wallet.findOne({ user: productOwner._id });
-  // if (wallet) {
-  //   wallet.balance += totalPrice;
-  //   wallet.transactions.push({
-  //     user: productOwner._id,
-  //     balance: totalPrice,
-  //     type: WalletTransactionType.EARN,
-  //   });
-  //   await wallet.save();
-  // }
-
-  // return newBooking;
+  return newBooking;
 };
 
 const updateBookingIntoDB = async (

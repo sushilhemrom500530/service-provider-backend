@@ -84,30 +84,29 @@ export const processToPayment = async (payload: IProcessPaymentPayload) => {
       receiverId: ownerId,
       type: 'payment',
       isRead: false,
-      senderId: userId, 
-    })
+      senderId: userId,
+    });
 
     // create for provider notification
-     await Notification.create({
-       title: 'Booking Success',
-       description: 'Your booking was successful.',
-       receiverId: userId,
-       type: 'payment',
-       isRead: false,
-       senderId: ownerId, 
-     });
-
+    await Notification.create({
+      title: 'Booking Success',
+      description: 'Your booking was successful.',
+      receiverId: userId,
+      type: 'payment',
+      isRead: false,
+      senderId: ownerId,
+    });
 
     // update booking status
-      await Booking.findByIdAndUpdate(bookingId, {
-    $set: { bookingStatus: 'Active', isPermitted: true },
-  });
+    await Booking.findByIdAndUpdate(bookingId, {
+      $set: { bookingStatus: 'Active', isPermitted: true },
+    });
 
     return {
       sessionId: session.id,
       sessionUrl: session.url,
     };
-  } catch (error:any) {
+  } catch (error: any) {
     throw new Error(error);
   }
 };
