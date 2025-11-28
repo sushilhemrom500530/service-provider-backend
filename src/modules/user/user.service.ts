@@ -3,9 +3,8 @@ import AppError from '../../errors/AppErro';
 import { IUser, UserStatus, IUpdateData, UserModel } from './user.interface';
 import { User } from './user.model';
 import { IPaginationOptions, IPaginationResult } from '../../types/pagination';
-import { JwtPayload } from 'jsonwebtoken'; 
+import { JwtPayload } from 'jsonwebtoken';
 
- 
 const getAllUsers = async (
   filters: Record<string, any>,
   options: IPaginationOptions
@@ -20,10 +19,10 @@ const getAllUsers = async (
 
   if (filters.status) {
     query.status = filters.status;
-  } else {
-    query.status = 'Active';
   }
-
+  // else {
+  //     query.status = 'Active';
+  //   }
   if (filters.searchTerm && typeof filters.searchTerm === 'string') {
     query.$or = [
       { email: { $regex: filters.searchTerm, $options: 'i' } },
@@ -50,8 +49,7 @@ const getUserById = async (userId: string): Promise<IUser | null> => {
   }
   return user;
 };
- 
- 
+
 const updateUserStatus = async (
   userId: string,
   user: JwtPayload,
@@ -121,6 +119,6 @@ export const UserService = {
   getUserById,
   updateUserStatus,
   getMyProfile,
-  updateMyProfile, 
+  updateMyProfile,
   deleteMyProfile,
 };

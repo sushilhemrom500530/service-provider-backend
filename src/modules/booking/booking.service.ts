@@ -317,27 +317,25 @@ const getMyBookingForHome = async (user: JwtPayload, selectedDate: string) => {
 };
 
 const addBookingIntoDB = async (user: JwtPayload, payload: IBooking) => {
-  const { totalPrice: transportPrice } = payload;
-  // check user
-  const isExistsUser = await User.findOne({ email: user?.email });
-  if (!isExistsUser) {
-    throw new AppError(StatusCodes.NOT_FOUND, 'User not found.');
-  }
+  // -----------------------------
+  // 1. USER VALIDATION
+  // -----------------------------
+  const dbUser = await User.findOne({ email: user?.email });
+  if (!dbUser) throw new AppError(StatusCodes.NOT_FOUND, 'User not found.');
 
-  // console.log('user is : ', isExistsUser);
-
-  if (!isExistsUser?._id.equals(payload?.userId)) {
+  if (!dbUser._id.equals(payload.userId))
     throw new AppError(StatusCodes.UNAUTHORIZED, 'User ID mismatch.');
-  }
 
   if (
     ['Delete', 'Blocked', 'Banned', 'Inactive', 'Unverified'].includes(
-      isExistsUser?.status
+      dbUser.status
     )
-  ) {
+  )
     throw new AppError(StatusCodes.UNAUTHORIZED, 'User status is not active.');
-  }
-  // Prepare models for dynamic ref
+
+  // -----------------------------
+  // 2. DYNAMIC PRODUCT MODEL MAPPING
+  // -----------------------------
   const models: Record<string, any> = {
     SkiPass,
     SkiHire,
@@ -345,289 +343,197 @@ const addBookingIntoDB = async (user: JwtPayload, payload: IBooking) => {
     Restaurant,
     Massage,
   };
-  let product = null;
-  let foundModelName: string | null = null;
 
-  if (payload?.productId) {
-    for (const [name, Model] of Object.entries(models)) {
-      const found = await Model.findById(payload?.productId).populate('owner');
-      if (found) {
-        product = found;
-        foundModelName = name;
-        break;
-      }
+  let matchedProduct = null;
+  let productModelName: string | null = null;
+
+  // Find product in any model
+  for (const [modelName, Model] of Object.entries(models)) {
+    const found = await Model.findById(payload.productId).populate('owner');
+    if (found) {
+      matchedProduct = found;
+      productModelName = modelName;
+      break;
     }
-
-    if (!product)
-      throw new AppError(
-        StatusCodes.NOT_FOUND,
-        'Product not found in any collection.'
-      );
   }
 
-  // Product owner check
-  const productOwner = await User.findById(product?.owner);
+  if (!matchedProduct)
+    throw new AppError(StatusCodes.NOT_FOUND, 'Product not found.');
+
+  const productOwner = await User.findById(matchedProduct.owner);
   if (!productOwner)
     throw new AppError(StatusCodes.NOT_FOUND, 'Product owner not found.');
 
-  // Conditional booking based on type
-  let validatedItems: any[] = [];
+  // -----------------------------
+  // 3. CATEGORY / MODEL SWITCHER
+  // -----------------------------
   let totalPrice = 0;
+  let validatedItems: any[] = [];
 
-  const isItemBooking =
-    payload?.bookingItems && payload?.bookingItems.length > 0;
+  switch (productOwner.providerType) {
+    // RESTAURANT BOOKING
+    case 'Restaurant': {
+      if (!payload.slots?.length)
+        throw new AppError(StatusCodes.BAD_REQUEST, 'Slots are required.');
 
-  if (isItemBooking) {
-    // Booking with items
-    if (
-      (productOwner?.providerType === 'Restaurant' ||
-        productOwner?.providerType === 'Ski_Hire') &&
-      (!payload?.bookingItems || payload?.bookingItems.length === 0)
-    ) {
-      throw new AppError(
-        StatusCodes.BAD_REQUEST,
-        'Booking items are required for this product type.'
-      );
-    }
+      if (!payload.bookingItems?.length)
+        throw new AppError(StatusCodes.BAD_REQUEST, 'Booking items required.');
 
-    if (!Array.isArray(product?.items)) {
-      throw new AppError(
-        StatusCodes.BAD_REQUEST,
-        'This product does not support booking items.'
-      );
-    }
-    // for (const bookedItem of payload?.bookingItems) {
-    for (const bookedItem of payload?.bookingItems ?? []) {
-      const foundItem = product?.items.find(
-        (menuItem: any) => menuItem?._id.toString() === bookedItem?.itemId
-      );
-      if (!foundItem) {
-        throw new AppError(
-          StatusCodes.BAD_REQUEST,
-          `Item with ID ${bookedItem?.itemId} not found in product menu.`
+      // Validate booking items
+      payload.bookingItems.forEach(booked => {
+        const itemInMenu = matchedProduct.items.find(
+          (i: any) => i._id.toString() === booked.itemId
         );
-      }
 
-      if (bookedItem?.quantity > foundItem?.quantity) {
-        throw new AppError(
-          StatusCodes.BAD_REQUEST,
-          `Not enough quantity for item "${foundItem?.name}". Only ${foundItem?.quantity} available.`
-        );
-      }
+        if (!itemInMenu)
+          throw new AppError(
+            StatusCodes.BAD_REQUEST,
+            `Menu item not found: ${booked.itemId}`
+          );
 
-      validatedItems.push({
-        itemId: foundItem?._id,
-        name: foundItem?.name,
-        price: foundItem?.price,
-        requestedQty: bookedItem?.quantity,
-        availableQty: foundItem?.quantity,
-        total: foundItem?.price * bookedItem.quantity,
+        if (booked.quantity > itemInMenu.quantity)
+          throw new AppError(
+            StatusCodes.BAD_REQUEST,
+            `Insufficient quantity for ${itemInMenu.name}`
+          );
+
+        validatedItems.push({
+          itemId: itemInMenu._id,
+          name: itemInMenu.name,
+          quantity: booked.quantity,
+          price: itemInMenu.price,
+          total: itemInMenu.price * booked.quantity,
+        });
       });
-    }
 
-    for (const item of validatedItems) {
-      const index = product?.items.findIndex(
-        (i: any) => i?._id.toString() === item?.itemId.toString()
+      totalPrice = validatedItems.reduce((a, b) => a + b.total, 0);
+
+      // Validate slots
+      const validSlotIds = matchedProduct.availableSlots.map((s: any) =>
+        s._id.toString()
       );
-      if (index !== -1) product.items[index].quantity -= item.requestedQty;
+
+      const invalid = payload.slots.filter(
+        s => !validSlotIds.includes(s.toString())
+      );
+
+      if (invalid.length)
+        throw new AppError(
+          StatusCodes.BAD_REQUEST,
+          `Invalid slot(s): ${invalid.join(', ')}`
+        );
+
+      // Remove booked slots
+      const remainingSlots = matchedProduct.availableSlots.filter(
+        (s: any) => !payload.slots.includes(s._id.toString())
+      );
+
+      await Restaurant.updateOne(
+        { _id: matchedProduct._id },
+        { $set: { availableSlots: remainingSlots } }
+      );
+
+      break;
     }
 
-    totalPrice = validatedItems.reduce((sum, item) => sum + item.total, 0);
-  } else if (productOwner?.providerType === 'Transport') {
-    // Booking without items (just personCount, date, time)
-    // if (!payload?.personCount || !payload?.date || !payload?.time) {
-    //   throw new AppError(
-    //     StatusCodes.BAD_REQUEST,
-    //     'personCount, date, and time are required for this booking type.'
-    //   );
-    // }
-    totalPrice = transportPrice || 0;
-  } else {
-    totalPrice = product?.amount || 0; // fallback to product price if exists
-  }
+    // SKI HIRE
+    case 'Ski_Hire': {
+      if (!payload.bookingItems?.length)
+        throw new AppError(StatusCodes.BAD_REQUEST, 'Booking items required.');
 
-  // Determine productModel
-  let productModel: ProductModelName;
-  switch (productOwner?.providerType) {
-    case 'Ski_Pass':
-      productModel = 'SkiPass';
+      const dbSkiHire = await SkiHire.findById(matchedProduct._id);
+
+      const updatedItems = dbSkiHire.items.map(item => {
+        const booked = payload.bookingItems.find(
+          b => b.itemId.toString() === item._id.toString()
+        );
+
+        if (booked) {
+          if (item.availableQty < booked.quantity)
+            throw new AppError(
+              StatusCodes.BAD_REQUEST,
+              `Insufficient quantity for ${item.productName}. Only ${item.availableQty} units are available. `
+            );
+
+          totalPrice += item.price * booked.quantity;
+
+          return {
+            ...item.toObject(),
+            availableQty: item.availableQty - booked.quantity,
+          };
+        }
+
+        return item;
+      });
+
+      console.log("update product items :", updatedItems);
+
+      // await SkiHire.updateOne(
+      //   { _id: matchedProduct._id },
+      //   { $set: { items: updatedItems } }
+      // );
+
       break;
-    case 'Ski_Hire':
-      productModel = 'SkiHire';
+    }
+
+    // TRANSPORT
+    case 'Transport': {
+      if (!payload.startDateAndTime || !payload.endDateAndTime)
+        throw new AppError(
+          StatusCodes.BAD_REQUEST,
+          'Start & End date/time required.'
+        );
+
+      totalPrice = matchedProduct.amount || 0;
       break;
-    case 'Transport':
-      productModel = 'Transport';
+    }
+
+    // SKI PASS & MASSAGE
+    case 'Ski_Pass': {
+      totalPrice = matchedProduct.amount || 0;
       break;
-    case 'Restaurant':
-      productModel = 'Restaurant';
+    }
+
+    case 'Massage': {
+      totalPrice = payload.totalPrice || 0;
       break;
-    case 'Massage':
-      productModel = 'Massage';
-      break;
+    }
+
     default:
       throw new AppError(StatusCodes.BAD_REQUEST, 'Invalid provider type.');
   }
 
-  // Create booking
+  // CREATE BOOKING DATA
   const bookingData: Partial<IBooking> = {
     ...payload,
+    user: dbUser._id,
+    product: payload.productId,
+    productModel: productModelName,
+    category: productOwner.providerType,
     totalPrice,
-    product: payload?.productId,
-    user: isExistsUser._id,
-    category: productOwner?.providerType,
-    productModel,
   };
 
-  // return {bookingData, product, validatedItems};
+  return bookingData;
 
-  //  Restaurant slot validation & update
-  if (productOwner?.providerType === 'Restaurant') {
-    const { slots = [] } = payload;
-    if (!slots.length)
-      throw new AppError(
-        StatusCodes.BAD_REQUEST,
-        'At least one slot is required.'
-      );
+  // CREATE BOOKING
+  // const newBooking = await Booking.create(bookingData);
 
-    const bookedIds = slots.map(id => id.toString());
-    const available = product.availableSlots || [];
-    const availableIds = available.map((s: any) => s._id.toString());
+  // if (!newBooking)
+  //   throw new AppError(StatusCodes.BAD_REQUEST, 'Booking not created.');
 
-    // Find invalid slot IDs
-    const invalid = bookedIds.filter(id => !availableIds.includes(id));
-    if (invalid.length)
-      throw new AppError(
-        StatusCodes.BAD_REQUEST,
-        `Invalid or unavailable slot(s) id : ${invalid.join(', ')}`
-      );
-
-    // Remove booked slots from availableSlots
-    const updatedAvailableSlots = available.filter(
-      (s: any) => !bookedIds.includes(s._id.toString())
-    );
-
-    // Update Restaurant’s availableSlots in DB
-    await Restaurant.updateOne(
-      { _id: product._id },
-      { $set: { availableSlots: updatedAvailableSlots } }
-    );
-
-    // Create booking
-    const result = await Booking.create(bookingData);
-    if (!result)
-      throw new AppError(StatusCodes.BAD_REQUEST, 'Booking not created.');
-
-    return result;
-  }
-
-  // Ski Hire quantity logic
-  if (productOwner?.providerType === 'Ski_Hire') {
-    const bookingItems = payload.bookingItems || [];
-    if (!bookingItems.length)
-      throw new AppError(
-        StatusCodes.BAD_REQUEST,
-        'At least one booking item is required.'
-      );
-
-    // Fetch current SkiHire data again (to ensure fresh state)
-    const skiHire = await SkiHire.findById(product._id);
-    if (!skiHire)
-      throw new AppError(StatusCodes.NOT_FOUND, 'Ski Hire product not found.');
-
-    const updatedItems = skiHire.items.map(item => {
-      // const booked = bookingItems.find(b => b.itemId.toString() === item?._id.toString());
-      const itemIdStr = (item as any)?._id?.toString();
-      const booked = bookingItems.find(
-        b => itemIdStr && b.itemId.toString() === itemIdStr
-      );
-      if (booked) {
-        // if (item?.availableQty < booked.quantity)
-        const availableQty = item?.availableQty ?? 0;
-        if (availableQty < booked.quantity)
-          throw new AppError(
-            StatusCodes.BAD_REQUEST,
-            `Insufficient quantity for ${item.productName}. Available: ${availableQty}`
-          );
-        const itemObj = (item as any)?.toObject?.() ?? item;
-        return {
-          // ...item.toObject(),
-          // availableQty: item?.availableQty - booked.quantity,
-          ...itemObj,
-          availableQty: availableQty - booked?.quantity,
-        };
-      }
-      return item;
-    });
-
-    await SkiHire.updateOne(
-      { _id: skiHire._id },
-      { $set: { items: updatedItems } }
-    );
-
-    const result = await Booking.create(bookingData);
-    if (!result)
-      throw new AppError(StatusCodes.BAD_REQUEST, 'Booking not created.');
-
-    return result;
-  }
-
-  // wallet calculation
-  const ownerWallet = await Wallet.findOne({ user: productOwner?._id });
-
-  if (!ownerWallet) {
-    throw new AppError(StatusCodes.NOT_FOUND, 'Owner wallet not found.');
-  }
-
-  //  const userWallet = await Wallet.findOne({ user: isExistsUser._id });
-  // if (!userWallet) {
-  //   throw new AppError(StatusCodes.NOT_FOUND, 'User wallet not found.');
+  // // WALLET UPDATE
+  // const wallet = await Wallet.findOne({ user: productOwner._id });
+  // if (wallet) {
+  //   wallet.balance += totalPrice;
+  //   wallet.transactions.push({
+  //     user: productOwner._id,
+  //     balance: totalPrice,
+  //     type: WalletTransactionType.EARN,
+  //   });
+  //   await wallet.save();
   // }
 
-  // if (userWallet.balance < totalPrice) {
-  //   throw new AppError(
-  //     StatusCodes.BAD_REQUEST,
-  //     'Insufficient wallet balance for this booking.'
-  //   );
-  // }
-
-  // Decrease user wallet balance
-  // userWallet.balance -= totalPrice;
-  // userWallet.transactions.push({
-  //   user: isExistsUser._id,
-  //   balance: totalPrice,
-  //   type: WalletTransactionType.WITHDRAW,
-  // });
-  // await userWallet.save();
-
-  // Increase owner wallet balance
-
-  if (ownerWallet) {
-    ownerWallet.balance += totalPrice;
-    ownerWallet.transactions.push({
-      user: productOwner?._id,
-      balance: totalPrice,
-      type: WalletTransactionType.EARN,
-    });
-    await ownerWallet.save();
-  }
-
-  const result = await Booking.create(bookingData);
-  if (!result)
-    throw new AppError(
-      StatusCodes.BAD_REQUEST,
-      'Something went wrong. Booking not created.'
-    );
-  // Process to payment
-  const paymentRequest = await processToPayment({
-    bookingId: result?._id as string,
-    userId: isExistsUser?._id?.toString(),
-    amount: result.totalPrice,
-    category: result?.category,
-    ownerId: productOwner?._id?.toString(),
-  });
-// create invite url hitt 
-
-  return paymentRequest;
+  // return newBooking;
 };
 
 const updateBookingIntoDB = async (

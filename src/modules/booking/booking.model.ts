@@ -86,7 +86,7 @@ const bookingSchema = new Schema<IBooking>(
 
     isPermitted: {
       type: Boolean,
-      default: true,
+      default: false,
     },
   },
   {

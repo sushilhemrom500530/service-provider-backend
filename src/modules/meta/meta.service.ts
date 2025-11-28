@@ -343,7 +343,7 @@ const getSingleService = async (user: JwtPayload, serviceId: string) => {
     })
     .populate({
       path: 'product',
-      select: 'title owner totalPrice items thumbnail serviceArea availableSlots',
+      select: 'title owner totalPrice items thumbnail serviceArea availableSlots serviceFee',
       populate: {
         path: 'owner',
         select: 'name email phoneNumber role providerType',
