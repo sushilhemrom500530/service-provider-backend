@@ -20,6 +20,7 @@ import { IRefund } from '../common/common.interface';
 import { isPastDate } from './../../utils/isPassTimeCheck';
 import { Payment } from './../payment/payment.model';
 import { generateTransactionId } from './../../utils/generateTransactionId';
+import { Notification } from './../notification/notification.model';
 import {
   TransactionStatus,
   PaymentGateway,
@@ -162,6 +163,10 @@ const getMyBooking = async (user: JwtPayload, query: any) => {
   // Search & Category filter
   const search = query?.search?.toLowerCase() || '';
   const category = query?.category?.toLowerCase() || '';
+
+  if (!category) {
+    return [];
+  }
 
   const msToTime = (ms: number) => {
     const totalSeconds = Math.floor(ms / 1000);
@@ -570,7 +575,7 @@ const addBookingIntoDB = async (user: JwtPayload, payload: IBooking) => {
     productModel: productModelName,
     category: productOwner.providerType,
     totalPrice,
-  }; 
+  };
 
   // create booking
   const newBooking = await Booking.create(bookingData);
@@ -601,12 +606,21 @@ const addBookingIntoDB = async (user: JwtPayload, payload: IBooking) => {
   // create payment
   await Payment.create(paymentPayload);
 
+  // send notificatin
+  await Notification.create({
+    receiverId: dbUser?._id,
+    senderId: productOwner?._id,
+    title: 'Payment Successful',
+    description: `Your payment of ${totalPrice} has been successfully made.`,
+    type: 'payment',
+  });
+
   return newBooking;
 };
 
 const updateBookingIntoDB = async (
   user: JwtPayload,
-  payload: BookingStatus,
+  payload: { bookingStatus?: BookingStatus; isPermitted?: boolean },
   bookingId: string
 ) => {
   // Verify logged-in user
@@ -627,6 +641,22 @@ const updateBookingIntoDB = async (
   const productDoc = existsBooking.product as any;
   const ownerId = productDoc?.owner?.toString?.();
 
+  // hold update date here
+  const updateData: any = {};
+
+  if (payload.bookingStatus !== undefined) {
+    updateData.bookingStatus = payload.bookingStatus;
+  }
+
+  if (payload.isPermitted !== undefined) {
+    updateData.isPermitted = payload.isPermitted;
+  }
+
+  // Nothing to update?
+  if (Object.keys(updateData).length === 0) {
+    throw new AppError(StatusCodes.BAD_REQUEST, 'No valid fields to update.');
+  }
+
   // allow condition
   if (user.role !== 'Admin' && ownerId !== isExistsUser?._id.toString()) {
     throw new AppError(
@@ -637,7 +667,7 @@ const updateBookingIntoDB = async (
   // Update booking status
   const result = await Booking.findByIdAndUpdate(
     bookingId,
-    { $set: { bookingStatus: payload } },
+    { $set: updateData },
     { new: true }
   )
     .populate('user', 'fullName email')
@@ -751,6 +781,48 @@ const refundBookingIntoDB = async (
   if (!product) {
     throw new AppError(StatusCodes.NOT_FOUND, `${productModel} not found.`);
   }
+  // find owner wallet
+  const ownerWallet = await Wallet.findOne({ user: product.owner });
+  if (!ownerWallet) {
+    throw new AppError(StatusCodes.NOT_FOUND, 'Owner wallet not found.');
+  }
+  // find user wallet
+  const userWallet = await Wallet.findOne({ user: isExistsUser?._id });
+  if (!userWallet) {
+    throw new AppError(StatusCodes.NOT_FOUND, 'User wallet not found.');
+  }
+  // calculate refund
+  const finalRefund = Number((existsBooking.totalPrice * 0.9).toFixed(2));
+
+  await Wallet.updateOne(
+    { user: product.owner },
+    { $inc: { balance: -finalRefund } } // decrease balance
+  );
+
+  ownerWallet.transactions.push({
+    user: isExistsUser._id,
+    balance: finalRefund,
+    type: WalletTransactionType.SEND,
+  });
+
+  await ownerWallet.save();
+
+  userWallet.balance += finalRefund;
+  userWallet.transactions.push({
+    user: product.owner,
+    balance: finalRefund,
+    type: WalletTransactionType.RECEIVE,
+  });
+
+  await userWallet.save();
+  // send notification
+  await Notification.create({
+    receiverId: product.owner,
+    senderId: isExistsUser._id,
+    title: 'Cancel Booking',
+    description: `${product?.title} is canceled by ${isExistsUser?.fullName}, product id:# ${product?._id}`,
+    type: 'payment',
+  });
 
   // Prevent duplicate refunds
   const alreadyRefunded = product.refunds?.some(

@@ -9,7 +9,10 @@ import { IBooking, BookingStatus } from './booking.interface';
 const getAllBookingFromDB = catchAsync(async (req: Request, res: Response) => {
   const user = req.user as JwtPayload;
 
-  const result = await BookingService.getAllBookingFromDB(user, req.query as any);
+  const result = await BookingService.getAllBookingFromDB(
+    user,
+    req.query as any
+  );
   sendResponse(res, {
     code: StatusCodes.OK,
     message: 'Booking fetched successfully.',
@@ -43,7 +46,6 @@ const getMyBookingIntoDB = catchAsync(async (req: Request, res: Response) => {
   });
 });
 
-
 const getMyBookingForHome = catchAsync(async (req: Request, res: Response) => {
   const user = req.user as JwtPayload;
 
@@ -57,7 +59,10 @@ const getMyBookingForHome = catchAsync(async (req: Request, res: Response) => {
     selectedDate = `${yyyy}-${mm}-${dd}`; // e.g., "2025-11-02"
   }
 
-  const result = await BookingService.getMyBookingForHome(user, selectedDate as string);
+  const result = await BookingService.getMyBookingForHome(
+    user,
+    selectedDate as string
+  );
 
   sendResponse(res, {
     code: StatusCodes.OK,
@@ -65,8 +70,6 @@ const getMyBookingForHome = catchAsync(async (req: Request, res: Response) => {
     data: result,
   });
 });
-
-
 
 const addBookingIntoDB = catchAsync(async (req: Request, res: Response) => {
   const user = req.user as JwtPayload;
@@ -85,10 +88,10 @@ const addBookingIntoDB = catchAsync(async (req: Request, res: Response) => {
 const updateBookingStatus = catchAsync(async (req: Request, res: Response) => {
   const id = req.params.id;
   const user = req.user as JwtPayload;
-  const { bookingStatus } = req.body;
+  const payload = req.body;
   const result = await BookingService.updateBookingIntoDB(
     user,
-    bookingStatus as BookingStatus,
+    payload as any,
     id as string
   );
   sendResponse(res, {
@@ -98,26 +101,28 @@ const updateBookingStatus = catchAsync(async (req: Request, res: Response) => {
   });
 });
 
-const updatePermitBookingStatus = catchAsync(async (req: Request, res: Response) => {
-  const id = req.params.id;
-  const user = req.user as JwtPayload;
-  const { isPermitted } = req.body;
-  const result = await BookingService.updatePermitBookingIntoDB(
-    user,
-    isPermitted as boolean,
-    id as string
-  );
-  sendResponse(res, {
-    code: StatusCodes.OK,
-    message: 'Booking Permitted successfully',
-    data: result,
-  });
-});
+const updatePermitBookingStatus = catchAsync(
+  async (req: Request, res: Response) => {
+    const id = req.params.id;
+    const user = req.user as JwtPayload;
+    const { isPermitted } = req.body;
+    const result = await BookingService.updatePermitBookingIntoDB(
+      user,
+      isPermitted as boolean,
+      id as string
+    );
+    sendResponse(res, {
+      code: StatusCodes.OK,
+      message: 'Booking Permitted successfully',
+      data: result,
+    });
+  }
+);
 
 const refundBookingIntoDB = catchAsync(async (req: Request, res: Response) => {
   const id = req.params.id;
   const user = req.user as JwtPayload;
-  const refundData = req.body; 
+  const refundData = req.body;
   const result = await BookingService.refundBookingIntoDB(
     user,
     refundData as any,
