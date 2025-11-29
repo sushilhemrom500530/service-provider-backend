@@ -19,10 +19,10 @@ const startBookingStatusJob = () => {
 
   // console.log('=====> Booking auto-update cron job started.');
 };
- 
+
 // restaurant booking status
 const startRestaurantStatusJob = () => {
-  cron.schedule('*/5 * * * *', async () => {
+  cron.schedule('*/1 * * * *', async () => {
     try {
       const restaurants = await Restaurant.find();
 
@@ -70,7 +70,22 @@ const startRestaurantStatusJob = () => {
               }
             }
           });
+          // Restore items quantities
+          if (booking.items && booking.items.length > 0) {
+            booking.items.forEach(item => {
+              const itemId = new mongoose.Types.ObjectId(item.itemId);
+              const foundItem = restaurant.items.find(
+                i => i._id && i._id.equals(itemId)
+              );
 
+              if (foundItem) {
+                foundItem.availableQty += item.qty;
+                if (foundItem.availableQty > foundItem.totalQty) {
+                  foundItem.availableQty = foundItem.totalQty;
+                }
+              }
+            });
+          };
           // Mark booking as Completed
           await restaurant.save({ validateBeforeSave: false });
 
@@ -87,7 +102,7 @@ const startRestaurantStatusJob = () => {
   // console.log('=====> Restaurant status cron job started.');
 };
 
-//  ski hire booking status 
+//  ski hire booking status
 const startSkiHireRestoreJob = () => {
   cron.schedule('*/5 * * * *', async () => {
     try {

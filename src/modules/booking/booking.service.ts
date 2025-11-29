@@ -1,4 +1,4 @@
-import { Types } from 'mongoose';
+import mongoose, { Types } from 'mongoose';
 import AppError from '../../errors/AppErro';
 import { StatusCodes } from 'http-status-codes';
 import { Request, Response } from 'express';
@@ -41,33 +41,54 @@ const getAllBookingFromDB = async (user: JwtPayload, query: any) => {
 
   const filters: any = {};
 
+  // ---- FIX: SEARCH PRODUCT TITLE ----
   if (search) {
-    filters['product.title'] = { $regex: search, $options: 'i' };
-  }
+    const productIds: string[] = [];
+    const models = [SkiPass, SkiHire, Transport, Restaurant, Massage];
 
-  // Step 1: Build base Booking query (NO product.owner filter here)
+    for (const Model of models) {
+      const matched = await Model.find({
+        title: { $regex: search, $options: 'i' },
+      }).select('_id');
+
+      if (matched.length > 0) {
+        productIds.push(...matched.map(p => p._id.toString()));
+      }
+    }
+
+    if (productIds.length === 0) {
+      return {
+        pagination: {
+          total: 0,
+          page,
+          limit,
+          totalPages: 0,
+        },
+        result: [],
+      };
+    }
+
+    filters.product = { $in: productIds };
+  }
+  // ---- END FIX ----
+
   let bookingQuery = Booking.find(filters)
     .populate({
       path: 'product',
       match:
-        isExistsUser.role === 'Provider'
-          ? { owner: isExistsUser._id } // Filter here
-          : {},
+        isExistsUser.role === 'Provider' ? { owner: isExistsUser._id } : {},
       select:
         '-items -totalPrice -serviceArea -__v -reviews -refunds -averageRating -createdAt -updatedAt',
     })
     .populate('user', 'fullName email address phoneNumber')
     .sort({ createdAt: -1 });
 
-  // Step 2: Execute without pagination to count real results
   const allBookings = await bookingQuery.clone();
 
-  // Step 3: Remove bookings where product = null (not matched)
   const filtered = allBookings.filter(b => b.product !== null);
 
   const total = filtered.length;
 
-  // Step 4: Apply pagination manually
   const result = filtered.slice(skip, skip + limit);
 
   return {
@@ -743,17 +764,17 @@ const refundBookingIntoDB = async (
     throw new AppError(StatusCodes.NOT_FOUND, 'Booking not found.');
   }
 
-  const result = await Booking.findByIdAndUpdate(
-    bookingId,
-    { $set: { bookingStatus: 'Cancel' } },
-    { new: true }
-  )
-    .populate('user', 'fullName email')
-    .populate('product');
+  // const result = await Booking.findByIdAndUpdate(
+  //   bookingId,
+  //   { $set: { bookingStatus: 'Cancel' } },
+  //   { new: true }
+  // )
+  //   .populate('user', 'fullName email')
+  //   .populate('product');
 
   // Identify the correct product model dynamically
   const productId = existsBooking?.product;
-  const productModel = existsBooking?.productModel; // e.g. "SkiPass" or "Restaurant"
+  const productModel = existsBooking?.productModel;
 
   if (!productId || !productModel) {
     throw new AppError(StatusCodes.BAD_REQUEST, 'Invalid product reference.');
@@ -781,75 +802,150 @@ const refundBookingIntoDB = async (
   if (!product) {
     throw new AppError(StatusCodes.NOT_FOUND, `${productModel} not found.`);
   }
-  // find owner wallet
-  const ownerWallet = await Wallet.findOne({ user: product.owner });
-  if (!ownerWallet) {
-    throw new AppError(StatusCodes.NOT_FOUND, 'Owner wallet not found.');
+  // // find owner wallet
+  // const ownerWallet = await Wallet.findOne({ user: product.owner });
+  // if (!ownerWallet) {
+  //   throw new AppError(StatusCodes.NOT_FOUND, 'Owner wallet not found.');
+  // }
+  // // find user wallet
+  // const userWallet = await Wallet.findOne({ user: isExistsUser?._id });
+  // if (!userWallet) {
+  //   throw new AppError(StatusCodes.NOT_FOUND, 'User wallet not found.');
+  // }
+  // // calculate refund
+  // const finalRefund = Number((existsBooking.totalPrice * 0.9).toFixed(2));
+
+  // await Wallet.updateOne(
+  //   { user: product.owner },
+  //   { $inc: { balance: -finalRefund } } // decrease balance
+  // );
+
+  // ownerWallet.transactions.push({
+  //   user: isExistsUser._id,
+  //   balance: finalRefund,
+  //   type: WalletTransactionType.SEND,
+  // });
+
+  // await ownerWallet.save();
+
+  // userWallet.balance += finalRefund;
+  // userWallet.transactions.push({
+  //   user: product.owner,
+  //   balance: finalRefund,
+  //   type: WalletTransactionType.RECEIVE,
+  // });
+
+  // await userWallet.save();
+
+  // // send notification
+  // await Notification.create({
+  //   receiverId: product.owner,
+  //   senderId: isExistsUser._id,
+  //   title: 'Cancel Booking',
+  //   description: `${product?.title} is canceled by ${isExistsUser?.fullName}, product id:# ${product?._id}`,
+  //   type: 'payment',
+  // });
+
+  // // Prevent duplicate refunds
+  // const alreadyRefunded = product.refunds?.some(
+  //   (refund: IRefund) =>
+  //     refund.userId.toString() === isExistsUser._id.toString()
+  // );
+
+  // if (alreadyRefunded) {
+  //   throw new AppError(
+  //     StatusCodes.BAD_REQUEST,
+  //     'You have already refunded or canceled this product.'
+  //   );
+  // }
+
+  // restore available product totalQty and slots
+  // Restore for Restaurant
+  if (productModel === 'Restaurant') {
+    if (existsBooking.slots && existsBooking.slots.length > 0) {
+      existsBooking.slots.forEach(slotIdStr => {
+        const slotId = new mongoose.Types.ObjectId(slotIdStr);
+
+        const slot = product.slots.find(s => s._id && s._id.equals(slotId));
+
+        if (slot) {
+          const alreadyAvailable = product.availableSlots.some(
+            s => s._id && s._id.equals(slot._id)
+          );
+
+          if (!alreadyAvailable) {
+            product.availableSlots.push({
+              _id: slot._id,
+              startTime: slot.startTime,
+              endTime: slot.endTime,
+            });
+          }
+        }
+      });
+    }
+
+    // Restore item quantities (VIP / Normal)
+    if (existsBooking.bookingItems && existsBooking.bookingItems.length > 0) {
+      existsBooking.bookingItems.forEach(item => {
+        const itemId = new mongoose.Types.ObjectId(item.itemId);
+
+        const foundItem = product.items.find(
+          i => i._id && i._id.equals(itemId)
+        );
+
+        if (foundItem) {
+          foundItem.availableQty += item.quantity; // restore quantity
+
+          if (foundItem.availableQty > foundItem.totalQty) {
+            foundItem.availableQty = foundItem.totalQty;
+          }
+        }
+        console.log('find current items :', foundItem);
+      });
+    }
+    // await product.save({ validateBeforeSave: false });
   }
-  // find user wallet
-  const userWallet = await Wallet.findOne({ user: isExistsUser?._id });
-  if (!userWallet) {
-    throw new AppError(StatusCodes.NOT_FOUND, 'User wallet not found.');
-  }
-  // calculate refund
-  const finalRefund = Number((existsBooking.totalPrice * 0.9).toFixed(2));
 
-  await Wallet.updateOne(
-    { user: product.owner },
-    { $inc: { balance: -finalRefund } } // decrease balance
-  );
+  // Restore for SkiHire
+  if (productModel === 'SkiHire') {
+    if (existsBooking.bookingItems && existsBooking.bookingItems.length > 0) {
+      existsBooking.bookingItems.forEach(item => {
+        const itemId = new mongoose.Types.ObjectId(item.itemId);
 
-  ownerWallet.transactions.push({
-    user: isExistsUser._id,
-    balance: finalRefund,
-    type: WalletTransactionType.SEND,
-  });
+        const foundItem = product.items.find(
+          i => i._id && i._id.equals(itemId)
+        );
 
-  await ownerWallet.save();
+        if (foundItem) {
+          foundItem.availableQty += item.quantity;
 
-  userWallet.balance += finalRefund;
-  userWallet.transactions.push({
-    user: product.owner,
-    balance: finalRefund,
-    type: WalletTransactionType.RECEIVE,
-  });
+          if (foundItem.availableQty > foundItem.totalQty) {
+            foundItem.availableQty = foundItem.totalQty;
+          }
+        }
+        console.log('find current items :', foundItem);
+      });
+    }
 
-  await userWallet.save();
-  // send notification
-  await Notification.create({
-    receiverId: product.owner,
-    senderId: isExistsUser._id,
-    title: 'Cancel Booking',
-    description: `${product?.title} is canceled by ${isExistsUser?.fullName}, product id:# ${product?._id}`,
-    type: 'payment',
-  });
-
-  // Prevent duplicate refunds
-  const alreadyRefunded = product.refunds?.some(
-    (refund: IRefund) =>
-      refund.userId.toString() === isExistsUser._id.toString()
-  );
-
-  if (alreadyRefunded) {
-    throw new AppError(
-      StatusCodes.BAD_REQUEST,
-      'You have already refunded or canceled this product.'
-    );
+    // await product.save({ validateBeforeSave: false });
   }
 
-  // Add refund info
-  const newRefund = {
-    userId: isExistsUser._id,
-    reason: payload.reason,
-    createdAt: new Date(),
-  } as IRefund;
+  // ==================== END RESTORE LOGIC ====================
 
-  if (!product.refunds) product.refunds = [];
-  product.refunds.push(newRefund);
+  // // Add refund info
+  // const newRefund = {
+  //   userId: isExistsUser._id,
+  //   reason: payload.reason,
+  //   createdAt: new Date(),
+  // } as IRefund;
 
-  await product.save();
+  // if (!product.refunds) product.refunds = [];
 
-  return result;
+  // product.refunds.push(newRefund);
+
+  // await product.save();
+
+  // return result;
 };
 
 const deleteBookingIntoDB = async (id: string, user: JwtPayload) => {

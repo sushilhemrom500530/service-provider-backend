@@ -69,7 +69,7 @@ export const processToPayment = async (payload: IProcessPaymentPayload) => {
       amount,
       currency,
       transactionId,
-      sessionId: session?.id,
+      // sessionId: session?.id,
       status: TransactionStatus.PAID,
       gateway: PaymentGateway.STRIPE,
       paymentMethodType: 'Card',
@@ -102,10 +102,10 @@ export const processToPayment = async (payload: IProcessPaymentPayload) => {
       $set: { bookingStatus: 'Active', isPermitted: true },
     });
 
-    return {
-      sessionId: session.id,
-      sessionUrl: session.url,
-    };
+    // return {
+    //   sessionId: session.id,
+    //   sessionUrl: session.url,
+    // };
   } catch (error: any) {
     throw new Error(error);
   }
