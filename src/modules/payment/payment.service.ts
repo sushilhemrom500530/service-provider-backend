@@ -63,6 +63,11 @@ const getAllPayment = async (query: any) => {
       const endOfDay = new Date(parsedDate);
       endOfDay.setHours(23, 59, 59, 999);
 
+      paymentFilters.createdAt = {
+        $gte: startOfDay,
+        $lte: endOfDay,
+      };
+
       // Search in all three date fields using $or
       const bookingFilters = {
         $or: [
