@@ -27,6 +27,7 @@ import {
   IPayment,
 } from './../payment/payment.interface';
 
+
 const getAllBookingFromDB = async (user: JwtPayload, query: any) => {
   const isExistsUser = await User.findOne({ email: user?.email });
   if (!isExistsUser) {
@@ -78,7 +79,7 @@ const getAllBookingFromDB = async (user: JwtPayload, query: any) => {
       match:
         isExistsUser.role === 'Provider' ? { owner: isExistsUser._id } : {},
       select:
-        '-items -totalPrice -serviceArea -__v -reviews -refunds -averageRating -createdAt -updatedAt',
+        '-totalPrice -serviceArea -__v -reviews -refunds -averageRating -createdAt -updatedAt',
     })
     .populate('user', 'fullName email address phoneNumber')
     .sort({ createdAt: -1 });
@@ -167,13 +168,12 @@ const getMyBooking = async (user: JwtPayload, query: any) => {
     .populate({
       path: 'product',
       select:
-        '-owner -totalPrice -__v -reviews -refunds -averageRating -createdAt -updatedAt',
+        '-owner -totalPrice -__v -reviews -refunds -averageRating -createdAt -updatedAt -slots -availableSlots',
     })
     .populate(
       'user',
       '_id fullName email profileUrl address phoneNumber status'
-    )
-    .sort({ createdAt: -1 });
+    );
 
   // Pagination
   const page = Number(query?.page) || 1;
@@ -198,27 +198,60 @@ const getMyBooking = async (user: JwtPayload, query: any) => {
 
   // Map and enrich bookings
   let bookingsWithTimeInfo = bookings.map(booking => {
-    const startTime = new Date(booking?.startDateAndTime);
-    const endTime = new Date(booking?.endDateAndTime);
-
-    let label: string | undefined;
-    if (['Ski_Hire', 'Transport'].includes(booking?.category)) {
-      const now = new Date();
-      if (now < endTime) {
-        const timeLeft = endTime.getTime() - now.getTime();
-        label = `Time Left: ${msToTime(timeLeft)}`;
-      } else {
-        const overTime = now.getTime() - endTime.getTime();
-        label = `Over Time: ${msToTime(overTime)}`;
-      }
-    }
-
     const product = booking.product
       ? booking.product.toObject?.() || booking.product
       : null;
     const productItems = product?.items || [];
 
+    const startTime = new Date(booking?.startDateAndTime);
+    const endTime = new Date(booking?.endDateAndTime);
+    let bookingSeatCount: number = 0;
+    let label: string | undefined;
+    let overTimeAmount: number = 0;
+   
+    if (['Ski_Hire', 'Transport'].includes(booking?.category)) {
+      const now = new Date();
+
+      if (now < endTime) {
+        // Time left
+        const timeLeft = endTime.getTime() - now.getTime();
+        label = `Time Left: ${msToTime(timeLeft)}`;
+      } else {
+        // Overtime started
+        const overMs = now.getTime() - endTime.getTime();
+        label = `Over Time: ${msToTime(overMs)}`;
+
+        const overHours = overMs / (1000 * 60 * 60); // convert to hours
+
+        // Detect price field by category
+        let hourlyRate = 0;
+
+        if (booking?.category === 'Ski_Hire') {
+          hourlyRate = Number(product?.extraChargePerHour || 0);
+        }
+
+        if (booking?.category === 'Transport') {
+          hourlyRate = Number(product?.extraChargePerHours || 0);
+        }
+
+        // Final overtime amount
+        overTimeAmount = Number((overHours * hourlyRate).toFixed(2));
+      }
+    }
+
+    // if (['Ski_Hire', 'Transport'].includes(booking?.category)) {
+    //   const now = new Date();
+    //   if (now < endTime) {
+    //     const timeLeft = endTime.getTime() - now.getTime();
+    //     label = `Time Left: ${msToTime(timeLeft)}`;
+    //   } else {
+    //     const overTime = now.getTime() - endTime.getTime();
+    //     label = `Over Time: ${msToTime(overTime)}`;
+    //   }
+    // }
+
     const enrichedBookingItems = (booking.bookingItems || []).map((bi: any) => {
+      bookingSeatCount = bi?.quantity || 0;
       const matchedItem = productItems.find(
         (itm: any) => itm?._id?.toString() === bi?.itemId?.toString()
       );
@@ -236,7 +269,16 @@ const getMyBooking = async (user: JwtPayload, query: any) => {
       bookingItems: enrichedBookingItems,
     };
 
+    // add extra fields for time info
+    if (startTime) bookingObj.startTime = startTime;
+    if (endTime) bookingObj.endTime = endTime; 
     if (label) bookingObj.timeLabel = label;
+
+    if (overTimeAmount > 0) bookingObj.overTimeAmount = overTimeAmount;
+
+    if (booking?.category === 'Restaurant') {
+      bookingObj.bookingSeatCount = bookingSeatCount;
+    }
 
     return bookingObj;
   });
@@ -254,7 +296,10 @@ const getMyBooking = async (user: JwtPayload, query: any) => {
       b => b.category?.toLowerCase() === category
     );
   }
-
+  // //   newest comes first
+  // bookingsWithTimeInfo = bookingsWithTimeInfo.sort(
+  //   (a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
+  // );
   // Apply pagination
   const paginatedResult = bookingsWithTimeInfo.slice(startIndex, endIndex);
 
@@ -449,7 +494,7 @@ const addBookingIntoDB = async (user: JwtPayload, payload: IBooking) => {
   let totalPrice = 0;
   let validatedItems: any[] = [];
 
-  switch (productOwner.providerType) {
+  switch (productOwner?.providerType) {
     // Restaurant
     case 'Restaurant': {
       if (!payload.slots?.length)
