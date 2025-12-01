@@ -6,7 +6,7 @@ import { s3Services } from './../../aws/s3Service';
 import { USER_UPLOADS_FOLDER } from './skipass.constant';
 import { SkiPass } from './skipass.model';
 import { User } from './../user/user.model';
-import { JwtPayload } from 'jsonwebtoken'; 
+import { JwtPayload } from 'jsonwebtoken';
 import { IReview } from './../common/common.interface';
 
 const getAllSkiPassFromDB = async (user: JwtPayload, query: any) => {
@@ -25,25 +25,23 @@ const getAllSkiPassFromDB = async (user: JwtPayload, query: any) => {
   const skip = (page - 1) * limit;
 
   // Search
-  const search = query.search || "";
+  const search = query.search || '';
 
- 
   const filters: any = {};
 
   if (search) {
-    filters.title = { $regex: search, $options: "i" };  
+    filters.title = { $regex: search, $options: 'i' };
   }
 
- 
   const total = await SkiPass.countDocuments(filters);
 
-  // Fetch paginated result 
+  // Fetch paginated result
   const result = await SkiPass.find(filters)
     .skip(skip)
     .limit(limit)
-    .sort({ createdAt: -1 });  
+    .sort({ createdAt: -1 });
 
-  return { 
+  return {
     pagination: {
       total,
       page,
@@ -70,25 +68,23 @@ const getAllMySkiPassFromDB = async (user: JwtPayload, query: any) => {
   const skip = (page - 1) * limit;
 
   // Search
-  const search = query.search || "";
+  const search = query.search || '';
 
- 
   const filters: any = { owner: isExistsUser._id };
 
   if (search) {
-    filters.title = { $regex: search, $options: "i" };  
+    filters.title = { $regex: search, $options: 'i' };
   }
 
- 
   const total = await SkiPass.countDocuments(filters);
 
-  // Fetch paginated result 
+  // Fetch paginated result
   const result = await SkiPass.find(filters)
     .skip(skip)
     .limit(limit)
-    .sort({ createdAt: -1 });  
+    .sort({ createdAt: -1 });
 
-  return { 
+  return {
     pagination: {
       total,
       page,
@@ -107,10 +103,16 @@ const getSingleSkipPassFromDB = async (id: string, user: JwtPayload) => {
       'You cannot view this data because your account was not found.'
     );
   }
-  const result = await SkiPass.findById(id).populate(
-    'owner',
-    '_id fullName email profileUrl phoneNumber'
-  );
+  const result = await SkiPass.findById(id)
+    .populate('owner', '_id fullName email profileUrl phoneNumber')
+    .populate({
+      path: 'reviews.userId',
+      select: 'fullName email phoneNumber profileUrl createdAt', // choose what you want
+    })
+    .populate({
+      path: 'refunds.userId',
+      select: 'fullName email phoneNumber profileUrl createdAt',
+    });
 
   if (!result) {
     return {

@@ -5,6 +5,7 @@ import moment from 'moment';
 import { isRestaurantOpen } from './../utils/restaurentTimeConvert';
 import mongoose from 'mongoose';
 
+// all common booking status
 const startBookingStatusJob = () => {
   // runs every 5 minutes
   cron.schedule('*/5 * * * *', async () => {
@@ -19,8 +20,9 @@ const startBookingStatusJob = () => {
   // console.log('=====> Booking auto-update cron job started.');
 };
 
+// restaurant booking status
 const startRestaurantStatusJob = () => {
-  cron.schedule('*/5 * * * *', async () => {
+  cron.schedule('*/1 * * * *', async () => {
     try {
       const restaurants = await Restaurant.find();
 
@@ -36,28 +38,30 @@ const startRestaurantStatusJob = () => {
           restaurant.status = 'Closed';
           await restaurant.save({ validateBeforeSave: false });
         }
-        // Restore expired booking slots
+        // Find expired bookings for this restaurant
         const expiredBookings = await Booking.find({
           product: restaurant._id,
           date: { $lt: new Date() }, // past bookings
-          bookingStatus: 'Completed', // only active bookings
+          bookingStatus: 'Active',
         });
 
-        for (const booking of expiredBookings) {
-          // Restore each booked slot
-          (booking.slots as string[]).forEach(slotIdStr => {
-            const slotId = new mongoose.Types.ObjectId(slotIdStr); // convert string to ObjectId
+        // console.log("Current booking data ===>",expiredBookings);
 
-            const slot: any | undefined = restaurant.slots.find(
-              s => s._id && s._id.equals(slotId) 
+        for (const booking of expiredBookings) {
+          // Restore only slots that were booked
+          booking.slots.forEach(slotIdStr => {
+            const slotId = new mongoose.Types.ObjectId(slotIdStr);
+            const slot = restaurant.slots.find(
+              s => s._id && s._id.equals(slotId)
             );
 
             if (slot) {
-              const exists = restaurant.availableSlots.some(
+              const alreadyAvailable = restaurant.availableSlots.some(
                 s => s._id && s._id.equals(slot._id)
               );
-
-              if (!exists) {
+              //  console.log("slots ==> ",slot );
+              //  console.log("already avaiable slots ==> ",alreadyAvailable );
+              if (!alreadyAvailable) {
                 restaurant.availableSlots.push({
                   _id: slot._id,
                   startTime: slot.startTime,
@@ -66,8 +70,25 @@ const startRestaurantStatusJob = () => {
               }
             }
           });
+          // Restore items quantities
+          if (booking.items && booking.items.length > 0) {
+            booking.items.forEach(item => {
+              const itemId = new mongoose.Types.ObjectId(item.itemId);
+              const foundItem = restaurant.items.find(
+                i => i._id && i._id.equals(itemId)
+              );
 
+              if (foundItem) {
+                foundItem.availableQty += item.qty;
+                if (foundItem.availableQty > foundItem.totalQty) {
+                  foundItem.availableQty = foundItem.totalQty;
+                }
+              }
+            });
+          };
           // Mark booking as Completed
+          await restaurant.save({ validateBeforeSave: false });
+
           booking.bookingStatus = 'Completed';
           await booking.save({ validateBeforeSave: false });
         }
@@ -79,6 +100,51 @@ const startRestaurantStatusJob = () => {
   });
 
   // console.log('=====> Restaurant status cron job started.');
+};
+
+//  ski hire booking status
+const startSkiHireRestoreJob = () => {
+  cron.schedule('*/5 * * * *', async () => {
+    try {
+      const now = new Date();
+
+      // Find all expired bookings that are not completed yet
+      const expiredBookings = await Booking.find({
+        endDateAndTime: { $lt: now },
+        bookingStatus: { $ne: 'Completed' },
+        productModel: 'SkiHire',
+      });
+
+      for (const booking of expiredBookings) {
+        const skiHire = await SkiHire.findById(booking.product);
+
+        if (!skiHire) continue;
+
+        // Restore item quantities
+        booking.bookingItems.forEach(bItem => {
+          const item = skiHire.items.find(
+            it => it._id.toString() === bItem.itemId.toString()
+          );
+
+          if (item) {
+            item.availableQty += bItem.quantity;
+          }
+        });
+
+        await skiHire.save();
+
+        // Set booking status to completed
+        booking.bookingStatus = 'Completed';
+        await booking.save();
+      }
+
+      console.log('===> Ski Hire qty restored & bookings updated');
+    } catch (error) {
+      console.error('❌ Error in Ski Hire restore cron:', error);
+    }
+  });
+
+  // console.log('===> Ski Hire restore cron job started...');
 };
 
 export const startAllCronJobs = () => {

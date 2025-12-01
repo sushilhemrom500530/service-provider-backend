@@ -21,7 +21,7 @@ export interface IPayment {
   paymentMethodType: 'Card';
 
   transactionId: string;
-  sessionId: string;
+  sessionId?: string;
 
   status: TransactionStatus;
 

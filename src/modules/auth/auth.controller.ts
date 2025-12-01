@@ -101,13 +101,15 @@ const login = catchAsync(async (req: Request, res: Response) => {
     httpOnly: true,
     secure: process.env.NODE_ENV === 'production',
     sameSite: 'strict',
-    maxAge: 15 * 60 * 1000, // 15 minutes
+    maxAge: 365 * 24 * 60 * 60 * 1000, // 365 days
+    // maxAge: 15 * 60 * 1000, // 15 minutes
   });
   res.cookie('refreshToken', tokens.refreshToken, {
     httpOnly: true,
     secure: config.environment === 'production',
     sameSite: 'strict',
-    maxAge: 7 * 24 * 60 * 60 * 1000, // 7 days
+    // maxAge: 7 * 24 * 60 * 60 * 1000,// 7 days
+    maxAge: 365 * 24 * 60 * 60 * 1000, // 365 days
   });
   const formatedUserData = {
     _id: user?.id,

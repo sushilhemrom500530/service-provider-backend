@@ -1,4 +1,4 @@
-import { Types } from 'mongoose';
+import mongoose, { Types } from 'mongoose';
 import AppError from '../../errors/AppErro';
 import { StatusCodes } from 'http-status-codes';
 import { Request, Response } from 'express';
@@ -17,6 +17,15 @@ import { Wallet } from './../wallet/wallet.model';
 import { WalletTransactionType } from './../wallet/wallet.interface';
 import { format } from 'date-fns';
 import { IRefund } from '../common/common.interface';
+import { isPastDate } from './../../utils/isPassTimeCheck';
+import { Payment } from './../payment/payment.model';
+import { generateTransactionId } from './../../utils/generateTransactionId';
+import { Notification } from './../notification/notification.model';
+import {
+  TransactionStatus,
+  PaymentGateway,
+  IPayment,
+} from './../payment/payment.interface';
 
 const getAllBookingFromDB = async (user: JwtPayload, query: any) => {
   const isExistsUser = await User.findOne({ email: user?.email });
@@ -32,34 +41,81 @@ const getAllBookingFromDB = async (user: JwtPayload, query: any) => {
 
   const filters: any = {};
 
+  // ---- FIX: SEARCH PRODUCT TITLE ----
   if (search) {
-    filters['product.title'] = { $regex: search, $options: 'i' };
-  }
+    const productIds: string[] = [];
+    const models = [SkiPass, SkiHire, Transport, Restaurant, Massage];
 
-  // Step 1: Build base Booking query (NO product.owner filter here)
+    for (const Model of models) {
+      const matched = await Model.find({
+        title: { $regex: search, $options: 'i' },
+      }).select('_id');
+
+      if (matched.length > 0) {
+        productIds.push(...matched.map(p => p._id.toString()));
+      }
+    }
+
+    if (productIds.length === 0) {
+      return {
+        pagination: {
+          total: 0,
+          page,
+          limit,
+          totalPages: 0,
+        },
+        result: [],
+      };
+    }
+
+    filters.product = { $in: productIds };
+  }
+  // ---- END FIX ----
+
   let bookingQuery = Booking.find(filters)
     .populate({
       path: 'product',
       match:
-        isExistsUser.role === 'Provider'
-          ? { owner: isExistsUser._id } // Filter here
-          : {},
+        isExistsUser.role === 'Provider' ? { owner: isExistsUser._id } : {},
       select:
-        '-items -totalPrice -serviceArea -__v -reviews -refunds -averageRating -createdAt -updatedAt',
+        '-totalPrice -serviceArea -__v -reviews -refunds -averageRating -createdAt -updatedAt',
+      // populate: {path: 'items'}
     })
     .populate('user', 'fullName email address phoneNumber')
     .sort({ createdAt: -1 });
 
-  // Step 2: Execute without pagination to count real results
   const allBookings = await bookingQuery.clone();
 
-  // Step 3: Remove bookings where product = null (not matched)
   const filtered = allBookings.filter(b => b.product !== null);
 
   const total = filtered.length;
 
-  // Step 4: Apply pagination manually
-  const result = filtered.slice(skip, skip + limit);
+  const result = filtered.slice(skip, skip + limit).map(booking => {
+    const product = booking.product || {};
+
+    const fullSlots = (booking.slots || [])
+      .map(slotId => {
+        return product.slots?.find(s => s._id.toString() === slotId.toString());
+      })
+      .filter(Boolean);
+
+    const fullBookingItems = booking.bookingItems.map(item => {
+      const fullItem =
+        product.items?.find(p => p._id.toString() === item.itemId.toString()) ||
+        null;
+
+      return {
+        ...item.toObject(),
+        itemDetails: fullItem || null,
+      };
+    });
+
+    return {
+      ...booking.toObject(),
+      bookingItems: fullBookingItems || null,
+      slots: fullSlots || null,
+    };
+  });
 
   return {
     pagination: {
@@ -137,13 +193,12 @@ const getMyBooking = async (user: JwtPayload, query: any) => {
     .populate({
       path: 'product',
       select:
-        '-owner -totalPrice -__v -reviews -refunds -averageRating -createdAt -updatedAt',
+        '-owner -totalPrice -__v -reviews -refunds -averageRating -createdAt -updatedAt -slots -availableSlots',
     })
     .populate(
       'user',
       '_id fullName email profileUrl address phoneNumber status'
-    )
-    .sort({ createdAt: -1 });
+    );
 
   // Pagination
   const page = Number(query?.page) || 1;
@@ -155,6 +210,10 @@ const getMyBooking = async (user: JwtPayload, query: any) => {
   const search = query?.search?.toLowerCase() || '';
   const category = query?.category?.toLowerCase() || '';
 
+  if (!category) {
+    return [];
+  }
+
   const msToTime = (ms: number) => {
     const totalSeconds = Math.floor(ms / 1000);
     const hours = Math.floor(totalSeconds / 3600);
@@ -164,93 +223,108 @@ const getMyBooking = async (user: JwtPayload, query: any) => {
 
   // Map and enrich bookings
   let bookingsWithTimeInfo = bookings.map(booking => {
-    const product = booking.product ? (booking.product as any) : null;
+    const product = booking.product
+      ? booking.product.toObject?.() || booking.product
+      : null;
+    const productItems = product?.items || [];
 
-    // Map booked slots IDs to full slot objects
-    let fullSlots: any[] = [];
-    if (product && booking.slots) {
-      fullSlots = booking.slots
-        .map(slotId =>
-          product.slots.find((s: any) => s._id.toString() === slotId.toString())
-        )
-        .filter(Boolean);
+    const startTime = new Date(booking?.startDateAndTime);
+    const endTime = new Date(booking?.endDateAndTime);
+    let bookingSeatCount: number = 0;
+    let label: string | undefined;
+    let overTimeAmount: number = 0;
+
+    if (['Ski_Hire', 'Transport'].includes(booking?.category)) {
+      const now = new Date();
+
+      if (now < endTime) {
+        // Time left
+        const timeLeft = endTime.getTime() - now.getTime();
+        label = `Time Left: ${msToTime(timeLeft)}`;
+      } else {
+        // Overtime started
+        const overMs = now.getTime() - endTime.getTime();
+        label = `Over Time: ${msToTime(overMs)}`;
+
+        const overHours = overMs / (1000 * 60 * 60); // convert to hours
+
+        // Detect price field by category
+        let hourlyRate = 0;
+
+        if (booking?.category === 'Ski_Hire') {
+          hourlyRate = Number(product?.extraChargePerHour || 0);
+        }
+
+        if (booking?.category === 'Transport') {
+          hourlyRate = Number(product?.extraChargePerHours || 0);
+        }
+
+        // Final overtime amount
+        overTimeAmount = Number((overHours * hourlyRate).toFixed(2));
+      }
     }
 
-    // Clean booking items
-    const enrichedBookingItems = (booking.bookingItems || []).map(bi => {
-      const matchedItem = product?.items?.find(
-        (i: any) => i._id.toString() === bi.itemId.toString()
+    // if (['Ski_Hire', 'Transport'].includes(booking?.category)) {
+    //   const now = new Date();
+    //   if (now < endTime) {
+    //     const timeLeft = endTime.getTime() - now.getTime();
+    //     label = `Time Left: ${msToTime(timeLeft)}`;
+    //   } else {
+    //     const overTime = now.getTime() - endTime.getTime();
+    //     label = `Over Time: ${msToTime(overTime)}`;
+    //   }
+    // }
+
+    const enrichedBookingItems = (booking.bookingItems || []).map((bi: any) => {
+      bookingSeatCount = bi?.quantity || 0;
+      const matchedItem = productItems.find(
+        (itm: any) => itm?._id?.toString() === bi?.itemId?.toString()
       );
       return {
-        itemId: bi.itemId,
-        quantity: bi.quantity,
-        item: matchedItem
-          ? {
-              _id: matchedItem._id,
-              seat: matchedItem.seat,
-              photo: matchedItem.photo,
-              totalQty: matchedItem.totalQty,
-              availableQty: matchedItem.availableQty,
-              price: matchedItem.price,
-              description: matchedItem.description,
-            }
-          : null,
+        ...(bi ? bi.toObject?.() || bi : {}),
+        item: matchedItem ? { ...matchedItem } : null,
       };
     });
 
-    // Clean product (remove items array, keep only necessary fields)
-    const cleanProduct = product
-      ? {
-          _id: product._id,
-          title: product.title,
-          thumbnail: product.thumbnail,
-          category: product.category,
-          openTime: product.openTime,
-          closeTime: product.closeTime,
-          serviceArea: product.serviceArea, 
-          status: product.status, 
-        }
-      : null;
+    if (product) delete product.items;
 
-    return {
-      _id: booking._id,
-      user: booking.user,
-      product: cleanProduct,
-      productModel: booking.productModel,
-      category: booking.category,
-      date: booking.date,
+    const bookingObj: any = {
+      ...booking.toObject(),
+      product,
       bookingItems: enrichedBookingItems,
-      slots: fullSlots,
-      bookingStatus: booking.bookingStatus,
-      totalPrice: booking.totalPrice,
-      isPermitted: booking.isPermitted,
-      createdAt: booking.createdAt,
-      updatedAt: booking.updatedAt, 
     };
+
+    // add extra fields for time info
+    if (startTime) bookingObj.startTime = startTime;
+    if (endTime) bookingObj.endTime = endTime;
+    if (label) bookingObj.timeLabel = label;
+
+    if (overTimeAmount > 0) bookingObj.overTimeAmount = overTimeAmount;
+
+    if (booking?.category === 'Restaurant') {
+      bookingObj.bookingSeatCount = bookingSeatCount;
+    }
+
+    return bookingObj;
   });
 
-  // Apply search and category filtering
+  // Apply search filter
   if (search) {
     bookingsWithTimeInfo = bookingsWithTimeInfo.filter(b =>
       b.product?.title?.toLowerCase().includes(search)
     );
   }
+
+  // FIXED BUG: category optional
   if (category) {
     bookingsWithTimeInfo = bookingsWithTimeInfo.filter(
       b => b.category?.toLowerCase() === category
     );
-  } else {
-    // If category is NOT provided → ALWAYS return empty array
-    return {
-      pagination: {
-        total: 0,
-        page,
-        limit,
-        totalPages: 0,
-      },
-      result: [],
-    };
   }
+  // //   newest comes first
+  // bookingsWithTimeInfo = bookingsWithTimeInfo.sort(
+  //   (a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
+  // );
   // Apply pagination
   const paginatedResult = bookingsWithTimeInfo.slice(startIndex, endIndex);
 
@@ -347,26 +421,22 @@ const getMyBookingForHome = async (user: JwtPayload, selectedDate: string) => {
 };
 
 const addBookingIntoDB = async (user: JwtPayload, payload: IBooking) => {
-  // check user
-  const isExistsUser = await User.findOne({ email: user?.email });
-  if (!isExistsUser) {
-    throw new AppError(StatusCodes.NOT_FOUND, 'User not found.');
-  }
+  const { userId, transactionId } = payload;
+  // user validation
+  const dbUser = await User.findOne({ email: user?.email });
+  if (!dbUser) throw new AppError(StatusCodes.NOT_FOUND, 'User not found.');
 
-  // console.log('user is : ', isExistsUser);
-
-  if (!isExistsUser?._id.equals(payload?.userId)) {
+  if (!dbUser._id.equals(userId))
     throw new AppError(StatusCodes.UNAUTHORIZED, 'User ID mismatch.');
-  }
 
   if (
     ['Delete', 'Blocked', 'Banned', 'Inactive', 'Unverified'].includes(
-      isExistsUser?.status
+      dbUser.status
     )
-  ) {
+  )
     throw new AppError(StatusCodes.UNAUTHORIZED, 'User status is not active.');
-  }
-  // Prepare models for dynamic ref
+
+  // product model mapping
   const models: Record<string, any> = {
     SkiPass,
     SkiHire,
@@ -374,292 +444,274 @@ const addBookingIntoDB = async (user: JwtPayload, payload: IBooking) => {
     Restaurant,
     Massage,
   };
-  let product = null;
-  let foundModelName: string | null = null;
 
-  if (payload?.productId) {
-    for (const [name, Model] of Object.entries(models)) {
-      const found = await Model.findById(payload?.productId).populate('owner');
-      if (found) {
-        product = found;
-        foundModelName = name;
-        break;
-      }
+  let matchedProduct = null;
+  let productModelName: string | null = null;
+
+  // Find product in any model
+  for (const [modelName, Model] of Object.entries(models)) {
+    const found = await Model.findById(payload.productId).populate('owner');
+    if (found) {
+      matchedProduct = found;
+      productModelName = modelName;
+      break;
     }
-
-    if (!product)
-      throw new AppError(
-        StatusCodes.NOT_FOUND,
-        'Product not found in any collection.'
-      );
   }
 
-  // Product owner check
-  const productOwner = await User.findById(product?.owner);
+  if (!matchedProduct)
+    throw new AppError(StatusCodes.NOT_FOUND, 'Product not found.');
+
+  const productOwner = await User.findById(matchedProduct.owner);
   if (!productOwner)
     throw new AppError(StatusCodes.NOT_FOUND, 'Product owner not found.');
 
-  // Conditional booking based on type
-  let validatedItems: any[] = [];
-  let totalPrice = 0;
+  // date validation for all Service
+  const now = new Date();
 
-  const isItemBooking =
-    payload?.bookingItems && payload?.bookingItems.length > 0;
-
-  if (isItemBooking) {
-    // Booking with items
-    if (
-      (productOwner?.providerType === 'Restaurant' ||
-        productOwner?.providerType === 'Ski_Hire') &&
-      (!payload?.bookingItems || payload?.bookingItems.length === 0)
-    ) {
+  // Ski Pass, Restaurant, Massage need only 1 date
+  if (
+    ['Ski_Pass', 'Restaurant', 'Massage'].includes(productOwner.providerType)
+  ) {
+    if (payload.date && isPastDate(payload.date)) {
       throw new AppError(
         StatusCodes.BAD_REQUEST,
-        'Booking items are required for this product type.'
+        'Booking date cannot be in the past.'
       );
     }
-
-    if (!Array.isArray(product?.items)) {
-      throw new AppError(
-        StatusCodes.BAD_REQUEST,
-        'This product does not support booking items.'
-      );
-    }
-    // for (const bookedItem of payload?.bookingItems) {
-    for (const bookedItem of payload?.bookingItems ?? []) {
-      const foundItem = product?.items.find(
-        (menuItem: any) => menuItem?._id.toString() === bookedItem?.itemId
-      );
-      if (!foundItem) {
-        throw new AppError(
-          StatusCodes.BAD_REQUEST,
-          `Item with ID ${bookedItem?.itemId} not found in product menu.`
-        );
-      }
-
-      if (bookedItem?.quantity > foundItem?.quantity) {
-        throw new AppError(
-          StatusCodes.BAD_REQUEST,
-          `Not enough quantity for item "${foundItem?.name}". Only ${foundItem?.quantity} available.`
-        );
-      }
-
-      validatedItems.push({
-        itemId: foundItem?._id,
-        name: foundItem?.name,
-        price: foundItem?.price,
-        requestedQty: bookedItem?.quantity,
-        availableQty: foundItem?.quantity,
-        total: foundItem?.price * bookedItem.quantity,
-      });
-    }
-
-    for (const item of validatedItems) {
-      const index = product?.items.findIndex(
-        (i: any) => i?._id.toString() === item?.itemId.toString()
-      );
-      if (index !== -1) product.items[index].quantity -= item.requestedQty;
-    }
-
-    totalPrice = validatedItems.reduce((sum, item) => sum + item.total, 0);
-  } else {
-    // Booking without items (just personCount, date, time)
-    // if (!payload?.personCount || !payload?.date || !payload?.time) {
-    //   throw new AppError(
-    //     StatusCodes.BAD_REQUEST,
-    //     'personCount, date, and time are required for this booking type.'
-    //   );
-    // }
-
-    totalPrice = product?.amount || 0; // fallback to product price if exists
   }
 
-  // Determine productModel
-  let productModel: ProductModelName;
+  // Transport requires start + end date validation
+  if (productOwner.providerType === 'Transport') {
+    if (!payload.startDateAndTime || !payload.endDateAndTime) {
+      throw new AppError(
+        StatusCodes.BAD_REQUEST,
+        'Start and end date/time required.'
+      );
+    }
+
+    const start = new Date(payload.startDateAndTime);
+    const end = new Date(payload.endDateAndTime);
+
+    if (isPastDate(start)) {
+      throw new AppError(
+        StatusCodes.BAD_REQUEST,
+        'Start date/time cannot be in the past.'
+      );
+    }
+
+    if (end <= start) {
+      throw new AppError(
+        StatusCodes.BAD_REQUEST,
+        'End date must be later than start date.'
+      );
+    }
+  }
+  // Ski Hire optional date check
+  if (productOwner.providerType === 'Ski_Hire') {
+    if (payload.date && isPastDate(payload.date)) {
+      throw new AppError(
+        StatusCodes.BAD_REQUEST,
+        'Booking date cannot be in the past.'
+      );
+    }
+  }
+  // model swhicher
+  let totalPrice = 0;
+  let validatedItems: any[] = [];
+
   switch (productOwner?.providerType) {
-    case 'Ski_Pass':
-      productModel = 'SkiPass';
+    // Restaurant
+    case 'Restaurant': {
+      if (!payload.slots?.length)
+        throw new AppError(StatusCodes.BAD_REQUEST, 'Slots are required.');
+
+      if (!payload.bookingItems?.length)
+        throw new AppError(StatusCodes.BAD_REQUEST, 'Booking items required.');
+
+      const updatedItems = matchedProduct.items.map((item: any) => {
+        const booked = payload.bookingItems.find(
+          (b: any) => b.itemId.toString() === item._id.toString()
+        );
+
+        if (booked) {
+          // Check quantity
+          if (item.availableQty < booked.quantity) {
+            throw new AppError(
+              StatusCodes.BAD_REQUEST,
+              `Insufficient quantity for ${item.seat}. Only ${item.availableQty} available.`
+            );
+          }
+
+          const newAvailableQty = item.availableQty - booked.quantity;
+
+          validatedItems.push({
+            itemId: item._id,
+            seat: item.seat,
+            quantity: booked.quantity,
+            price: item.price,
+            total: item.price * booked.quantity,
+          });
+
+          // Return updated item
+          return {
+            ...item.toObject(),
+            availableQty: newAvailableQty,
+          };
+        }
+        return item;
+      });
+      // collect again total price with service fee
+      const newTotalPrice = validatedItems.reduce((a, b) => a + b.total, 0);
+      totalPrice = newTotalPrice + matchedProduct?.serviceFee || 0;
+
+      // totalPrice = validatedItems.reduce((a, b) => a + b.total, 0);
+
+      const validSlotIds = matchedProduct.availableSlots.map((s: any) =>
+        s._id.toString()
+      );
+
+      const invalid = payload.slots.filter(
+        (s: string) => !validSlotIds.includes(s.toString())
+      );
+
+      if (invalid.length)
+        throw new AppError(
+          StatusCodes.BAD_REQUEST,
+          `Invalid slot(s): ${invalid.join(', ')}`
+        );
+
+      // Remove booked slots
+      const remainingSlots = matchedProduct.availableSlots.filter(
+        (s: any) => !payload.slots.includes(s._id.toString())
+      );
+
+      //  Update both items
+      await Restaurant.updateOne(
+        { _id: matchedProduct._id },
+        {
+          $set: {
+            items: updatedItems,
+            availableSlots: remainingSlots,
+          },
+        }
+      );
       break;
-    case 'Ski_Hire':
-      productModel = 'SkiHire';
+    }
+    // ski hire
+    case 'Ski_Hire': {
+      if (!payload.bookingItems?.length)
+        throw new AppError(StatusCodes.BAD_REQUEST, 'Booking items required.');
+
+      const dbSkiHire = await SkiHire.findById(matchedProduct._id);
+
+      const updatedItems = dbSkiHire.items.map(item => {
+        const booked = payload.bookingItems.find(
+          b => b.itemId.toString() === item._id.toString()
+        );
+
+        if (booked) {
+          if (item.availableQty < booked.quantity)
+            throw new AppError(
+              StatusCodes.BAD_REQUEST,
+              `Insufficient quantity for ${item.productName}. Only ${item.availableQty} units are available. `
+            );
+
+          totalPrice += item.price * booked.quantity;
+
+          return {
+            ...item.toObject(),
+            availableQty: item.availableQty - booked.quantity,
+          };
+        }
+        return item;
+      });
+
+      await SkiHire.updateOne(
+        { _id: matchedProduct._id },
+        { $set: { items: updatedItems } }
+      );
+
       break;
-    case 'Transport':
-      productModel = 'Transport';
+    }
+    // transport
+    case 'Transport': {
+      if (!payload.startDateAndTime || !payload.endDateAndTime)
+        throw new AppError(
+          StatusCodes.BAD_REQUEST,
+          'Start & End date/time required.'
+        );
+
+      totalPrice = matchedProduct.amount || 0;
       break;
-    case 'Restaurant':
-      productModel = 'Restaurant';
+    }
+    // ski pass
+    case 'Ski_Pass': {
+      totalPrice = matchedProduct.amount || 0;
       break;
-    case 'Massage':
-      productModel = 'Massage';
+    }
+    // massage
+    case 'Massage': {
+      totalPrice = payload.totalPrice || 0;
       break;
+    }
     default:
       throw new AppError(StatusCodes.BAD_REQUEST, 'Invalid provider type.');
   }
 
-  // Create booking
+  // creat booking data
   const bookingData: Partial<IBooking> = {
     ...payload,
+    user: dbUser._id,
+    product: payload.productId,
+    productModel: productModelName,
+    category: productOwner.providerType,
     totalPrice,
-    product: payload?.productId,
-    user: isExistsUser._id,
-    category: productOwner?.providerType,
-    productModel,
   };
 
-  // return {bookingData, product, validatedItems};
+  // create booking
+  const newBooking = await Booking.create(bookingData);
 
-  //  Restaurant slot validation & update
-  if (productOwner?.providerType === 'Restaurant') {
-    const { slots = [] } = payload;
-    if (!slots.length)
-      throw new AppError(
-        StatusCodes.BAD_REQUEST,
-        'At least one slot is required.'
-      );
+  if (!newBooking)
+    throw new AppError(StatusCodes.BAD_REQUEST, 'Booking not created.');
 
-    const bookedIds = slots.map(id => id.toString());
-    const available = product.availableSlots || [];
-    const availableIds = available.map((s: any) => s._id.toString());
-
-    // Find invalid slot IDs
-    const invalid = bookedIds.filter(id => !availableIds.includes(id));
-    if (invalid.length)
-      throw new AppError(
-        StatusCodes.BAD_REQUEST,
-        `Invalid or unavailable slot(s): ${invalid.join(', ')}`
-      );
-
-    // Remove booked slots from availableSlots
-    const updatedAvailableSlots = available.filter(
-      (s: any) => !bookedIds.includes(s._id.toString())
-    );
-
-    // Update Restaurant’s availableSlots in DB
-    await Restaurant.updateOne(
-      { _id: product._id },
-      { $set: { availableSlots: updatedAvailableSlots } }
-    );
-
-    // Create booking
-    const result = await Booking.create(bookingData);
-    if (!result)
-      throw new AppError(StatusCodes.BAD_REQUEST, 'Booking not created.');
-
-    return result;
-  }
-
-  // Ski Hire quantity logic
-  if (productOwner?.providerType === 'Ski_Hire') {
-    const bookingItems = payload.bookingItems || [];
-    if (!bookingItems.length)
-      throw new AppError(
-        StatusCodes.BAD_REQUEST,
-        'At least one booking item is required.'
-      );
-
-    // Fetch current SkiHire data again (to ensure fresh state)
-    const skiHire = await SkiHire.findById(product._id);
-    if (!skiHire)
-      throw new AppError(StatusCodes.NOT_FOUND, 'Ski Hire product not found.');
-
-    const updatedItems = skiHire.items.map(item => {
-      // const booked = bookingItems.find(b => b.itemId.toString() === item?._id.toString());
-      const itemIdStr = (item as any)?._id?.toString();
-      const booked = bookingItems.find(
-        b => itemIdStr && b.itemId.toString() === itemIdStr
-      );
-      if (booked) {
-        // if (item?.availableQty < booked.quantity)
-        const availableQty = item?.availableQty ?? 0;
-        if (availableQty < booked.quantity)
-          throw new AppError(
-            StatusCodes.BAD_REQUEST,
-            `Insufficient quantity for ${item.productName}. Available: ${availableQty}`
-          );
-        const itemObj = (item as any)?.toObject?.() ?? item;
-        return {
-          // ...item.toObject(),
-          // availableQty: item?.availableQty - booked.quantity,
-          ...itemObj,
-          availableQty: availableQty - booked?.quantity,
-        };
-      }
-      return item;
-    });
-
-    await SkiHire.updateOne(
-      { _id: skiHire._id },
-      { $set: { items: updatedItems } }
-    );
-
-    const result = await Booking.create(bookingData);
-    if (!result)
-      throw new AppError(StatusCodes.BAD_REQUEST, 'Booking not created.');
-
-    return result;
-  }
-
-  // wallet calculation
-  const ownerWallet = await Wallet.findOne({ user: productOwner?._id });
-
-  if (!ownerWallet) {
-    throw new AppError(StatusCodes.NOT_FOUND, 'Owner wallet not found.');
-  }
-
-  //  const userWallet = await Wallet.findOne({ user: isExistsUser._id });
-  // if (!userWallet) {
-  //   throw new AppError(StatusCodes.NOT_FOUND, 'User wallet not found.');
-  // }
-
-  // if (userWallet.balance < totalPrice) {
-  //   throw new AppError(
-  //     StatusCodes.BAD_REQUEST,
-  //     'Insufficient wallet balance for this booking.'
-  //   );
-  // }
-
-  // Decrease user wallet balance
-  // userWallet.balance -= totalPrice;
-  // userWallet.transactions.push({
-  //   user: isExistsUser._id,
-  //   balance: totalPrice,
-  //   type: WalletTransactionType.WITHDRAW,
-  // });
-  // await userWallet.save();
-
-  // Increase owner wallet balance
-
-  if (ownerWallet) {
-    ownerWallet.balance += totalPrice;
-    ownerWallet.transactions.push({
-      user: productOwner?._id,
+  // WALLET UPDATE
+  const wallet = await Wallet.findOne({ user: productOwner?._id });
+  if (wallet) {
+    wallet.balance += totalPrice;
+    wallet.transactions.push({
+      user: productOwner._id,
       balance: totalPrice,
       type: WalletTransactionType.EARN,
     });
-    await ownerWallet.save();
+    await wallet.save();
   }
+  const paymentPayload: IPayment = {
+    booking: new Types.ObjectId(newBooking?._id),
+    user: new Types.ObjectId(userId),
+    transactionId: generateTransactionId(),
+    amount: totalPrice,
+    status: TransactionStatus.PAID,
+    gateway: PaymentGateway.STRIPE,
+    paymentMethodType: 'Card',
+  };
+  // create payment
+  await Payment.create(paymentPayload);
 
-  const result = await Booking.create(bookingData);
-  if (!result)
-    throw new AppError(
-      StatusCodes.BAD_REQUEST,
-      'Something went wrong. Booking not created.'
-    );
-  // Process to payment
-  const paymentRequest = await processToPayment({
-    bookingId: result?._id as string,
-    userId: isExistsUser?._id?.toString(),
-    amount: result.totalPrice,
-    category: result?.category,
-    ownerId: productOwner?._id?.toString(),
+  // send notificatin
+  await Notification.create({
+    receiverId: dbUser?._id,
+    senderId: productOwner?._id,
+    title: 'Payment Successful',
+    description: `Your payment of ${totalPrice} has been successfully made.`,
+    type: 'payment',
   });
 
-  return paymentRequest;
+  return newBooking;
 };
 
 const updateBookingIntoDB = async (
   user: JwtPayload,
-  payload: BookingStatus,
+  payload: { bookingStatus?: BookingStatus; isPermitted?: boolean },
   bookingId: string
 ) => {
   // Verify logged-in user
@@ -680,6 +732,22 @@ const updateBookingIntoDB = async (
   const productDoc = existsBooking.product as any;
   const ownerId = productDoc?.owner?.toString?.();
 
+  // hold update date here
+  const updateData: any = {};
+
+  if (payload.bookingStatus !== undefined) {
+    updateData.bookingStatus = payload.bookingStatus;
+  }
+
+  if (payload.isPermitted !== undefined) {
+    updateData.isPermitted = payload.isPermitted;
+  }
+
+  // Nothing to update?
+  if (Object.keys(updateData).length === 0) {
+    throw new AppError(StatusCodes.BAD_REQUEST, 'No valid fields to update.');
+  }
+
   // allow condition
   if (user.role !== 'Admin' && ownerId !== isExistsUser?._id.toString()) {
     throw new AppError(
@@ -690,7 +758,7 @@ const updateBookingIntoDB = async (
   // Update booking status
   const result = await Booking.findByIdAndUpdate(
     bookingId,
-    { $set: { bookingStatus: payload } },
+    { $set: updateData },
     { new: true }
   )
     .populate('user', 'fullName email')
@@ -766,17 +834,17 @@ const refundBookingIntoDB = async (
     throw new AppError(StatusCodes.NOT_FOUND, 'Booking not found.');
   }
 
-  const result = await Booking.findByIdAndUpdate(
-    bookingId,
-    { $set: { bookingStatus: 'Cancel' } },
-    { new: true }
-  )
-    .populate('user', 'fullName email')
-    .populate('product');
+  // const result = await Booking.findByIdAndUpdate(
+  //   bookingId,
+  //   { $set: { bookingStatus: 'Cancel' } },
+  //   { new: true }
+  // )
+  //   .populate('user', 'fullName email')
+  //   .populate('product');
 
   // Identify the correct product model dynamically
   const productId = existsBooking?.product;
-  const productModel = existsBooking?.productModel; // e.g. "SkiPass" or "Restaurant"
+  const productModel = existsBooking?.productModel;
 
   if (!productId || !productModel) {
     throw new AppError(StatusCodes.BAD_REQUEST, 'Invalid product reference.');
@@ -804,33 +872,150 @@ const refundBookingIntoDB = async (
   if (!product) {
     throw new AppError(StatusCodes.NOT_FOUND, `${productModel} not found.`);
   }
+  // // find owner wallet
+  // const ownerWallet = await Wallet.findOne({ user: product.owner });
+  // if (!ownerWallet) {
+  //   throw new AppError(StatusCodes.NOT_FOUND, 'Owner wallet not found.');
+  // }
+  // // find user wallet
+  // const userWallet = await Wallet.findOne({ user: isExistsUser?._id });
+  // if (!userWallet) {
+  //   throw new AppError(StatusCodes.NOT_FOUND, 'User wallet not found.');
+  // }
+  // // calculate refund
+  // const finalRefund = Number((existsBooking.totalPrice * 0.9).toFixed(2));
 
-  // Prevent duplicate refunds
-  const alreadyRefunded = product.refunds?.some(
-    (refund: IRefund) =>
-      refund.userId.toString() === isExistsUser._id.toString()
-  );
+  // await Wallet.updateOne(
+  //   { user: product.owner },
+  //   { $inc: { balance: -finalRefund } } // decrease balance
+  // );
 
-  if (alreadyRefunded) {
-    throw new AppError(
-      StatusCodes.BAD_REQUEST,
-      'You have already refunded or canceled this product.'
-    );
+  // ownerWallet.transactions.push({
+  //   user: isExistsUser._id,
+  //   balance: finalRefund,
+  //   type: WalletTransactionType.SEND,
+  // });
+
+  // await ownerWallet.save();
+
+  // userWallet.balance += finalRefund;
+  // userWallet.transactions.push({
+  //   user: product.owner,
+  //   balance: finalRefund,
+  //   type: WalletTransactionType.RECEIVE,
+  // });
+
+  // await userWallet.save();
+
+  // // send notification
+  // await Notification.create({
+  //   receiverId: product.owner,
+  //   senderId: isExistsUser._id,
+  //   title: 'Cancel Booking',
+  //   description: `${product?.title} is canceled by ${isExistsUser?.fullName}, product id:# ${product?._id}`,
+  //   type: 'payment',
+  // });
+
+  // // Prevent duplicate refunds
+  // const alreadyRefunded = product.refunds?.some(
+  //   (refund: IRefund) =>
+  //     refund.userId.toString() === isExistsUser._id.toString()
+  // );
+
+  // if (alreadyRefunded) {
+  //   throw new AppError(
+  //     StatusCodes.BAD_REQUEST,
+  //     'You have already refunded or canceled this product.'
+  //   );
+  // }
+
+  // restore available product totalQty and slots
+  // Restore for Restaurant
+  if (productModel === 'Restaurant') {
+    if (existsBooking.slots && existsBooking.slots.length > 0) {
+      existsBooking.slots.forEach(slotIdStr => {
+        const slotId = new mongoose.Types.ObjectId(slotIdStr);
+
+        const slot = product.slots.find(s => s._id && s._id.equals(slotId));
+
+        if (slot) {
+          const alreadyAvailable = product.availableSlots.some(
+            s => s._id && s._id.equals(slot._id)
+          );
+
+          if (!alreadyAvailable) {
+            product.availableSlots.push({
+              _id: slot._id,
+              startTime: slot.startTime,
+              endTime: slot.endTime,
+            });
+          }
+        }
+      });
+    }
+
+    // Restore item quantities (VIP / Normal)
+    if (existsBooking.bookingItems && existsBooking.bookingItems.length > 0) {
+      existsBooking.bookingItems.forEach(item => {
+        const itemId = new mongoose.Types.ObjectId(item.itemId);
+
+        const foundItem = product.items.find(
+          i => i._id && i._id.equals(itemId)
+        );
+
+        if (foundItem) {
+          foundItem.availableQty += item.quantity; // restore quantity
+
+          if (foundItem.availableQty > foundItem.totalQty) {
+            foundItem.availableQty = foundItem.totalQty;
+          }
+        }
+        console.log('find current items :', foundItem);
+      });
+    }
+    // await product.save({ validateBeforeSave: false });
   }
 
-  // Add refund info
-  const newRefund = {
-    userId: isExistsUser._id,
-    reason: payload.reason,
-    createdAt: new Date(),
-  } as IRefund;
+  // Restore for SkiHire
+  if (productModel === 'SkiHire') {
+    if (existsBooking.bookingItems && existsBooking.bookingItems.length > 0) {
+      existsBooking.bookingItems.forEach(item => {
+        const itemId = new mongoose.Types.ObjectId(item.itemId);
 
-  if (!product.refunds) product.refunds = [];
-  product.refunds.push(newRefund);
+        const foundItem = product.items.find(
+          i => i._id && i._id.equals(itemId)
+        );
 
-  await product.save();
+        if (foundItem) {
+          foundItem.availableQty += item.quantity;
 
-  return result;
+          if (foundItem.availableQty > foundItem.totalQty) {
+            foundItem.availableQty = foundItem.totalQty;
+          }
+        }
+        console.log('find current items :', foundItem);
+      });
+    }
+
+    // await product.save({ validateBeforeSave: false });
+  }
+
+  // ==================== END RESTORE LOGIC ====================
+
+  // // Add refund info
+  // const newRefund = {
+  //   userId: isExistsUser._id,
+  //   reason: payload.reason,
+  //   createdAt: new Date(),
+  // } as IRefund;
+
+  // if (!product.refunds) product.refunds = [];
+
+  // product.refunds.push(newRefund);
+
+  // await product.save();
+
+  // return result;
 };
 
 const deleteBookingIntoDB = async (id: string, user: JwtPayload) => {

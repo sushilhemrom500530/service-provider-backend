@@ -4,6 +4,8 @@ export enum WalletTransactionType {
   EARN = 'Earn',
   WITHDRAW = 'Withdraw',
   DEPOSIT = 'Deposit',
+  SEND = 'Send',
+  RECEIVE = 'Receive',
 }
 
 

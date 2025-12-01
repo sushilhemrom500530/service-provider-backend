@@ -41,8 +41,7 @@ const paymentSchema = new Schema<IPayment>(
     },
     sessionId: {
       type: String,
-      required: true,
-      unique: true,
+      required: false,
     },
     status: {
       type: String,

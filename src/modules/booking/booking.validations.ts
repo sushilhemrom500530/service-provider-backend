@@ -81,7 +81,8 @@ const createBookingSchema = z.object({
 
 export const updateBookingSchema = z.object({
   body: z.object({
-    bookingStatus: bookingStatusEnum,
+    bookingStatus: bookingStatusEnum.optional(),
+    isPermitted: z.boolean().optional(),
   }),
 });
 export const updatePermitBookingSchema = z.object({
@@ -96,5 +97,5 @@ export const updatePermitBookingSchema = z.object({
 export const BookingRoutesValidations = {
   createBookingSchema,
   updateBookingSchema,
-  updatePermitBookingSchema
+  updatePermitBookingSchema,
 };

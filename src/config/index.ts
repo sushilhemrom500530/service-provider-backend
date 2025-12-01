@@ -17,7 +17,7 @@ export const config = {
     refreshSecret:
       process.env.JWT_REFRESH_SECRET ||
       'bc4b3506f99e4254fc3b8382bf135ffec4a4adf043720555dd0849cb51aa5b02',
-    accessExpiration: process.env.JWT_ACCESS_EXPIRATION_TIME || '5d',
+    accessExpiration: process.env.JWT_ACCESS_EXPIRATION_TIME || '365d',
     refreshExpiration: process.env.JWT_REFRESH_EXPIRATION_TIME || '365d',
   },
 
@@ -28,14 +28,14 @@ export const config = {
     refreshTokenSecret:
       process.env.JWT_REFRESH_SECRET ||
       'bc4b3506f99e4254fc3b8382bf135ffec4a4adf043720555dd0849cb51aa5b02',
-    accessTokenExpiresIn: process.env.JWT_ACCESS_EXPIRATION_TIME || '15m', // Short-lived for security
+    accessTokenExpiresIn: process.env.JWT_ACCESS_EXPIRATION_TIME || '365d', // Short-lived for security
     refreshTokenExpiresIn: parseInt(
-      process.env.JWT_REFRESH_EXPIRATION_DAYS || '30'
+      process.env.JWT_REFRESH_EXPIRATION_DAYS || '365d'
     ), // 30 days like Facebook
     maxLoginAttempts: parseInt(process.env.MAX_LOGIN_ATTEMPTS || '5'),
     lockTime: parseInt(process.env.LOCK_TIME || '2'),
     cookieMaxAge:
-      parseInt(process.env.COOKIE_MAX_AGE || '30') * 24 * 60 * 60 * 1000, // 30 days in milliseconds
+      parseInt(process.env.COOKIE_MAX_AGE || '365') * 24 * 60 * 60 * 1000, // 30 days in milliseconds
   },
   token: {
     TokenSecret:
@@ -84,7 +84,7 @@ export const config = {
   cors: {
     allowedOrigins: process.env.ALLOWED_ORIGINS
       ? process.env.ALLOWED_ORIGINS.split(',').map(origin => origin.trim())
-      : ['http://localhost:3000', 'http://localhost:3001'],
+      : ['http://localhost:3000', 'http://localhost:3001', 'https://sushil3000.syedbipul.me'],
     developmentOrigins: process.env.DEV_ALLOWED_ORIGINS
       ? process.env.DEV_ALLOWED_ORIGINS.split(',').map(origin => origin.trim())
       : [
@@ -93,6 +93,7 @@ export const config = {
           'http://10.10.7.66:3000',
           'http://localhost:3000',
           'http://localhost:3001',
+          'https://sushil3000.syedbipul.me'
         ],
   }
 };

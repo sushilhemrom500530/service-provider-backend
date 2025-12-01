@@ -5,7 +5,7 @@ const bookingItemSchema = new Schema(
   {
     itemId: {
       type: Schema.Types.ObjectId,
-      ref: 'items',
+      ref: 'Items',
       required: true,
     },
     quantity: {
@@ -68,7 +68,7 @@ const bookingSchema = new Schema<IBooking>(
     bookingStatus: {
       type: String,
       enum: ['Active', 'Pending', 'Completed', 'Cancelled', 'Deleted'],
-      default: 'Pending',
+      default: 'Active',
       required: true,
     },
 

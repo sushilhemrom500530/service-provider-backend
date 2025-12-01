@@ -193,10 +193,20 @@ const getSingleRestaurantFromDB = async (id: string, user: JwtPayload) => {
       'You cannot view this data because your account was not found.'
     );
   }
-  const restaurant = await Restaurant.findById(id).populate({
-    path: 'owner',
-    select: '-isDeleted -agreeTermsCondition -__v -createdAt -updatedAt',
-  });
+  const restaurant = await Restaurant.findById(id)
+    .populate({
+      path: 'owner',
+      select: '-isDeleted -agreeTermsCondition -__v -createdAt -updatedAt',
+    })
+    .populate({
+      path: 'reviews.userId',
+      select: 'fullName email phoneNumber profileUrl createdAt', // choose what you want
+    })
+    .populate({
+      path: 'refunds.userId',
+      select: 'fullName email phoneNumber profileUrl createdAt',
+    });
+
   if (!restaurant)
     throw new AppError(StatusCodes.NOT_FOUND, 'Restaurant not found.');
 
@@ -324,9 +334,8 @@ const addRestaurantIntoDB = async (req: Request) => {
   if (typeof req.body.slots === 'string') slots = JSON.parse(req.body.slots);
   else if (Array.isArray(req.body.slots)) slots = req.body.slots;
 
-  // coppy available slots on slots 
+  // coppy available slots on slots
   let availableSlots = slots;
- 
 
   // Calculate status
   const isOpenNow = isRestaurantOpen(req.body.openTime, req.body.closeTime);
@@ -343,7 +352,7 @@ const addRestaurantIntoDB = async (req: Request) => {
     foodType: req.body.foodType,
     status: isOpenNow ? 'Open' : 'Closed',
     description: req.body.description,
-    slots, 
+    slots,
     items: processedItems,
   };
 
@@ -532,11 +541,37 @@ export const updateRestaurantIntoDB = async (req: Request) => {
 
   // Update slots if provided
   if (req.body.slots) {
-    let slots: ISlot[] = [];
-    if (typeof req.body.slots === 'string') slots = JSON.parse(req.body.slots);
-    else if (Array.isArray(req.body.slots)) slots = req.body.slots;
-    restaurant.slots = slots;
-    restaurant.availableSlots = slots; // Reset availableSlots to new slots
+    let newSlots: ISlot[] = [];
+
+    if (typeof req.body.slots === 'string') {
+      newSlots = JSON.parse(req.body.slots);
+    } else if (Array.isArray(req.body.slots)) {
+      newSlots = req.body.slots;
+    }
+
+    const oldSlots = restaurant.slots || [];
+
+    const mergedSlots: ISlot[] = [];
+
+    //  Keep existing IDs for old slots 
+    newSlots.forEach((slot, index) => {
+      if (oldSlots[index]) {
+        mergedSlots.push({
+          _id: oldSlots[index]._id, 
+          startTime: slot.startTime,
+          endTime: slot.endTime,
+        });
+      } else {
+        mergedSlots.push({
+          startTime: slot.startTime,
+          endTime: slot.endTime,
+        } as ISlot);
+      }
+    });
+
+    // Assign updated slots
+    restaurant.slots = mergedSlots;
+    restaurant.availableSlots = mergedSlots; // MATCH EXACTLY
   }
 
   // Update other fields
@@ -594,6 +629,12 @@ const deleteRestaurantIntoDB = async (id: string, user: JwtPayload) => {
   return result;
 };
 
+const updateServiceFee = async (payload: any) => {
+  const { serviceFee } = payload;
+  const result = await Restaurant.updateMany({}, { $set: { serviceFee } });
+  return result;
+};
+
 export const RestaurantService = {
   getAllRestaurantFromDB,
   getAllMyRestaurantFromDB,
@@ -602,4 +643,5 @@ export const RestaurantService = {
   getSingleRestaurantFromDB,
   updateRestaurantIntoDB,
   deleteRestaurantIntoDB,
+  updateServiceFee,
 };

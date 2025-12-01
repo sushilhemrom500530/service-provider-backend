@@ -197,7 +197,15 @@ const getSingleMassageFromDB = async (id: string, user: JwtPayload) => {
   const massage = await Massage.findById(id).populate({
     path: 'owner',
     select: '-isDeleted -agreeTermsCondition -__v -createdAt -updatedAt',
-  });
+  })  .populate({
+      path: 'reviews.userId',
+      select: 'fullName email phoneNumber profileUrl createdAt', // choose what you want
+    })
+    .populate({
+      path: 'refunds.userId',
+      select: 'fullName email phoneNumber profileUrl createdAt',
+    });
+    
   if (!massage) throw new AppError(StatusCodes.NOT_FOUND, 'Massage data not found.');
 
   // manually populate subcategory

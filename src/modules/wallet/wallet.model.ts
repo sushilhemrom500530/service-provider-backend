@@ -19,7 +19,7 @@ const WalletTransactionSchema = new Schema<IWalletTransaction>(
     type: {
       type: String,
       required: true,
-      enum: ['Earn', 'Withdraw','Deposit'],
+      enum: ['Earn', 'Withdraw', 'Deposit', 'Send', 'Receive'],
     },
     createdAt: {
       type: Date,
@@ -29,26 +29,24 @@ const WalletTransactionSchema = new Schema<IWalletTransaction>(
   { _id: false }
 );
 
-const WalletAccountSchema = new Schema<IWalletAccount>(
-  {
-    accountType: {
-      type: String,
-      required: true,
-    },
-    cardNumber: {
-      type: Number,
-      required: true,
-    },
-    cardHolderName: {
-      type: String,
-      required: true,
-    },
-    createdAt: {
-      type: Date,
-      default: Date.now,
-    },
-  }, 
-);
+const WalletAccountSchema = new Schema<IWalletAccount>({
+  accountType: {
+    type: String,
+    required: true,
+  },
+  cardNumber: {
+    type: Number,
+    required: true,
+  },
+  cardHolderName: {
+    type: String,
+    required: true,
+  },
+  createdAt: {
+    type: Date,
+    default: Date.now,
+  },
+});
 
 const WalletSchema = new Schema<IWallet>(
   {

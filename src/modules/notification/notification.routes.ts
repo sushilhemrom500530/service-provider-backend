@@ -5,7 +5,7 @@ import { NotificationController } from './notification.controllers';
 const router = Router();
 
 router.get(
-  '/allt',
+  '/all',
   auth('Admin', 'Provider', 'User'),
   NotificationController.getALLNotification
 );

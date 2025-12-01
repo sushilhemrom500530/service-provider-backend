@@ -87,6 +87,10 @@ const restaurantSchema = new Schema<IRestaurant>(
       type: String,
       required: true,
     },
+    serviceFee: {
+      type: Number, 
+      default: 0,
+    },
     foodType: {
       type: String,
       default: '',
