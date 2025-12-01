@@ -5,7 +5,7 @@ const bookingItemSchema = new Schema(
   {
     itemId: {
       type: Schema.Types.ObjectId,
-      ref: 'items',
+      ref: 'Items',
       required: true,
     },
     quantity: {

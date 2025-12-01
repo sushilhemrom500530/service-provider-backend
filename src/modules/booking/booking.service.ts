@@ -27,7 +27,6 @@ import {
   IPayment,
 } from './../payment/payment.interface';
 
-
 const getAllBookingFromDB = async (user: JwtPayload, query: any) => {
   const isExistsUser = await User.findOne({ email: user?.email });
   if (!isExistsUser) {
@@ -80,6 +79,7 @@ const getAllBookingFromDB = async (user: JwtPayload, query: any) => {
         isExistsUser.role === 'Provider' ? { owner: isExistsUser._id } : {},
       select:
         '-totalPrice -serviceArea -__v -reviews -refunds -averageRating -createdAt -updatedAt',
+      // populate: {path: 'items'}
     })
     .populate('user', 'fullName email address phoneNumber')
     .sort({ createdAt: -1 });
@@ -90,7 +90,32 @@ const getAllBookingFromDB = async (user: JwtPayload, query: any) => {
 
   const total = filtered.length;
 
-  const result = filtered.slice(skip, skip + limit);
+  const result = filtered.slice(skip, skip + limit).map(booking => {
+    const product = booking.product || {};
+
+    const fullSlots = (booking.slots || [])
+      .map(slotId => {
+        return product.slots?.find(s => s._id.toString() === slotId.toString());
+      })
+      .filter(Boolean);
+
+    const fullBookingItems = booking.bookingItems.map(item => {
+      const fullItem =
+        product.items?.find(p => p._id.toString() === item.itemId.toString()) ||
+        null;
+
+      return {
+        ...item.toObject(),
+        itemDetails: fullItem || null,
+      };
+    });
+
+    return {
+      ...booking.toObject(),
+      bookingItems: fullBookingItems || null,
+      slots: fullSlots || null,
+    };
+  });
 
   return {
     pagination: {
@@ -208,7 +233,7 @@ const getMyBooking = async (user: JwtPayload, query: any) => {
     let bookingSeatCount: number = 0;
     let label: string | undefined;
     let overTimeAmount: number = 0;
-   
+
     if (['Ski_Hire', 'Transport'].includes(booking?.category)) {
       const now = new Date();
 
@@ -271,7 +296,7 @@ const getMyBooking = async (user: JwtPayload, query: any) => {
 
     // add extra fields for time info
     if (startTime) bookingObj.startTime = startTime;
-    if (endTime) bookingObj.endTime = endTime; 
+    if (endTime) bookingObj.endTime = endTime;
     if (label) bookingObj.timeLabel = label;
 
     if (overTimeAmount > 0) bookingObj.overTimeAmount = overTimeAmount;
