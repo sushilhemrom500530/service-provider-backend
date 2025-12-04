@@ -105,9 +105,8 @@ const restaurantSchema = new Schema<IRestaurant>(
       required: true,
     },
     description: {
-      type: String,
-      required: true,
-      trim: true,
+      type: String,  
+      defult: '',
     },
     slots: {
       type: [slotsSchema],

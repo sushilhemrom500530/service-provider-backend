@@ -3,7 +3,7 @@ import mongoose from 'mongoose';
 import { Server } from 'socket.io';
 import app from './app';
 import { errorLogger, logger } from './shared/logger';
-import { config } from './config'; 
+import { config } from './config';
 import { startAllCronJobs } from './jobs/automaticUpdateJobService';
 import { socketHelper } from './socket/index';
 
@@ -78,7 +78,10 @@ const setupSocketIO = (): void => {
     pingTimeout: 60000,
     cors: {
       // showing all origin or url here
-      origin: ['http://localhost:3000'],
+      // origin: ['http://localhost:3000'],
+      origin: (origin, callback) => {
+        callback(null, origin); // Allow any domain
+      },
       methods: ['GET', 'POST'],
       credentials: true,
     },

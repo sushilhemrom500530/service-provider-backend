@@ -279,9 +279,10 @@ const updateSkiPassIntoDB = async (req: Request) => {
       USER_UPLOADS_FOLDER
     );
     req.body.thumbnail = fileUrl;
-  } else {
-    throw new AppError(StatusCodes.BAD_REQUEST, 'Thumbnail file not found.');
   }
+  //  else {
+  //   throw new AppError(StatusCodes.BAD_REQUEST, 'Thumbnail file not found.');
+  // }
 
   const updateData = req?.body;
 

@@ -84,11 +84,11 @@ export const createRestaurant = z.object({
       })
       .nonempty('At least one item is required'),
 
-    description: z
-      .string({
-        required_error: 'Description is required',
-      })
-      .min(1, 'Description cannot be empty'),
+    // description: z
+    //   .string({
+    //     required_error: 'Description is required',
+    //   })
+    //   .min(1, 'Description cannot be empty'),
 
     slots: z
       .array(slotSchema, {

@@ -83,7 +83,7 @@ const deleteSkiPassIntoDB = catchAsync(async (req: Request, res: Response) => {
   const result = await SkiPassService.deleteSkiPassIntoDB(id, user)
   sendResponse(res, {
     code: StatusCodes.OK,
-    message: 'Ski pass added successfully',
+    message: 'Ski pass deleted successfully',
     data: result,
   });
 });

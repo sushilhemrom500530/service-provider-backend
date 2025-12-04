@@ -148,11 +148,12 @@ const getAllMyRestaurantFromDB = async (user: JwtPayload, query: any) => {
 
   // Fetch paginated restaurant data
   const restaurantList = await Restaurant.find(filters)
+    .select('-__v')
     .skip(skip)
     .limit(limit)
     .populate({
       path: 'owner',
-      select: '-isDeleted -agreeTermsCondition -__v -createdAt -updatedAt',
+      select: 'email address fullName profileUrl',
     })
     .sort({ createdAt: -1 });
 
@@ -226,6 +227,139 @@ const getSingleRestaurantFromDB = async (id: string, user: JwtPayload) => {
     category: subCategoryData,
   };
 };
+
+// const addRestaurantIntoDB = async (req: Request) => {
+//   const user = req.user as JwtPayload;
+
+//   // Check if user exists
+//   const isExistsUser = await User.findOne({ email: user?.email });
+//   if (!isExistsUser)
+//     throw new AppError(StatusCodes.NOT_FOUND, 'User not found.');
+
+//   // Validate role and providerType
+//   if (isExistsUser.role !== 'Provider')
+//     throw new AppError(
+//       StatusCodes.FORBIDDEN,
+//       'You are not authorized to create a restaurant.'
+//     );
+//   if (isExistsUser.providerType !== 'Restaurant')
+//     throw new AppError(
+//       StatusCodes.FORBIDDEN,
+//       'Provider must be Restaurant type.'
+//     );
+
+//   // Validate category
+//   const category = await Category.findOne({
+//     primaryCategoryName: 'Restaurant',
+//   });
+//   if (!category)
+//     throw new AppError(StatusCodes.NOT_FOUND, 'Restaurant category not found.');
+
+//   const subCategoryItems = category?.subCategory || [];
+//   const exists = subCategoryItems.some(
+//     (item: any) => item?._id?.toString() === req.body?.category?.toString()
+//   ) as boolean;
+//   if (!exists)
+//     throw new AppError(StatusCodes.BAD_REQUEST, 'Invalid sub-category ID.');
+
+//   // Upload thumbnail
+//   const uploadedFiles = (req as any).files as
+//     | { [fieldname: string]: any[] }
+//     | undefined;
+
+//   const thumbnailFile: any = uploadedFiles?.thumbnail?.[0];
+//   if (!thumbnailFile)
+//     throw new AppError(StatusCodes.BAD_REQUEST, 'Thumbnail file not found.');
+//   const thumbnailUrl = await s3Services.uploadSingleFileToS3(
+//     thumbnailFile,
+//     USER_UPLOADS_FOLDER
+//   );
+
+//   // Parse menu items (ICategoryItem[])
+//   let items: any[] = [];
+//   if (typeof req.body.items === 'string') {
+//     items = JSON.parse(req.body.items);
+//   } else if (Array.isArray(req.body.items)) {
+//     items = req.body.items;
+//   } else {
+//     throw new AppError(
+//       StatusCodes.BAD_REQUEST,
+//       'Items data is missing or invalid.'
+//     );
+//   }
+
+//   // 🔹 Validate items
+//   if (items.length !== 2) {
+//     throw new AppError(
+//       StatusCodes.BAD_REQUEST,
+//       'Items must contain exactly 2 seat types: Normal and VIP.'
+//     );
+//   }
+
+//   // Check for duplicate seat names (case-insensitive)
+//   const seatNames = items.map(i => i?.seat?.trim().toLowerCase());
+//   const duplicateSeat = seatNames.some(
+//     (seat, index) => seatNames.indexOf(seat) !== index
+//   );
+//   if (duplicateSeat) {
+//     throw new AppError(
+//       StatusCodes.BAD_REQUEST,
+//       'Duplicate seat types are not allowed.'
+//     );
+//   }
+
+//   // Upload item photos (1:1 mapping)
+//   const itemFiles: any[] = uploadedFiles?.files || [];
+//   const processedItems = await Promise.all(
+//     items.map(async (item, index) => {
+//       const file = itemFiles[index];
+//       let photoUrl = item.photo;
+//       if (file) {
+//         photoUrl = await s3Services.uploadSingleFileToS3(
+//           file,
+//           USER_UPLOADS_FOLDER
+//         );
+//       }
+//       return {
+//         ...item,
+//         totalQty: Number(item.totalQty),
+//         availableQty: Number(item.totalQty),
+//         price: Number(item.price),
+//         photo: photoUrl,
+//       };
+//     })
+//   );
+
+//   // Parse slots and availableSlots (ISlot[])
+//   let slots: ISlot[] = [];
+//   if (typeof req.body.slots === 'string') slots = JSON.parse(req.body.slots);
+//   else if (Array.isArray(req.body.slots)) slots = req.body.slots;
+
+//   // coppy available slots on slots
+//   let availableSlots = slots;
+
+//   // Calculate status
+//   const isOpenNow = isRestaurantOpen(req.body.openTime, req.body.closeTime);
+
+//   // Prepare restaurant data
+//   const restaurantData: Partial<IRestaurant> = {
+//     title: req.body.title,
+//     thumbnail: thumbnailUrl,
+//     category: req.body.category,
+//     owner: isExistsUser._id,
+//     openTime: req.body.openTime,
+//     closeTime: req.body.closeTime,
+//     serviceArea: req.body.serviceArea,
+//     foodType: req.body.foodType,
+//     status: isOpenNow ? 'Open' : 'Closed',
+//     description: req.body.description,
+//     slots,
+//     items: processedItems,
+//   };
+
+//   const result = await Restaurant.create(restaurantData);
+//   return result;
+// };
 
 const addRestaurantIntoDB = async (req: Request) => {
   const user = req.user as JwtPayload;
@@ -307,8 +441,20 @@ const addRestaurantIntoDB = async (req: Request) => {
     );
   }
 
-  // Upload item photos (1:1 mapping)
-  const itemFiles: any[] = uploadedFiles?.files || [];
+  // 🔹 Upload item photos (supports files[0], files[1] from Postman)
+  let itemFiles: any[] = [];
+  if (uploadedFiles?.files) {
+    if (Array.isArray(uploadedFiles.files)) {
+      itemFiles = uploadedFiles.files;
+    } else {
+      // convert object keys '0', '1' → array in order
+      const keys = Object.keys(uploadedFiles.files)
+        .map(k => parseInt(k))
+        .sort((a, b) => a - b);
+      itemFiles = keys.map(k => uploadedFiles.files[k][0]); // each key is array
+    }
+  }
+
   const processedItems = await Promise.all(
     items.map(async (item, index) => {
       const file = itemFiles[index];
@@ -334,8 +480,7 @@ const addRestaurantIntoDB = async (req: Request) => {
   if (typeof req.body.slots === 'string') slots = JSON.parse(req.body.slots);
   else if (Array.isArray(req.body.slots)) slots = req.body.slots;
 
-  // coppy available slots on slots
-  let availableSlots = slots;
+  let availableSlots = slots; // copy available slots
 
   // Calculate status
   const isOpenNow = isRestaurantOpen(req.body.openTime, req.body.closeTime);
@@ -351,7 +496,7 @@ const addRestaurantIntoDB = async (req: Request) => {
     serviceArea: req.body.serviceArea,
     foodType: req.body.foodType,
     status: isOpenNow ? 'Open' : 'Closed',
-    description: req.body.description,
+    // description: req.body.description,
     slots,
     items: processedItems,
   };
@@ -429,6 +574,181 @@ export const reviewRestaurant = async (
   return restaurant;
 };
 
+// export const updateRestaurantIntoDB = async (req: Request) => {
+//   const id = req.params.id;
+//   const user = req.user as JwtPayload;
+
+//   // Check if restaurant exists
+//   const restaurant = await Restaurant.findById(id);
+//   if (!restaurant)
+//     throw new AppError(StatusCodes.NOT_FOUND, 'Restaurant not found.');
+
+//   // Check user
+//   const isExistsUser = await User.findOne({ email: user?.email });
+//   if (!isExistsUser)
+//     throw new AppError(StatusCodes.NOT_FOUND, 'User not found.');
+//   if (
+//     isExistsUser.role !== 'Provider' ||
+//     isExistsUser.providerType !== 'Restaurant'
+//   ) {
+//     throw new AppError(
+//       StatusCodes.FORBIDDEN,
+//       'You are not authorized to update this restaurant.'
+//     );
+//   }
+
+//   // Validate category if provided
+//   if (req.body.category) {
+//     const category = await Category.findOne({
+//       primaryCategoryName: 'Restaurant',
+//     });
+//     if (!category)
+//       throw new AppError(
+//         StatusCodes.NOT_FOUND,
+//         'Restaurant category not found.'
+//       );
+
+//     const subCategoryItems = category?.subCategory || [];
+//     const exists = subCategoryItems.some(
+//       (item: any) => item?._id.toString() === req.body.category
+//     ) as boolean;
+//     if (!exists)
+//       throw new AppError(StatusCodes.BAD_REQUEST, 'Invalid sub-category ID.');
+//     restaurant.category = req.body?.category;
+//   }
+
+//   // Upload new thumbnail if provided
+//   const uploadedFilesUpdate = (req as any).files as
+//     | { [fieldname: string]: any[] }
+//     | undefined;
+
+//   const thumbnailFile: any = uploadedFilesUpdate?.thumbnail?.[0];
+//   if (thumbnailFile) {
+//     const thumbnailUrl = await s3Services.uploadSingleFileToS3(
+//       thumbnailFile,
+//       USER_UPLOADS_FOLDER
+//     );
+//     restaurant.thumbnail = thumbnailUrl;
+//   }
+
+//   // Update items if provided
+//   if (req.body.items) {
+//     let items: any[] = [];
+//     if (typeof req.body.items === 'string') items = JSON.parse(req.body.items);
+//     else if (Array.isArray(req.body.items)) items = req.body.items;
+//     else
+//       throw new AppError(
+//         StatusCodes.BAD_REQUEST,
+//         'Items data is missing or invalid.'
+//       );
+
+//     if (items.length !== 2) {
+//       throw new AppError(
+//         StatusCodes.BAD_REQUEST,
+//         'Items must contain exactly 2 seat types: Normal and VIP.'
+//       );
+//     }
+
+//     const seatNames = items.map(i => i.seat?.trim().toLowerCase());
+//     const duplicateSeat = seatNames.some(
+//       (seat, index) => seatNames.indexOf(seat) !== index
+//     );
+//     if (duplicateSeat) {
+//       throw new AppError(
+//         StatusCodes.BAD_REQUEST,
+//         'Duplicate seat types are not allowed.'
+//       );
+//     }
+
+//     const itemFiles: any[] = uploadedFilesUpdate?.files || [];
+//     const processedItems = await Promise.all(
+//       items.map(async (item, index) => {
+//         const file = itemFiles[index];
+//         let photoUrl = item.photo || restaurant.items[index]?.photo;
+//         if (file)
+//           photoUrl = await s3Services.uploadSingleFileToS3(
+//             file,
+//             USER_UPLOADS_FOLDER
+//           );
+
+//         return {
+//           ...item,
+//           totalQty: Number(item.totalQty),
+//           availableQty: Number(item.totalQty),
+//           price: Number(item.price),
+//           photo: photoUrl,
+//         };
+//       })
+//     );
+
+//     restaurant.items = processedItems;
+//   }
+
+//   // Update slots if provided
+//   if (req.body.slots) {
+//     let newSlots: ISlot[] = [];
+
+//     if (typeof req.body.slots === 'string') {
+//       newSlots = JSON.parse(req.body.slots);
+//     } else if (Array.isArray(req.body.slots)) {
+//       newSlots = req.body.slots;
+//     }
+
+//     const oldSlots = restaurant.slots || [];
+
+//     const mergedSlots: ISlot[] = [];
+
+//     //  Keep existing IDs for old slots
+//     newSlots.forEach((slot, index) => {
+//       if (oldSlots[index]) {
+//         mergedSlots.push({
+//           _id: oldSlots[index]._id,
+//           startTime: slot.startTime,
+//           endTime: slot.endTime,
+//         });
+//       } else {
+//         mergedSlots.push({
+//           startTime: slot.startTime,
+//           endTime: slot.endTime,
+//         } as ISlot);
+//       }
+//     });
+
+//     // Assign updated slots
+//     restaurant.slots = mergedSlots;
+//     restaurant.availableSlots = mergedSlots; // MATCH EXACTLY
+//   }
+
+//   // Update other fields
+//   const fieldsToUpdate: Partial<IRestaurant> = {
+//     title: req.body.title,
+//     openTime: req.body.openTime,
+//     closeTime: req.body.closeTime,
+//     serviceArea: req.body.serviceArea,
+//     foodType: req.body.foodType,
+//     // description: req.body.description,
+//   };
+
+//   Object.keys(fieldsToUpdate).forEach(key => {
+//     if (fieldsToUpdate[key as keyof IRestaurant] !== undefined) {
+//       (restaurant as any)[key] = fieldsToUpdate[key as keyof IRestaurant];
+//     }
+//   });
+
+//   // Recalculate status
+//   if (req.body.openTime && req.body.closeTime) {
+//     restaurant.status = isRestaurantOpen(
+//       restaurant.openTime,
+//       restaurant.closeTime
+//     )
+//       ? 'Open'
+//       : 'Closed';
+//   }
+
+//   const updatedRestaurant = await restaurant.save();
+//   return updatedRestaurant;
+// };
+
 export const updateRestaurantIntoDB = async (req: Request) => {
   const id = req.params.id;
   const user = req.user as JwtPayload;
@@ -442,6 +762,7 @@ export const updateRestaurantIntoDB = async (req: Request) => {
   const isExistsUser = await User.findOne({ email: user?.email });
   if (!isExistsUser)
     throw new AppError(StatusCodes.NOT_FOUND, 'User not found.');
+
   if (
     isExistsUser.role !== 'Provider' ||
     isExistsUser.providerType !== 'Restaurant'
@@ -467,17 +788,23 @@ export const updateRestaurantIntoDB = async (req: Request) => {
     const exists = subCategoryItems.some(
       (item: any) => item?._id.toString() === req.body.category
     ) as boolean;
+
     if (!exists)
       throw new AppError(StatusCodes.BAD_REQUEST, 'Invalid sub-category ID.');
+
     restaurant.category = req.body?.category;
   }
 
-  // Upload new thumbnail if provided
-  const uploadedFilesUpdate = (req as any).files as
+  // -----------------------
+  // FILE HANDLING (updated)
+  // -----------------------
+
+  const uploadedFiles = (req as any).files as
     | { [fieldname: string]: any[] }
     | undefined;
 
-  const thumbnailFile: any = uploadedFilesUpdate?.thumbnail?.[0];
+  // Thumbnail
+  const thumbnailFile = uploadedFiles?.thumbnail?.[0];
   if (thumbnailFile) {
     const thumbnailUrl = await s3Services.uploadSingleFileToS3(
       thumbnailFile,
@@ -486,9 +813,14 @@ export const updateRestaurantIntoDB = async (req: Request) => {
     restaurant.thumbnail = thumbnailUrl;
   }
 
-  // Update items if provided
+  // -----------------------
+  // UPDATE ITEMS (same as create logic)
+  // Support: files + files[0] + files[1]
+  // -----------------------
+
   if (req.body.items) {
     let items: any[] = [];
+
     if (typeof req.body.items === 'string') items = JSON.parse(req.body.items);
     else if (Array.isArray(req.body.items)) items = req.body.items;
     else
@@ -504,10 +836,12 @@ export const updateRestaurantIntoDB = async (req: Request) => {
       );
     }
 
+    // Duplicate check
     const seatNames = items.map(i => i.seat?.trim().toLowerCase());
     const duplicateSeat = seatNames.some(
       (seat, index) => seatNames.indexOf(seat) !== index
     );
+
     if (duplicateSeat) {
       throw new AppError(
         StatusCodes.BAD_REQUEST,
@@ -515,16 +849,37 @@ export const updateRestaurantIntoDB = async (req: Request) => {
       );
     }
 
-    const itemFiles: any[] = uploadedFilesUpdate?.files || [];
+    // 🔥 FIXED: SUPPORT files[] AND files[0], files[1]
+    let itemFiles: any[] = [];
+
+    if (uploadedFiles?.files) {
+      // Case 1: files = [file1, file2]
+      if (Array.isArray(uploadedFiles.files)) {
+        itemFiles = uploadedFiles.files;
+      }
+
+      // Case 2: { '0': [file], '1': [file] }
+      else {
+        const keys = Object.keys(uploadedFiles.files)
+          .map(k => parseInt(k))
+          .sort((a, b) => a - b);
+
+        itemFiles = keys.map(k => uploadedFiles.files[k][0]);
+      }
+    }
+
     const processedItems = await Promise.all(
       items.map(async (item, index) => {
         const file = itemFiles[index];
-        let photoUrl = item.photo || restaurant.items[index]?.photo;
-        if (file)
+
+        let photoUrl = item.photo || restaurant.items?.[index]?.photo;
+
+        if (file) {
           photoUrl = await s3Services.uploadSingleFileToS3(
             file,
             USER_UPLOADS_FOLDER
           );
+        }
 
         return {
           ...item,
@@ -539,7 +894,10 @@ export const updateRestaurantIntoDB = async (req: Request) => {
     restaurant.items = processedItems;
   }
 
-  // Update slots if provided
+  // -----------------------
+  // UPDATE SLOTS (same logic)
+  // -----------------------
+
   if (req.body.slots) {
     let newSlots: ISlot[] = [];
 
@@ -550,14 +908,12 @@ export const updateRestaurantIntoDB = async (req: Request) => {
     }
 
     const oldSlots = restaurant.slots || [];
-
     const mergedSlots: ISlot[] = [];
 
-    //  Keep existing IDs for old slots 
     newSlots.forEach((slot, index) => {
       if (oldSlots[index]) {
         mergedSlots.push({
-          _id: oldSlots[index]._id, 
+          _id: oldSlots[index]._id,
           startTime: slot.startTime,
           endTime: slot.endTime,
         });
@@ -569,19 +925,20 @@ export const updateRestaurantIntoDB = async (req: Request) => {
       }
     });
 
-    // Assign updated slots
     restaurant.slots = mergedSlots;
-    restaurant.availableSlots = mergedSlots; // MATCH EXACTLY
+    restaurant.availableSlots = mergedSlots;
   }
 
-  // Update other fields
+  // -----------------------
+  // UPDATE OTHER FIELDS
+  // -----------------------
+
   const fieldsToUpdate: Partial<IRestaurant> = {
     title: req.body.title,
     openTime: req.body.openTime,
     closeTime: req.body.closeTime,
     serviceArea: req.body.serviceArea,
     foodType: req.body.foodType,
-    description: req.body.description,
   };
 
   Object.keys(fieldsToUpdate).forEach(key => {
@@ -603,6 +960,7 @@ export const updateRestaurantIntoDB = async (req: Request) => {
   const updatedRestaurant = await restaurant.save();
   return updatedRestaurant;
 };
+
 
 const deleteRestaurantIntoDB = async (id: string, user: JwtPayload) => {
   const isExistsUser = await User.findOne({ email: user?.email });
