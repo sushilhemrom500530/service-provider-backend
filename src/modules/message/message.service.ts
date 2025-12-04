@@ -1,4 +1,4 @@
-import { StatusCodes } from 'http-status-codes'; 
+import { StatusCodes } from 'http-status-codes';
 import { IMessage } from './message.interface';
 import Message from './message.model';
 import { User } from '../user/user.model';
@@ -424,7 +424,7 @@ const removeReaction = async (
 const replyToMessage = async (
   payload: Partial<IMessage>,
   replyToId: string
-): Promise<IMessage> => {
+): Promise<IMessage> => { 
   const replyToMessage = await Message.findById(replyToId);
   if (!replyToMessage) {
     throw new AppError(StatusCodes.NOT_FOUND, 'Message to reply to not found');

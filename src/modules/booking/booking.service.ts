@@ -78,7 +78,7 @@ const getAllBookingFromDB = async (user: JwtPayload, query: any) => {
       match:
         isExistsUser.role === 'Provider' ? { owner: isExistsUser._id } : {},
       select:
-        '-totalPrice -serviceArea -__v -reviews -refunds -averageRating -createdAt -updatedAt',
+        '-totalPrice -__v -reviews -refunds -averageRating -createdAt -updatedAt',
       // populate: {path: 'items'}
     })
     .populate('user', 'fullName email address phoneNumber')
@@ -91,18 +91,32 @@ const getAllBookingFromDB = async (user: JwtPayload, query: any) => {
   const total = filtered.length;
 
   const result = filtered.slice(skip, skip + limit).map(booking => {
-    const product = booking.product || {};
+    // pick only required product fields
+    const product = booking.product
+      ? {
+          _id: booking.product._id,
+          thumbnail: booking?.product?.thumbnail,
+          title: booking?.product?.title,
+          skiPassType: booking?.product?.skiPassType || '',
+          serviceArea: booking?.product?.serviceArea || '',
+        }
+      : null;
 
+    // slots mapping (same logic)
     const fullSlots = (booking.slots || [])
       .map(slotId => {
-        return product.slots?.find(s => s._id.toString() === slotId.toString());
+        return booking.product?.slots?.find(
+          s => s._id.toString() === slotId.toString()
+        );
       })
       .filter(Boolean);
 
+    // bookingItems with full details
     const fullBookingItems = booking.bookingItems.map(item => {
       const fullItem =
-        product.items?.find(p => p._id.toString() === item.itemId.toString()) ||
-        null;
+        booking.product?.items?.find(
+          p => p._id.toString() === item.itemId.toString()
+        ) || null;
 
       return {
         ...item.toObject(),
@@ -112,8 +126,9 @@ const getAllBookingFromDB = async (user: JwtPayload, query: any) => {
 
     return {
       ...booking.toObject(),
-      bookingItems: fullBookingItems || null,
-      slots: fullSlots || null,
+      product, // <- now contains only 3 fields
+      bookingItems: fullBookingItems,
+      slots: fullSlots,
     };
   });
 
