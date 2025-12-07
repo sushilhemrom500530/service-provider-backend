@@ -1,4 +1,4 @@
-import { Types } from 'mongoose';
+import mongoose, { Types } from 'mongoose';
 import AppError from '../../errors/AppErro';
 import { StatusCodes } from 'http-status-codes';
 import { Request, Response } from 'express';
@@ -60,6 +60,7 @@ const getAllSkiHireFromDB = async (user: JwtPayload, query: any) => {
   const skiHireList = await SkiHire.find(filters)
     .skip(skip)
     .limit(limit)
+    .sort({ createdAt: -1 })
     .populate({
       path: 'owner',
       select: '-isDeleted -agreeTermsCondition -__v -createdAt -updatedAt',
@@ -141,6 +142,7 @@ const getAllMySkiHireFromDB = async (user: JwtPayload, query: any) => {
   const skiHireList = await SkiHire.find(filters)
     .skip(skip)
     .limit(limit)
+    .sort({ createdAt: -1 })
     .populate({
       path: 'owner',
       select: '-isDeleted -agreeTermsCondition -__v -createdAt -updatedAt',
@@ -333,7 +335,7 @@ const getSingleSkiHireFromDB = async (id: string, user: JwtPayload) => {
 //   return result;
 // };
 
-export const addSkiHireIntoDB = async (req: Request) => {
+const addSkiHireIntoDB = async (req: Request) => {
   const user = req.user as JwtPayload;
   const { category: categoryId } = req.body;
 
@@ -476,9 +478,7 @@ export const addSkiHireIntoDB = async (req: Request) => {
   return result;
 };
 
-
-
-export const reviewSkiHire = async (
+const reviewSkiHire = async (
   id: string,
   user: JwtPayload,
   payload: Partial<IReview>
@@ -731,14 +731,16 @@ export const updateSkiHireIntoDB = async (req: Request) => {
       );
     }
 
-    const existingLength = isExistsSkiHire.items.length;
+    // validation items length match
 
-    if (productItems.length !== existingLength) {
-      throw new AppError(
-        StatusCodes.BAD_REQUEST,
-        `Product items length must match existing length (${existingLength}).`
-      );
-    }
+    // const existingLength = isExistsSkiHire.items.length;
+
+    // if (productItems.length !== existingLength) {
+    //   throw new AppError(
+    //     StatusCodes.BAD_REQUEST,
+    //     `Product items length must match existing length (${existingLength}).`
+    //   );
+    // }
 
     // ============================================================
     // FIXED: Support files[0], files[1], files[2]
@@ -809,8 +811,6 @@ export const updateSkiHireIntoDB = async (req: Request) => {
 
   return result;
 };
-
-
 
 const deleteSkiHireIntoDB = async (id: string, user: JwtPayload) => {
   const isExistsUser = await User.findOne({ email: user?.email });

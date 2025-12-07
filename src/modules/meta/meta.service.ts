@@ -13,6 +13,7 @@ import { IQuery } from './meta.inteface';
 import { StatusCodes } from 'http-status-codes';
 import { startOfYear, endOfYear, setYear } from 'date-fns';
 import dayjs from 'dayjs';
+import { Category } from './../category/category.model';
 
 //  for provider home page data
 const getProviderDashboard = async (user: JwtPayload) => {
@@ -32,7 +33,7 @@ const getProviderDashboard = async (user: JwtPayload) => {
   const providerBookings = await Booking.find()
     .populate({
       path: 'product',
-      select: '-items -__v ',
+      select: '-__v ',
     })
     .populate('user', 'fullName email phoneNumber image')
     .sort({ createdAt: -1 });
@@ -52,63 +53,104 @@ const getProviderDashboard = async (user: JwtPayload) => {
     return created >= today;
   }).length;
 
-  const recentBookings = providerOnlyBookings.slice(0, 4).map((b: any) => {
-    const bookingObj = b.toObject ? b.toObject() : b;
+  const recentBookings = providerOnlyBookings
+    .slice(0, 4)
+    .map((booking: any) => {
+      const b = booking.toObject ? booking.toObject() : booking;
+      // format product
+      const product = booking.product
+        ? {
+            _id: booking.product._id,
+            thumbnail: booking?.product?.thumbnail,
+            title: booking?.product?.title,
+            skiPassType: booking?.product?.skiPassType || '',
+            serviceArea: booking?.product?.serviceArea || '',
+          }
+        : null;
 
-    // Duration in hours and minutes
-    const start = dayjs(b.startDateAndTime);
-    const end = dayjs(b.endDateAndTime);
-    const diffMinutes = end.diff(start, 'minute'); // total minutes
-    const hours = Math.floor(diffMinutes / 60);
-    const minutes = diffMinutes % 60;
-    // bookingObj.duration = `${hours}h ${minutes}m`;
-    if (
-      bookingObj?.category === 'Ski_Hire' ||
-      bookingObj?.category === 'Transport'
-    ) {
-      bookingObj.duration = `${hours}h ${minutes}m`;
-    }
+      // format slots
+      const fullSlots = (booking.slots || [])
+        .map((slotId: any) =>
+          booking.product?.slots?.find(
+            (s: any) => s._id.toString() === slotId.toString()
+          )
+        )
+        .filter(Boolean);
 
-    // Safely map bookingItems
-    if (b.bookingItems) {
-      bookingObj.bookingItems = b.bookingItems.map((bi: any) => ({
-        ...(bi.toObject?.() || bi),
-      }));
-    }
+      //  full booking items
+      const fullBookingItems = booking?.bookingItems?.map((item: any) => {
+        const fullItem =
+          booking?.product?.items?.find(
+            (p: any) => p._id.toString() === item.itemId.toString()
+          ) || null;
 
-    return bookingObj;
-  });
+        return {
+          ...item.toObject?.(),
+          itemDetails: fullItem || null,
+        };
+      });
+
+      // format duration
+      const start = dayjs(booking.startDateAndTime);
+      const end = dayjs(booking.endDateAndTime);
+      const diffMinutes = end.diff(start, 'minute');
+      const hours = Math.floor(diffMinutes / 60);
+      const minutes = diffMinutes % 60;
+
+      if (b?.category === 'Ski_Hire' || b?.category === 'Transport') {
+        b.duration = `${hours}h ${minutes}m`;
+      }
+
+      return {
+        ...b,
+        product,
+        slots: fullSlots,
+        bookingItems: fullBookingItems,
+      };
+    });
 
   // Services of this provider
   const models: Record<string, any> = {
-    SkiPass,
     SkiHire,
     Transport,
     Restaurant,
     Massage,
+    // SkiPass,
   };
 
   let allProducts: any[] = [];
 
   for (const [modelName, Model] of Object.entries(models)) {
     const products = await Model.find({ owner: isExistUser?._id })
-      .select('-items')
-      .sort({ createdAt: -1 })
-      .lean();
+      .select('-__v')
+      .sort({ createdAt: -1 });
 
-    const formatted = products?.map((p: any) => ({
-      ...p,
-      model: modelName,
-    }));
+    const formatted = await Promise.all(
+      products.map(async (p: any) => {
+        let categoryValue = null;
+
+        const categoryDoc = await Category.findOne({
+          $or: [{ _id: p.category }, { 'subCategory._id': p.category }],
+        }).lean();
+
+        if (categoryDoc) {
+          const subCat = categoryDoc.subCategory?.find(
+            (sc: any) => sc._id.toString() === p.category.toString()
+          );
+          categoryValue = subCat || categoryDoc;
+        }
+
+        return {
+          ...p.toObject(),
+          model: modelName,
+          category: categoryValue,
+          reviewCount: p.reviews?.length || 0,
+        };
+      })
+    );
 
     allProducts.push(...formatted);
   }
-
-  // Sort all products by createdAt (newest first)
-  allProducts.sort(
-    (a, b) =>
-      new Date(b?.createdAt).getTime() - new Date(a?.createdAt).getTime()
-  );
 
   const recentServices = allProducts.slice(0, 4);
 

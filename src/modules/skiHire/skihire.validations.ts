@@ -35,7 +35,8 @@ const createSkiHireSchema = z.object({
 
     extraChargePerHour: z.coerce
       .number()
-      .min(1, { message: 'Extra Charge Per Hour must be greater than zero' }).optional(),
+      .min(1, { message: 'Extra Charge Per Hour must be greater than zero' })
+      .optional(),
 
     serviceArea: z.string({
       required_error: 'Service area is required',
@@ -47,6 +48,14 @@ const createSkiHireSchema = z.object({
       })
       .min(1, 'At least one menu item is required'),
   }),
+});
+
+const updateProductItemSchema = z.object({
+  // _id: z.string({ required_error: 'Item _id is required' }),
+  productName: z.string().optional(),
+  productPhoto: z.string().optional(),
+  price: z.coerce.number().min(1).optional(),
+  quantity: z.coerce.number().min(1).optional(),
 });
 
 const updateSkiHireSchema = z.object({
@@ -66,10 +75,7 @@ const updateSkiHireSchema = z.object({
 
     serviceArea: z.string().optional(),
 
-    productItems: z
-      .array(productItemSchema)
-      .min(1, 'At least one menu item is required')
-      .optional(),
+    productItems: z.array(updateProductItemSchema).optional(),
   }),
 });
 

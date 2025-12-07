@@ -10,8 +10,6 @@ import { IReview } from './../common/common.interface';
 import { USER_UPLOADS_FOLDER } from './massage.constant';
 import { Category } from './../category/category.model';
 
-
-
 const getAllMassageFromDB = async (user: JwtPayload, query: any) => {
   const isExistsUser = await User.findOne({ email: user?.email });
   if (!isExistsUser) {
@@ -25,7 +23,7 @@ const getAllMassageFromDB = async (user: JwtPayload, query: any) => {
 
   // Search filter
   const search = query.search
-    ? { title: { $regex: query.search, $options: "i" } }
+    ? { title: { $regex: query.search, $options: 'i' } }
     : {};
 
   // Category filter
@@ -33,13 +31,13 @@ const getAllMassageFromDB = async (user: JwtPayload, query: any) => {
   if (query.category) {
     const categories = await Category.find(
       {
-        primaryCategoryName: "Massage",
-        "subCategory.name": { $regex: query.category, $options: "i" },
+        primaryCategoryName: 'Massage',
+        'subCategory.name': { $regex: query.category, $options: 'i' },
       },
-      { "subCategory.$": 1 }
+      { 'subCategory.$': 1 }
     );
 
-    const categoryIds = categories.map((c) => c.subCategory?.[0]?._id);
+    const categoryIds = categories.map(c => c.subCategory?.[0]?._id);
 
     if (categoryIds.length > 0) {
       categoryFilter = { category: { $in: categoryIds } };
@@ -64,20 +62,20 @@ const getAllMassageFromDB = async (user: JwtPayload, query: any) => {
     .skip(skip)
     .limit(limit)
     .populate({
-      path: "owner",
-      select: "-isDeleted -agreeTermsCondition -__v -createdAt -updatedAt",
+      path: 'owner',
+      select: '-isDeleted -agreeTermsCondition -__v -createdAt -updatedAt',
     })
     .sort({ createdAt: -1 });
 
   // Attach category (your original logic)
   const result = await Promise.all(
-    massageList.map(async (item) => {
+    massageList.map(async item => {
       const categoryDoc = await Category.findOne(
         {
-          primaryCategoryName: "Massage",
-          "subCategory._id": item.category,
+          primaryCategoryName: 'Massage',
+          'subCategory._id': item.category,
         },
-        { "subCategory.$": 1 }
+        { 'subCategory.$': 1 }
       );
 
       return {
@@ -111,7 +109,7 @@ const getAllMyMassageFromDB = async (user: JwtPayload, query: any) => {
 
   // Search filter
   const search = query.search
-    ? { title: { $regex: query.search, $options: "i" } }
+    ? { title: { $regex: query.search, $options: 'i' } }
     : {};
 
   // Category filter
@@ -119,13 +117,13 @@ const getAllMyMassageFromDB = async (user: JwtPayload, query: any) => {
   if (query.category) {
     const categories = await Category.find(
       {
-        primaryCategoryName: "Massage",
-        "subCategory.name": { $regex: query.category, $options: "i" },
+        primaryCategoryName: 'Massage',
+        'subCategory.name': { $regex: query.category, $options: 'i' },
       },
-      { "subCategory.$": 1 }
+      { 'subCategory.$': 1 }
     );
 
-    const categoryIds = categories.map((c) => c.subCategory?.[0]?._id);
+    const categoryIds = categories.map(c => c.subCategory?.[0]?._id);
 
     if (categoryIds.length > 0) {
       categoryFilter = { category: { $in: categoryIds } };
@@ -151,20 +149,20 @@ const getAllMyMassageFromDB = async (user: JwtPayload, query: any) => {
     .skip(skip)
     .limit(limit)
     .populate({
-      path: "owner",
-      select: "-isDeleted -agreeTermsCondition -__v -createdAt -updatedAt",
+      path: 'owner',
+      select: '-isDeleted -agreeTermsCondition -__v -createdAt -updatedAt',
     })
     .sort({ createdAt: -1 });
 
   // Attach category (your original logic)
   const result = await Promise.all(
-    massageList.map(async (item) => {
+    massageList.map(async item => {
       const categoryDoc = await Category.findOne(
         {
-          primaryCategoryName: "Massage",
-          "subCategory._id": item.category,
+          primaryCategoryName: 'Massage',
+          'subCategory._id': item.category,
         },
-        { "subCategory.$": 1 }
+        { 'subCategory.$': 1 }
       );
 
       return {
@@ -185,7 +183,6 @@ const getAllMyMassageFromDB = async (user: JwtPayload, query: any) => {
   };
 };
 
-
 const getSingleMassageFromDB = async (id: string, user: JwtPayload) => {
   const isExistsUser = await User.findOne({ email: user?.email });
   if (!isExistsUser) {
@@ -194,10 +191,12 @@ const getSingleMassageFromDB = async (id: string, user: JwtPayload) => {
       'You cannot view this data because your account was not found.'
     );
   }
-  const massage = await Massage.findById(id).populate({
-    path: 'owner',
-    select: '-isDeleted -agreeTermsCondition -__v -createdAt -updatedAt',
-  })  .populate({
+  const massage = await Massage.findById(id)
+    .populate({
+      path: 'owner',
+      select: '-isDeleted -agreeTermsCondition -__v -createdAt -updatedAt',
+    })
+    .populate({
       path: 'reviews.userId',
       select: 'fullName email phoneNumber profileUrl createdAt', // choose what you want
     })
@@ -205,8 +204,9 @@ const getSingleMassageFromDB = async (id: string, user: JwtPayload) => {
       path: 'refunds.userId',
       select: 'fullName email phoneNumber profileUrl createdAt',
     });
-    
-  if (!massage) throw new AppError(StatusCodes.NOT_FOUND, 'Massage data not found.');
+
+  if (!massage)
+    throw new AppError(StatusCodes.NOT_FOUND, 'Massage data not found.');
 
   // manually populate subcategory
   const categoryDoc = await Category.findOne(
@@ -322,9 +322,10 @@ export const reviewMassage = async (
   }
 
   //  (Optional) Prevent duplicate reviews by the same user
-  const alreadyReviewed = massage.reviews?.some(
-    review => review.userId.toString() === isExistsUser._id.toString()
-  ) || false;
+  const alreadyReviewed =
+    massage.reviews?.some(
+      review => review.userId.toString() === isExistsUser._id.toString()
+    ) || false;
 
   if (alreadyReviewed) {
     throw new AppError(
@@ -348,7 +349,6 @@ export const reviewMassage = async (
 
   massage.reviews.push(newReview);
 
-  
   // total balance
   // const total = massage?.reviews.reduce((sum: number, r: IReview) => sum + r?.
   // rating, 0);
@@ -356,9 +356,8 @@ export const reviewMassage = async (
     (sum: number, r: IReview) => sum + (r?.rating || 0),
     0
   );
-   
 
- // Recalculate average rating
+  // Recalculate average rating
   massage.averageRating = parseFloat(
     (total / (massage.reviews.length || 1)).toFixed(1)
   );
@@ -373,14 +372,14 @@ const updateMassageIntoDB = async (req: Request) => {
   const id = req.params.id;
   const user = req.user as JwtPayload;
 
-  const isExistsMassage = await Massage.findById(id);
-
-  if (!isExistsMassage) {
+  // Find existing massage
+  const existingMassage = await Massage.findById(id);
+  if (!existingMassage) {
     throw new AppError(StatusCodes.NOT_FOUND, 'Massage data not found.');
   }
 
-  // check user
-  const existsUser = await User.findById({ _id: user?.userId });
+  // Check user
+  const existsUser = await User.findById(user?.userId);
   if (!existsUser) {
     throw new AppError(
       StatusCodes.NOT_FOUND,
@@ -388,23 +387,19 @@ const updateMassageIntoDB = async (req: Request) => {
     );
   }
 
+  // Handle category validation
   if (req.body?.category) {
-    const isExistsCategory = await Category.findOne({
-      primaryCategoryName: 'Massage',
-    });
-    if (!isExistsCategory) {
+    const category = await Category.findOne({ primaryCategoryName: 'Massage' });
+    if (!category) {
       throw new AppError(StatusCodes.NOT_FOUND, 'Massage category not found.');
     }
 
-    const subCategoryItems = isExistsCategory?.subCategory || [];
-    // const brandExists = subCategoryItems.some(
-    //   item => item?._id.toString() === req.body?.category.toString()
-
-    const brandExists = subCategoryItems.some(item =>
-      item?._id ? item._id.toString() === req.body?.category?.toString() : false
+    const subCategoryItems = category.subCategory || [];
+    const isValidSubCategory = subCategoryItems.some(
+      item => item?._id.toString() === req.body.category?.toString()
     );
 
-    if (!brandExists) {
+    if (!isValidSubCategory) {
       throw new AppError(
         StatusCodes.BAD_REQUEST,
         'Invalid sub-category ID for Massage.'
@@ -412,6 +407,7 @@ const updateMassageIntoDB = async (req: Request) => {
     }
   }
 
+  // Handle thumbnail upload
   if (req.file) {
     const fileUrl = await s3Services.uploadSingleFileToS3(
       req.file,
@@ -420,13 +416,67 @@ const updateMassageIntoDB = async (req: Request) => {
     req.body.thumbnail = fileUrl;
   }
 
-  const updateData = req?.body;
+  // console.log('req.body from here :', req.body);
 
+  // Handle priceByDuration safely (preserve _id for existing items)
+  if (req.body?.priceByDuration) {
+    const existingPrices = existingMassage.priceByDuration.map(p =>
+      p.toObject()
+    ); // existing items
+    const incomingPrices = req.body.priceByDuration;
+
+    const mergedPrices: typeof existingPrices = [];
+
+    incomingPrices.forEach((item: any, index: number) => {
+      if (item._id) {
+        // Existing item: update by _id
+        const existingItem = existingPrices.find(
+          p => p._id.toString() === item._id
+        );
+        if (existingItem) {
+          mergedPrices.push({
+            _id: existingItem._id,
+            duration: item.duration,
+            amount: item.amount,
+          });
+        } else {
+          // _id provided but not found in DB, treat as new
+          mergedPrices.push(item);
+        }
+      } else {
+        // No _id: if index exists in DB, keep existing _id
+        if (existingPrices[index]) {
+          mergedPrices.push({
+            _id: existingPrices[index]._id,
+            duration: item.duration,
+            amount: item.amount,
+          });
+        } else {
+          // New item, Mongoose will generate _id
+          mergedPrices.push(item);
+        }
+      }
+    });
+
+    // Keep other existing items untouched (not in incoming array)
+    const incomingIds = mergedPrices
+      .map(p => p._id?.toString())
+      .filter(Boolean);
+    const untouchedOld = existingPrices.filter(
+      p => !incomingIds.includes(p._id?.toString())
+    );
+
+    req.body.priceByDuration = [...mergedPrices]; // untouchedOld (when want to add previous price duration)
+  }
+
+  // Update massage
+  const updateData = req.body;
   const result = await Massage.findByIdAndUpdate(
     id,
     { $set: updateData },
     { new: true }
   );
+
   return result;
 };
 

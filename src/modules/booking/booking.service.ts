@@ -167,6 +167,7 @@ const getSingleBookingFromDB = async (id: string, user: JwtPayload) => {
   const product = booking?.product as any;
   // const product = booking?.product || [];
   const productItems = product?.items || [];
+  console.log("product", product);
   // const enrichedBookingItems = booking?.bookingItems.map((bi: any) => {
   const enrichedBookingItems = (booking?.bookingItems || []).map((bi: any) => {
     const matchedItem =
@@ -190,12 +191,14 @@ const getSingleBookingFromDB = async (id: string, user: JwtPayload) => {
 
   delete product.items;
 
-  return {
-    ...booking,
-    product,
-    bookingItems: enrichedBookingItems,
-    slots,
-  };
+  return product;
+
+  // return {
+  //   ...booking,
+  //   product,
+  //   bookingItems: enrichedBookingItems,
+  //   slots,
+  // };
 };
 
 const getMyBooking = async (user: JwtPayload, query: any) => {
