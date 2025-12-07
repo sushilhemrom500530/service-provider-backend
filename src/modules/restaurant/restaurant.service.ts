@@ -62,7 +62,7 @@ const getAllRestaurantFromDB = async (user: JwtPayload, query: any) => {
   // Fetch paginated restaurant data
   const restaurantList = await Restaurant.find(filters)
     .skip(skip)
-    .limit(limit) 
+    .limit(limit)
     .populate({
       path: 'owner',
       select: '-isDeleted -agreeTermsCondition -__v -createdAt -updatedAt',
@@ -772,8 +772,10 @@ export const updateRestaurantIntoDB = async (req: Request) => {
       'You are not authorized to update this restaurant.'
     );
   }
+  console.log('get all form data :', req.body);
 
   // Validate category if provided
+
   if (req.body.category) {
     const category = await Category.findOne({
       primaryCategoryName: 'Restaurant',
@@ -814,8 +816,7 @@ export const updateRestaurantIntoDB = async (req: Request) => {
   }
 
   // -----------------------
-  // UPDATE ITEMS (same as create logic)
-  // Support: files + files[0] + files[1]
+  // UPDATE ITEMS (FULL FIX WITH QUANTITY CALCULATION)
   // -----------------------
 
   if (req.body.items) {
@@ -829,17 +830,10 @@ export const updateRestaurantIntoDB = async (req: Request) => {
         'Items data is missing or invalid.'
       );
 
-    if (items.length !== 2) {
-      throw new AppError(
-        StatusCodes.BAD_REQUEST,
-        'Items must contain exactly 2 seat types: Normal and VIP.'
-      );
-    }
-
-    // Duplicate check
-    const seatNames = items.map(i => i.seat?.trim().toLowerCase());
+    // Duplicate seat validation
+    const seatNames = items.map(i => (i.seat || '').trim().toLowerCase());
     const duplicateSeat = seatNames.some(
-      (seat, index) => seatNames.indexOf(seat) !== index
+      (seat, index) => seat && seatNames.indexOf(seat) !== index
     );
 
     if (duplicateSeat) {
@@ -849,31 +843,40 @@ export const updateRestaurantIntoDB = async (req: Request) => {
       );
     }
 
-    // 🔥 FIXED: SUPPORT files[] AND files[0], files[1]
+    // Build file list (supports files[], files["0"], files["1"])
     let itemFiles: any[] = [];
-
     if (uploadedFiles?.files) {
-      // Case 1: files = [file1, file2]
       if (Array.isArray(uploadedFiles.files)) {
         itemFiles = uploadedFiles.files;
-      }
-
-      // Case 2: { '0': [file], '1': [file] }
-      else {
+      } else {
         const keys = Object.keys(uploadedFiles.files)
           .map(k => parseInt(k))
+          .filter(n => !Number.isNaN(n))
           .sort((a, b) => a - b);
 
         itemFiles = keys.map(k => uploadedFiles.files[k][0]);
       }
     }
 
-    const processedItems = await Promise.all(
+    const existingItems = restaurant.items ? [...restaurant.items] : [];
+
+    // Process incoming items
+    const processedIncoming = await Promise.all(
       items.map(async (item, index) => {
         const file = itemFiles[index];
 
-        let photoUrl = item.photo || restaurant.items?.[index]?.photo;
+        const seatNormalized = (item.seat || '')
+          .toString()
+          .trim()
+          .toLowerCase();
 
+        const existing = existingItems.find(
+          (ei: any) =>
+            (ei.seat || '').toString().trim().toLowerCase() === seatNormalized
+        );
+
+        // ---- PHOTO ----
+        let photoUrl = item.photo || (existing ? existing.photo : undefined);
         if (file) {
           photoUrl = await s3Services.uploadSingleFileToS3(
             file,
@@ -881,17 +884,91 @@ export const updateRestaurantIntoDB = async (req: Request) => {
           );
         }
 
-        return {
-          ...item,
-          totalQty: Number(item.totalQty),
-          availableQty: Number(item.totalQty),
-          price: Number(item.price),
+        // ---- QUANTITY CALCULATION ----
+        let newTotalQty = Number(item.totalQty);
+        let newAvailableQty = 0;
+
+        if (existing) {
+          const oldTotalQty = Number(existing.totalQty);
+          const oldAvailableQty = Number(existing.availableQty);
+
+          const diff = newTotalQty - oldTotalQty; // may be negative
+
+          // Client provided availableQty?
+          if (item.availableQty !== undefined && item.availableQty !== null) {
+            newAvailableQty = Number(item.availableQty);
+          } else {
+            // Auto-adjust availableQty based on difference
+            newAvailableQty = oldAvailableQty + diff;
+          }
+
+          // Never allow below 0
+          if (newAvailableQty < 0) newAvailableQty = 0;
+        } else {
+          // New item
+          newAvailableQty =
+            item.availableQty !== undefined && item.availableQty !== null
+              ? Number(item.availableQty)
+              : newTotalQty;
+        }
+
+        const priceNum =
+          item.price !== undefined
+            ? Number(item.price)
+            : existing
+            ? existing.price
+            : 0;
+
+        const out: any = {
+          seat: item.seat,
           photo: photoUrl,
+          totalQty: newTotalQty,
+          availableQty: newAvailableQty,
+          price: priceNum,
+          description:
+            item.description ?? (existing ? existing.description : ''),
         };
+
+        if (existing && existing._id) {
+          out._id = existing._id; // preserve
+        }
+
+        return out;
       })
     );
 
-    restaurant.items = processedItems;
+    // ------------- MERGE -------------
+    const mergedMap: Map<string, any> = new Map();
+
+    existingItems.forEach((ei: any) => {
+      const key = ei._id
+        ? ei._id.toString()
+        : (ei.seat || '').toString().trim().toLowerCase();
+      mergedMap.set(key, ei);
+    });
+
+    processedIncoming.forEach(pi => {
+      if (pi._id) {
+        mergedMap.set(pi._id.toString(), pi);
+      } else {
+        const key = (pi.seat || '').toString().trim().toLowerCase();
+        if (mergedMap.has(key)) mergedMap.set(key, pi);
+        else
+          mergedMap.set(`${key}-${Math.random().toString(36).slice(2, 8)}`, pi);
+      }
+    });
+
+    const finalItems = Array.from(mergedMap.values());
+
+    restaurant.items = finalItems.map((it: any) => ({
+      ...(it._id ? { _id: it._id } : {}),
+      seat: it.seat,
+      photo: it.photo,
+      totalQty: Number(it.totalQty),
+      availableQty: Number(it.availableQty),
+      price: Number(it.price),
+      description: it.description ?? '',
+    }));
   }
 
   // -----------------------
@@ -960,7 +1037,6 @@ export const updateRestaurantIntoDB = async (req: Request) => {
   const updatedRestaurant = await restaurant.save();
   return updatedRestaurant;
 };
-
 
 const deleteRestaurantIntoDB = async (id: string, user: JwtPayload) => {
   const isExistsUser = await User.findOne({ email: user?.email });

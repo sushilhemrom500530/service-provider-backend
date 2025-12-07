@@ -13,6 +13,7 @@ const slotSchema = z.object({
     .min(1, 'End time cannot be empty'),
 });
 
+
 // Category Item Detail Schema
 const categoryItemDetailSchema = z.object({
   seat: z.enum(['VIP', 'Normal'], {

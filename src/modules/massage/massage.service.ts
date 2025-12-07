@@ -416,6 +416,8 @@ const updateMassageIntoDB = async (req: Request) => {
     req.body.thumbnail = fileUrl;
   }
 
+  // console.log('req.body from here :', req.body);
+
   // Handle priceByDuration safely (preserve _id for existing items)
   if (req.body?.priceByDuration) {
     const existingPrices = existingMassage.priceByDuration.map(p =>
@@ -464,7 +466,7 @@ const updateMassageIntoDB = async (req: Request) => {
       p => !incomingIds.includes(p._id?.toString())
     );
 
-    req.body.priceByDuration = [...untouchedOld, ...mergedPrices];
+    req.body.priceByDuration = [...mergedPrices]; // untouchedOld (when want to add previous price duration)
   }
 
   // Update massage

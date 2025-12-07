@@ -13,7 +13,7 @@ import { IQuery } from './meta.inteface';
 import { StatusCodes } from 'http-status-codes';
 import { startOfYear, endOfYear, setYear } from 'date-fns';
 import dayjs from 'dayjs';
-import { Category } from "./../category/category.model";
+import { Category } from './../category/category.model';
 
 //  for provider home page data
 const getProviderDashboard = async (user: JwtPayload) => {
@@ -111,12 +111,13 @@ const getProviderDashboard = async (user: JwtPayload) => {
 
   // Services of this provider
   const models: Record<string, any> = {
-    SkiPass,
     SkiHire,
     Transport,
     Restaurant,
     Massage,
+    // SkiPass,
   };
+
   let allProducts: any[] = [];
 
   for (const [modelName, Model] of Object.entries(models)) {
@@ -126,31 +127,23 @@ const getProviderDashboard = async (user: JwtPayload) => {
 
     const formatted = await Promise.all(
       products.map(async (p: any) => {
-        let categoryValue = p.category;
+        let categoryValue = null;
 
-        // --- FIX: Restaurant special category logic ---
-        if (modelName === 'Restaurant') {
-          const categoryDoc = await Category.findOne(
-            {
-              primaryCategoryName: 'Restaurant',
-              'subCategory._id': p.category,
-            },
-            { 'subCategory.$': 1 }
+        const categoryDoc = await Category.findOne({
+          $or: [{ _id: p.category }, { 'subCategory._id': p.category }],
+        }).lean();
+
+        if (categoryDoc) {
+          const subCat = categoryDoc.subCategory?.find(
+            (sc: any) => sc._id.toString() === p.category.toString()
           );
-
-          categoryValue = categoryDoc?.subCategory?.[0] || null;
+          categoryValue = subCat || categoryDoc;
         }
 
-        // populate their actual category 
-        else {
-          const populated = await Category.findById(p.category).lean();
-          categoryValue = populated || null;
-        }
-  
         return {
           ...p.toObject(),
           model: modelName,
-          category: categoryValue, 
+          category: categoryValue,
           reviewCount: p.reviews?.length || 0,
         };
       })
