@@ -80,10 +80,9 @@ const getAllMySkiPassFromDB = async (user: JwtPayload, query: any) => {
 
   // Fetch paginated result
   const result = await SkiPass.find(filters)
+    .sort({ createdAt: -1 })
     .skip(skip)
-    .limit(limit)
-    .sort({ createdAt: -1 });
-
+    .limit(limit);
   return {
     pagination: {
       total,

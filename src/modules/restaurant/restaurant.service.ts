@@ -62,7 +62,7 @@ const getAllRestaurantFromDB = async (user: JwtPayload, query: any) => {
   // Fetch paginated restaurant data
   const restaurantList = await Restaurant.find(filters)
     .skip(skip)
-    .limit(limit)
+    .limit(limit) 
     .populate({
       path: 'owner',
       select: '-isDeleted -agreeTermsCondition -__v -createdAt -updatedAt',
