@@ -44,7 +44,7 @@ const getSingleTransportFromDB = catchAsync(async (req: Request, res: Response) 
 const addTransportIntoDB = catchAsync(async (req: Request, res: Response) => {
   const result = await TransportService.addTransportIntoDB(req)
   sendResponse(res, {
-    code: StatusCodes.OK,
+    code: 201,
     message: 'Transport added successfully',
     data: result,
   });

@@ -21,6 +21,7 @@ import { isPastDate } from './../../utils/isPassTimeCheck';
 import { Payment } from './../payment/payment.model';
 import { generateTransactionId } from './../../utils/generateTransactionId';
 import { Notification } from './../notification/notification.model';
+import { Category } from "./../category/category.model";
 import {
   TransactionStatus,
   PaymentGateway,
@@ -81,7 +82,7 @@ const getAllBookingFromDB = async (user: JwtPayload, query: any) => {
         '-totalPrice -__v -reviews -refunds -averageRating -createdAt -updatedAt',
       // populate: {path: 'items'}
     })
-    .populate('user', 'fullName email address phoneNumber')
+    .populate('user', 'fullName profileUrl email address phoneNumber')
     .sort({ createdAt: -1 });
 
   const allBookings = await bookingQuery.clone();
@@ -143,17 +144,74 @@ const getAllBookingFromDB = async (user: JwtPayload, query: any) => {
   };
 };
 
+// const getSingleBookingFromDB = async (id: string, user: JwtPayload) => {
+//   const isExistsUser = await User.findOne({ email: user?.email });
+//   if (!isExistsUser)
+//     throw new AppError(StatusCodes.NOT_FOUND, 'User not found.');
+
+//   const booking = await Booking.findById(id)
+//     .populate({
+//       path: 'product',
+//       select:
+//         '-owner -totalPrice -__v -reviews -refunds -averageRating -createdAt -updatedAt',
+//     })
+//     .populate(
+//       'user',
+//       '_id fullName email profileUrl address phoneNumber status'
+//     )
+//     .lean();
+
+//   if (!booking) {
+//     throw new AppError(StatusCodes.NOT_FOUND, 'Booking not found.');
+//   }
+
+//   const product = booking?.product as any;
+//   // const product = booking?.product || [];
+//   const productItems = product?.items || [];
+//   // const enrichedBookingItems = booking?.bookingItems.map((bi: any) => {
+//   const enrichedBookingItems = (booking?.bookingItems || []).map((bi: any) => {
+//     const matchedItem =
+//       productItems.find(
+//         (itm: any) => itm._id.toString() === bi.itemId.toString()
+//       ) || null;
+
+//     return {
+//       ...bi,
+//       item: matchedItem ? { ...matchedItem } : null,
+//     };
+//   });
+
+//   const slots = (booking?.slots || [])
+//     .map((slotId: any) => {
+//       return product.slots.find(
+//         (s: any) => s._id.toString() === slotId.toString()
+//       );
+//     })
+//     .filter(Boolean);
+
+//   delete product.items;
+
+//   // return product;
+
+//   return {
+//     ...booking,
+//     product,
+//     bookingItems: enrichedBookingItems,
+//     slots,
+//   };
+// };
+
 const getSingleBookingFromDB = async (id: string, user: JwtPayload) => {
   const isExistsUser = await User.findOne({ email: user?.email });
-  if (!isExistsUser)
+  if (!isExistsUser) {
     throw new AppError(StatusCodes.NOT_FOUND, 'User not found.');
+  }
 
   const booking = await Booking.findById(id)
-    .populate({
-      path: 'product',
-      select:
-        '-owner -totalPrice -__v -reviews -refunds -averageRating -createdAt -updatedAt',
-    })
+    .populate(
+      'product',
+      '-owner -totalPrice -__v -reviews -refunds -averageRating -createdAt -updatedAt'
+    )
     .populate(
       'user',
       '_id fullName email profileUrl address phoneNumber status'
@@ -164,15 +222,38 @@ const getSingleBookingFromDB = async (id: string, user: JwtPayload) => {
     throw new AppError(StatusCodes.NOT_FOUND, 'Booking not found.');
   }
 
-  const product = booking?.product as any;
-  // const product = booking?.product || [];
+  /* -------------------- Helpers -------------------- */
+  const msToTime = (ms: number) => {
+    const totalSeconds = Math.floor(ms / 1000);
+    const hours = Math.floor(totalSeconds / 3600);
+    const minutes = Math.floor((totalSeconds % 3600) / 60);
+    return `${hours}h ${minutes}m`;
+  };
+
+  /* -------------------- Product & Category -------------------- */
+  const product = booking.product as any;
+
+  if (product?.category) {
+    const categoryDoc = await Category.findOne(
+      { 'subCategory._id': product.category },
+      { 'subCategory.$': 1, primaryCategoryName: 1 }
+    );
+
+    if (categoryDoc) {
+      product.category = {
+        ...(categoryDoc.subCategory[0].toObject?.() ||
+          categoryDoc.subCategory[0]), 
+      };
+    }
+  }
+
+  /* -------------------- Product Items -------------------- */
   const productItems = product?.items || [];
-  console.log("product", product);
-  // const enrichedBookingItems = booking?.bookingItems.map((bi: any) => {
+
   const enrichedBookingItems = (booking?.bookingItems || []).map((bi: any) => {
     const matchedItem =
       productItems.find(
-        (itm: any) => itm._id.toString() === bi.itemId.toString()
+        (itm: any) => itm?._id?.toString() === bi?.itemId?.toString()
       ) || null;
 
     return {
@@ -181,25 +262,64 @@ const getSingleBookingFromDB = async (id: string, user: JwtPayload) => {
     };
   });
 
+  /* -------------------- Slots -------------------- */
   const slots = (booking?.slots || [])
-    .map((slotId: any) => {
-      return product.slots.find(
-        (s: any) => s._id.toString() === slotId.toString()
-      );
-    })
+    .map((slotId: any) =>
+      product?.slots?.find(
+        (s: any) => s?._id?.toString() === slotId?.toString()
+      )
+    )
     .filter(Boolean);
 
-  delete product.items;
+  /* -------------------- Time & Overtime -------------------- */
+  const startTime = new Date(booking?.startDateAndTime);
+  const endTime = new Date(booking?.endDateAndTime);
 
-  return product;
+  let timeLabel: string | undefined;
+  let overTimeAmount = 0;
 
-  // return {
-  //   ...booking,
-  //   product,
-  //   bookingItems: enrichedBookingItems,
-  //   slots,
-  // };
+  if (['Ski_Hire', 'Transport'].includes(booking?.category)) {
+    const now = new Date();
+
+    if (now < endTime) {
+      const timeLeft = endTime.getTime() - now.getTime();
+      timeLabel = `Time Left: ${msToTime(timeLeft)}`;
+    } else {
+      const overMs = now.getTime() - endTime.getTime();
+      timeLabel = `Over Time: ${msToTime(overMs)}`;
+
+      const overHours = overMs / (1000 * 60 * 60);
+
+      let hourlyRate = 0;
+      if (booking?.category === 'Ski_Hire') {
+        hourlyRate = Number(product?.extraChargePerHour || 0);
+      }
+      if (booking?.category === 'Transport') {
+        hourlyRate = Number(product?.extraChargePerHours || 0);
+      }
+
+      overTimeAmount = Number((overHours * hourlyRate).toFixed(2));
+    }
+  }
+
+  /* -------------------- Cleanup -------------------- */
+  if (product) {
+    delete product.items;
+  }
+
+  /* -------------------- Final Response -------------------- */
+  return {
+    ...booking,
+    product,
+    bookingItems: enrichedBookingItems,
+    slots,
+    startTime,
+    endTime,
+    ...(timeLabel && { timeLabel }),
+    ...(overTimeAmount > 0 && { overTimeAmount }),
+  };
 };
+
 
 const getMyBooking = async (user: JwtPayload, query: any) => {
   const isExistsUser = await User.findOne({ email: user?.email });

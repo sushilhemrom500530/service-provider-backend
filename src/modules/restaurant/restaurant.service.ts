@@ -228,6 +228,7 @@ const getSingleRestaurantFromDB = async (id: string, user: JwtPayload) => {
   };
 };
 
+
 // const addRestaurantIntoDB = async (req: Request) => {
 //   const user = req.user as JwtPayload;
 
