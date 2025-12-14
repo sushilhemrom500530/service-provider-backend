@@ -115,7 +115,7 @@ const getProviderDashboard = async (user: JwtPayload) => {
     Transport,
     Restaurant,
     Massage,
-    // SkiPass,
+    SkiPass,  
   };
 
   let allProducts: any[] = [];

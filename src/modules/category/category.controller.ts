@@ -47,7 +47,7 @@ const createCategory = catchAsync(async (req, res) => {
 
 const addSubCategory = catchAsync(async (req, res) => {
   // const result = await CategoryService.addSubCategory(req as Request);
-  const result = await CategoryService.addSubCategory(req as Request, res);
+  const result = await CategoryService.addSubCategory(req as Request, res as any);
   sendResponse(res, {
     code: StatusCodes.OK,
     message: 'Sub category create successfully.',
