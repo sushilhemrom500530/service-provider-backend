@@ -24,7 +24,6 @@ router.get(
   BookingController.getMyBookingIntoDB
 );
 
-
 // get my booking for home
 router.get(
   '/my-booking-home',
@@ -50,15 +49,21 @@ router.post(
 // update
 router.patch(
   '/update-status/:id',
-  auth('Admin','Provider'),
+  auth('Admin', 'Provider'),
   validateRequest(BookingRoutesValidations.updateBookingSchema),
   BookingController.updateBookingStatus
+);
+// complete
+router.patch(
+  '/complete/:id',
+  auth('Admin', 'Provider'), 
+  BookingController.completeBooking
 );
 
 // update permission
 router.patch(
   '/update-permit/:id',
-  auth('Admin','Provider'),
+  auth('Admin', 'Provider'),
   validateRequest(BookingRoutesValidations.updatePermitBookingSchema),
   BookingController.updatePermitBookingStatus
 );
@@ -74,7 +79,7 @@ router.patch(
 // delete
 router.delete(
   '/delete/:id',
-  auth('Admin','User'),
+  auth('Admin', 'User'),
   BookingController.deleteBookingIntoDB
 );
 

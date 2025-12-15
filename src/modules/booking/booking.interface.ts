@@ -55,6 +55,7 @@ export interface IBooking extends Document {
   totalPrice: number;
 
   isPermitted: boolean | false;
+  isHandOver: boolean | false;
 
   createdAt?: Date;
   updatedAt?: Date;

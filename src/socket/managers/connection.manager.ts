@@ -120,6 +120,7 @@ export const handleDisconnection = async (
 
 //Get online users
 export const getOnlineUsers = (connectionData: ConnectionData): string[] => {
+  console.log('connect online users : ', connectionData.onlineUsers);
   return Array.from(connectionData.onlineUsers);
 };
 

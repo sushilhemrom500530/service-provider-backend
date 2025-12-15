@@ -21,7 +21,7 @@ import { isPastDate } from './../../utils/isPassTimeCheck';
 import { Payment } from './../payment/payment.model';
 import { generateTransactionId } from './../../utils/generateTransactionId';
 import { Notification } from './../notification/notification.model';
-import { Category } from "./../category/category.model";
+import { Category } from './../category/category.model';
 import {
   TransactionStatus,
   PaymentGateway,
@@ -216,7 +216,7 @@ const getSingleBookingFromDB = async (id: string, user: JwtPayload) => {
       'user',
       '_id fullName email profileUrl address phoneNumber status'
     )
-    .lean();
+    .lean({ defaults: true });
 
   if (!booking) {
     throw new AppError(StatusCodes.NOT_FOUND, 'Booking not found.');
@@ -242,7 +242,7 @@ const getSingleBookingFromDB = async (id: string, user: JwtPayload) => {
     if (categoryDoc) {
       product.category = {
         ...(categoryDoc.subCategory[0].toObject?.() ||
-          categoryDoc.subCategory[0]), 
+          categoryDoc.subCategory[0]),
       };
     }
   }
@@ -279,26 +279,28 @@ const getSingleBookingFromDB = async (id: string, user: JwtPayload) => {
   let overTimeAmount = 0;
 
   if (['Ski_Hire', 'Transport'].includes(booking?.category)) {
-    const now = new Date();
+    if (!booking?.isHandOver) {
+      const now = new Date();
 
-    if (now < endTime) {
-      const timeLeft = endTime.getTime() - now.getTime();
-      timeLabel = `Time Left: ${msToTime(timeLeft)}`;
-    } else {
-      const overMs = now.getTime() - endTime.getTime();
-      timeLabel = `Over Time: ${msToTime(overMs)}`;
+      if (now < endTime) {
+        const timeLeft = endTime.getTime() - now.getTime();
+        timeLabel = `Time Left: ${msToTime(timeLeft)}`;
+      } else {
+        const overMs = now.getTime() - endTime.getTime();
+        timeLabel = `Over Time: ${msToTime(overMs)}`;
 
-      const overHours = overMs / (1000 * 60 * 60);
+        const overHours = overMs / (1000 * 60 * 60);
 
-      let hourlyRate = 0;
-      if (booking?.category === 'Ski_Hire') {
-        hourlyRate = Number(product?.extraChargePerHour || 0);
+        let hourlyRate = 0;
+        if (booking?.category === 'Ski_Hire') {
+          hourlyRate = Number(product?.extraChargePerHour || 0);
+        }
+        if (booking?.category === 'Transport') {
+          hourlyRate = Number(product?.extraChargePerHours || 0);
+        }
+
+        overTimeAmount = Number((overHours * hourlyRate).toFixed(2));
       }
-      if (booking?.category === 'Transport') {
-        hourlyRate = Number(product?.extraChargePerHours || 0);
-      }
-
-      overTimeAmount = Number((overHours * hourlyRate).toFixed(2));
     }
   }
 
@@ -313,13 +315,12 @@ const getSingleBookingFromDB = async (id: string, user: JwtPayload) => {
     product,
     bookingItems: enrichedBookingItems,
     slots,
-    startTime,
-    endTime,
+    // startTime,
+    // endTime,
     ...(timeLabel && { timeLabel }),
     ...(overTimeAmount > 0 && { overTimeAmount }),
   };
 };
-
 
 const getMyBooking = async (user: JwtPayload, query: any) => {
   const isExistsUser = await User.findOne({ email: user?.email });
@@ -347,6 +348,7 @@ const getMyBooking = async (user: JwtPayload, query: any) => {
   // Search & Category filter
   const search = query?.search?.toLowerCase() || '';
   const category = query?.category?.toLowerCase() || '';
+  const bookingStatus = query?.bookingStatus?.toLowerCase() || '';
 
   if (!category) {
     return [];
@@ -373,32 +375,34 @@ const getMyBooking = async (user: JwtPayload, query: any) => {
     let overTimeAmount: number = 0;
 
     if (['Ski_Hire', 'Transport'].includes(booking?.category)) {
-      const now = new Date();
+      if (!booking?.isHandOver) {
+        const now = new Date();
 
-      if (now < endTime) {
-        // Time left
-        const timeLeft = endTime.getTime() - now.getTime();
-        label = `Time Left: ${msToTime(timeLeft)}`;
-      } else {
-        // Overtime started
-        const overMs = now.getTime() - endTime.getTime();
-        label = `Over Time: ${msToTime(overMs)}`;
+        if (now < endTime) {
+          // Time left
+          const timeLeft = endTime.getTime() - now.getTime();
+          label = `Time Left: ${msToTime(timeLeft)}`;
+        } else {
+          // Overtime started
+          const overMs = now.getTime() - endTime.getTime();
+          label = `Over Time: ${msToTime(overMs)}`;
 
-        const overHours = overMs / (1000 * 60 * 60); // convert to hours
+          const overHours = overMs / (1000 * 60 * 60); // convert to hours
 
-        // Detect price field by category
-        let hourlyRate = 0;
+          // Detect price field by category
+          let hourlyRate = 0;
 
-        if (booking?.category === 'Ski_Hire') {
-          hourlyRate = Number(product?.extraChargePerHour || 0);
+          if (booking?.category === 'Ski_Hire') {
+            hourlyRate = Number(product?.extraChargePerHour || 0);
+          }
+
+          if (booking?.category === 'Transport') {
+            hourlyRate = Number(product?.extraChargePerHours || 0);
+          }
+
+          // Final overtime amount
+          overTimeAmount = Number((overHours * hourlyRate).toFixed(2));
         }
-
-        if (booking?.category === 'Transport') {
-          hourlyRate = Number(product?.extraChargePerHours || 0);
-        }
-
-        // Final overtime amount
-        overTimeAmount = Number((overHours * hourlyRate).toFixed(2));
       }
     }
 
@@ -560,6 +564,10 @@ const getMyBookingForHome = async (user: JwtPayload, selectedDate: string) => {
 
 const addBookingIntoDB = async (user: JwtPayload, payload: IBooking) => {
   const { userId, transactionId } = payload;
+
+  if (!transactionId)
+    throw new AppError(StatusCodes.BAD_REQUEST, 'Transaction ID is required.');
+
   // user validation
   const dbUser = await User.findOne({ email: user?.email });
   if (!dbUser) throw new AppError(StatusCodes.NOT_FOUND, 'User not found.');
@@ -826,7 +834,7 @@ const addBookingIntoDB = async (user: JwtPayload, payload: IBooking) => {
   const paymentPayload: IPayment = {
     booking: new Types.ObjectId(newBooking?._id),
     user: new Types.ObjectId(userId),
-    transactionId: generateTransactionId(),
+    transactionId,
     amount: totalPrice,
     status: TransactionStatus.PAID,
     gateway: PaymentGateway.STRIPE,
@@ -948,6 +956,45 @@ const updatePermitBookingIntoDB = async (
   return result;
 };
 
+const completeBookingIntoDB = async (user: JwtPayload, bookingId: string) => {
+  // Check user
+  const isExistsUser = await User.findOne({ email: user?.email });
+  if (!isExistsUser) {
+    throw new AppError(StatusCodes.NOT_FOUND, 'User not found.');
+  }
+  // console.log('find current user ===========>', isExistsUser);
+  const existsBooking = await Booking.findById(bookingId).populate({
+    path: 'product',
+    select: 'owner',
+  });
+
+  if (!existsBooking) {
+    throw new AppError(StatusCodes.NOT_FOUND, 'Booking not found.');
+  }
+
+  // Check ownership
+  // const owner = existsBooking?.product?.owner;
+  // if (owner?.toString() !== isExistsUser._id.toString()) {
+  const productDoc = existsBooking.product as any;
+  const owner = productDoc?.owner;
+  if (owner?.toString?.() !== isExistsUser._id.toString()) {
+    throw new AppError(
+      StatusCodes.FORBIDDEN,
+      'You are not the owner of this product. Cannot update booking status.'
+    );
+  }
+
+  const result = await Booking.findByIdAndUpdate(
+    bookingId,
+    { $set: { isHandOver: true } },
+    { new: true }
+  )
+    .populate('user', 'fullName email')
+    .populate('product');
+
+  return result;
+};
+
 const refundBookingIntoDB = async (
   user: JwtPayload,
   payload: Partial<any | {}>,
@@ -971,14 +1018,6 @@ const refundBookingIntoDB = async (
   if (!existsBooking) {
     throw new AppError(StatusCodes.NOT_FOUND, 'Booking not found.');
   }
-
-  // const result = await Booking.findByIdAndUpdate(
-  //   bookingId,
-  //   { $set: { bookingStatus: 'Cancel' } },
-  //   { new: true }
-  // )
-  //   .populate('user', 'fullName email')
-  //   .populate('product');
 
   // Identify the correct product model dynamically
   const productId = existsBooking?.product;
@@ -1010,62 +1049,69 @@ const refundBookingIntoDB = async (
   if (!product) {
     throw new AppError(StatusCodes.NOT_FOUND, `${productModel} not found.`);
   }
-  // // find owner wallet
-  // const ownerWallet = await Wallet.findOne({ user: product.owner });
-  // if (!ownerWallet) {
-  //   throw new AppError(StatusCodes.NOT_FOUND, 'Owner wallet not found.');
-  // }
-  // // find user wallet
-  // const userWallet = await Wallet.findOne({ user: isExistsUser?._id });
-  // if (!userWallet) {
-  //   throw new AppError(StatusCodes.NOT_FOUND, 'User wallet not found.');
-  // }
-  // // calculate refund
-  // const finalRefund = Number((existsBooking.totalPrice * 0.9).toFixed(2));
 
-  // await Wallet.updateOne(
-  //   { user: product.owner },
-  //   { $inc: { balance: -finalRefund } } // decrease balance
-  // );
+  // Prevent duplicate refunds
+  const alreadyRefunded = product.refunds?.some(
+    (refund: IRefund) =>
+      refund.userId.toString() === isExistsUser._id.toString()
+  );
 
-  // ownerWallet.transactions.push({
-  //   user: isExistsUser._id,
-  //   balance: finalRefund,
-  //   type: WalletTransactionType.SEND,
-  // });
+  if (alreadyRefunded) {
+    throw new AppError(
+      StatusCodes.BAD_REQUEST,
+      'You have already refunded or canceled this product.'
+    );
+  }
 
-  // await ownerWallet.save();
+  const result = await Booking.findByIdAndUpdate(
+    bookingId,
+    { $set: { bookingStatus: 'Cancel' } },
+    { new: true }
+  )
+    .populate('user', 'fullName email')
+    .populate('product');
 
-  // userWallet.balance += finalRefund;
-  // userWallet.transactions.push({
-  //   user: product.owner,
-  //   balance: finalRefund,
-  //   type: WalletTransactionType.RECEIVE,
-  // });
+  // find owner wallet
+  const ownerWallet = await Wallet.findOne({ user: product?.owner });
+  if (!ownerWallet) {
+    throw new AppError(StatusCodes.NOT_FOUND, 'Owner wallet not found.');
+  }
+  // find user wallet
+  const userWallet = await Wallet.findOne({ user: isExistsUser?._id });
+  if (!userWallet) {
+    throw new AppError(StatusCodes.NOT_FOUND, 'User wallet not found.');
+  }
+  // calculate refund (10% of total price)
+  const finalRefund = Number((existsBooking.totalPrice * 0.9).toFixed(2));
 
-  // await userWallet.save();
+  // decrease balance
+  ownerWallet.balance -= finalRefund;
 
-  // // send notification
-  // await Notification.create({
-  //   receiverId: product.owner,
-  //   senderId: isExistsUser._id,
-  //   title: 'Cancel Booking',
-  //   description: `${product?.title} is canceled by ${isExistsUser?.fullName}, product id:# ${product?._id}`,
-  //   type: 'payment',
-  // });
+  ownerWallet.transactions.push({
+    user: isExistsUser._id,
+    balance: finalRefund,
+    type: WalletTransactionType.SEND,
+  });
 
-  // // Prevent duplicate refunds
-  // const alreadyRefunded = product.refunds?.some(
-  //   (refund: IRefund) =>
-  //     refund.userId.toString() === isExistsUser._id.toString()
-  // );
+  await ownerWallet.save();
 
-  // if (alreadyRefunded) {
-  //   throw new AppError(
-  //     StatusCodes.BAD_REQUEST,
-  //     'You have already refunded or canceled this product.'
-  //   );
-  // }
+  userWallet.balance += finalRefund;
+  userWallet.transactions.push({
+    user: product.owner,
+    balance: finalRefund,
+    type: WalletTransactionType.RECEIVE,
+  });
+
+  await userWallet.save();
+
+  // send notification
+  await Notification.create({
+    receiverId: product.owner,
+    senderId: isExistsUser._id,
+    title: 'Cancel Booking',
+    description: `${product?.title} is canceled by ${isExistsUser?.fullName}, product id:# ${product?._id}`,
+    type: 'payment',
+  });
 
   // restore available product totalQty and slots
   // Restore for Restaurant
@@ -1140,20 +1186,20 @@ const refundBookingIntoDB = async (
 
   // ==================== END RESTORE LOGIC ====================
 
-  // // Add refund info
-  // const newRefund = {
-  //   userId: isExistsUser._id,
-  //   reason: payload.reason,
-  //   createdAt: new Date(),
-  // } as IRefund;
+  // Add refund info
+  const newRefund = {
+    userId: isExistsUser._id,
+    reason: payload.reason,
+    createdAt: new Date(),
+  } as IRefund;
 
-  // if (!product.refunds) product.refunds = [];
+  if (!product.refunds) product.refunds = [];
 
-  // product.refunds.push(newRefund);
+  product.refunds.push(newRefund);
 
-  // await product.save();
+  await product.save();
 
-  // return result;
+  return result;
 };
 
 const deleteBookingIntoDB = async (id: string, user: JwtPayload) => {
@@ -1206,5 +1252,6 @@ export const BookingService = {
   refundBookingIntoDB,
   deleteBookingIntoDB,
   getMyBooking,
+  completeBookingIntoDB,
   getMyBookingForHome,
 };

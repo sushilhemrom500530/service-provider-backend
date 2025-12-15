@@ -88,6 +88,10 @@ const bookingSchema = new Schema<IBooking>(
       type: Boolean,
       default: false,
     },
+    isHandOver: {
+      type: Boolean,
+      default: false,
+    },
   },
   {
     timestamps: true,

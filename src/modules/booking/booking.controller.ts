@@ -119,6 +119,22 @@ const updatePermitBookingStatus = catchAsync(
   }
 );
 
+const completeBooking = catchAsync(
+  async (req: Request, res: Response) => {
+    const id = req.params.id;
+    const user = req.user as JwtPayload; 
+    const result = await BookingService.completeBookingIntoDB(
+      user, 
+      id as string
+    );
+    sendResponse(res, {
+      code: StatusCodes.OK,
+      message: 'Booking Permitted successfully',
+      data: result,
+    });
+  }
+);
+
 const refundBookingIntoDB = catchAsync(async (req: Request, res: Response) => {
   const id = req.params.id;
   const user = req.user as JwtPayload;
@@ -155,5 +171,6 @@ export const BookingController = {
   refundBookingIntoDB,
   deleteBookingIntoDB,
   getMyBookingIntoDB,
+  completeBooking,
   getMyBookingForHome,
 };
