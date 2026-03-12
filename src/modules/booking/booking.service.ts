@@ -94,12 +94,12 @@ const getAllBookingFromDB = async (user: JwtPayload, query: any) => {
     // pick only required product fields
     const product = booking.product
       ? {
-          _id: booking.product._id,
-          thumbnail: booking?.product?.thumbnail,
-          title: booking?.product?.title,
-          skiPassType: booking?.product?.skiPassType || '',
-          serviceArea: booking?.product?.serviceArea || '',
-        }
+        _id: booking.product._id,
+        thumbnail: booking?.product?.thumbnail,
+        title: booking?.product?.title,
+        skiPassType: booking?.product?.skiPassType || '',
+        serviceArea: booking?.product?.serviceArea || '',
+      }
       : null;
 
     // slots mapping (same logic)
@@ -369,7 +369,7 @@ const getMyBookingForHome = async (user: JwtPayload, selectedDate: string) => {
       'title category serviceArea amount startDateAndTime endDateAndTime time'
     )
     .sort({ createdAt: -1 });
-
+  console.log("booking data :", bookings)
   // Format time into "hh:mm am - hh:mm pm"
   const formatTimeRange = (start: Date, end: Date) => {
     const startStr = format(start, 'hh:mm a');

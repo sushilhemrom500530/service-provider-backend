@@ -50,7 +50,7 @@ const getMyBookingForHome = catchAsync(async (req: Request, res: Response) => {
   const user = req.user as JwtPayload;
 
   // Get selectedDate from query or default to today in YYYY-MM-DD
-  let { selectedDate } = req.query;
+  let { date: selectedDate } = req.query;
   if (!selectedDate) {
     const today = new Date();
     const yyyy = today.getFullYear();
@@ -58,7 +58,7 @@ const getMyBookingForHome = catchAsync(async (req: Request, res: Response) => {
     const dd = String(today.getDate()).padStart(2, '0');
     selectedDate = `${yyyy}-${mm}-${dd}`; // e.g., "2025-11-02"
   }
-
+  console.log("req query :", req?.query, user)
   const result = await BookingService.getMyBookingForHome(
     user,
     selectedDate as string
