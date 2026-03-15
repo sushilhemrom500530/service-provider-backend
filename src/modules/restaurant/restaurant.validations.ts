@@ -13,7 +13,6 @@ const slotSchema = z.object({
     .min(1, 'End time cannot be empty'),
 });
 
-
 // Category Item Detail Schema
 const categoryItemDetailSchema = z.object({
   seat: z.enum(['VIP', 'Normal'], {
@@ -106,14 +105,6 @@ const updateRestaurant = z.object({
     thumbnail: z.string().url('Thumbnail must be a valid URL').optional(),
     category: z.string().min(1, 'Category ID cannot be empty').optional(),
     owner: z.string().min(1, 'Owner ID cannot be empty').optional(),
-    openTime: z.string().optional(),
-    closeTime: z.string().optional(),
-    serviceArea: z.string().optional(),
-    foodType: z.string().optional(),
-    status: z.enum(['Open', 'Closed']).optional(),
-    items: z.array(categoryItemDetailSchema).optional(),
-    description: z.string().optional(),
-    slots: z.array(slotSchema).optional(),
   }),
 });
 
@@ -131,5 +122,5 @@ const updateServiceFee = z.object({
 export const RestaurantValidations = {
   createRestaurant,
   updateRestaurant,
-  updateServiceFee
+  updateServiceFee,
 };

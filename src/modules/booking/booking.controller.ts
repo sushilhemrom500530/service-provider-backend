@@ -11,7 +11,7 @@ const getAllBookingFromDB = catchAsync(async (req: Request, res: Response) => {
 
   const result = await BookingService.getAllBookingFromDB(
     user,
-    req.query as any
+    req.query as any,
   );
   sendResponse(res, {
     code: StatusCodes.OK,
@@ -31,7 +31,7 @@ const getSingleBookingFromDB = catchAsync(
       message: 'Booking fetched successfully',
       data: result,
     });
-  }
+  },
 );
 
 const getMyBookingIntoDB = catchAsync(async (req: Request, res: Response) => {
@@ -46,6 +46,23 @@ const getMyBookingIntoDB = catchAsync(async (req: Request, res: Response) => {
   });
 });
 
+const getMyAllBookingIntoDB = catchAsync(
+  async (req: Request, res: Response) => {
+    const user = req.user as JwtPayload;
+
+    const result = await BookingService.getMyAllBookingIntoDB(
+      user,
+      req.query as any,
+    );
+
+    sendResponse(res, {
+      code: StatusCodes.OK,
+      message: 'My Booking fetched successfully',
+      data: result,
+    });
+  },
+);
+
 const getMyBookingForHome = catchAsync(async (req: Request, res: Response) => {
   const user = req.user as JwtPayload;
 
@@ -58,10 +75,10 @@ const getMyBookingForHome = catchAsync(async (req: Request, res: Response) => {
     const dd = String(today.getDate()).padStart(2, '0');
     selectedDate = `${yyyy}-${mm}-${dd}`; // e.g., "2025-11-02"
   }
-  console.log("req query :", req?.query, user)
+  console.log('req query :', req?.query, user);
   const result = await BookingService.getMyBookingForHome(
     user,
-    selectedDate as string
+    selectedDate as string,
   );
 
   sendResponse(res, {
@@ -76,7 +93,7 @@ const addBookingIntoDB = catchAsync(async (req: Request, res: Response) => {
   const formData = req.body;
   const result = await BookingService.addBookingIntoDB(
     user,
-    formData as IBooking
+    formData as IBooking,
   );
   sendResponse(res, {
     code: StatusCodes.OK,
@@ -92,7 +109,7 @@ const updateBookingStatus = catchAsync(async (req: Request, res: Response) => {
   const result = await BookingService.updateBookingIntoDB(
     user,
     payload as any,
-    id as string
+    id as string,
   );
   sendResponse(res, {
     code: StatusCodes.OK,
@@ -109,14 +126,14 @@ const updatePermitBookingStatus = catchAsync(
     const result = await BookingService.updatePermitBookingIntoDB(
       user,
       isPermitted as boolean,
-      id as string
+      id as string,
     );
     sendResponse(res, {
       code: StatusCodes.OK,
       message: 'Booking Permitted successfully',
       data: result,
     });
-  }
+  },
 );
 
 const refundBookingIntoDB = catchAsync(async (req: Request, res: Response) => {
@@ -126,7 +143,7 @@ const refundBookingIntoDB = catchAsync(async (req: Request, res: Response) => {
   const result = await BookingService.refundBookingIntoDB(
     user,
     refundData as any,
-    id as string
+    id as string,
   );
   sendResponse(res, {
     code: StatusCodes.OK,
@@ -150,6 +167,7 @@ export const BookingController = {
   getAllBookingFromDB,
   getSingleBookingFromDB,
   addBookingIntoDB,
+  getMyAllBookingIntoDB,
   updateBookingStatus,
   updatePermitBookingStatus,
   refundBookingIntoDB,

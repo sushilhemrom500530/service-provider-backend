@@ -16,21 +16,21 @@ const router = Router();
 router.get(
   '/all',
   auth('User', 'Admin', 'Provider'),
-  RestaurantController.getAllRestaurantFromDB
+  RestaurantController.getAllRestaurantFromDB,
 );
 
 // specific provider all
 router.get(
   '/my-all',
   auth('User', 'Admin', 'Provider'),
-  RestaurantController.getAllMyRestaurantFromDB
+  RestaurantController.getAllMyRestaurantFromDB,
 );
 
 // get single
 router.get(
   '/:id',
   auth('User', 'Admin', 'Provider'),
-  RestaurantController.getSingleRestaurantFromDB
+  RestaurantController.getSingleRestaurantFromDB,
 );
 
 // create
@@ -43,7 +43,7 @@ router.post(
   ]),
   convertHeicToPngMiddleware(USER_UPLOADS_FOLDER),
   validateRequest(RestaurantValidations.createRestaurant),
-  RestaurantController.addRestaurantIntoDB
+  RestaurantController.addRestaurantIntoDB,
 );
 
 // review
@@ -51,20 +51,39 @@ router.post(
   '/review/:id',
   auth('User'),
   validateRequest(CommonValidations.reviewSchema),
-  RestaurantController.reviewRestaurant
+  RestaurantController.reviewRestaurant,
 );
 
 // update
+// router.patch(
+//   '/update/:id',
+//   auth('Admin', 'Provider'),
+//   uploads.fields([
+//     { name: 'thumbnail', maxCount: 1 },
+//     { name: 'files', maxCount: 20 },
+//   ]),
+//   validateRequest(RestaurantValidations.updateRestaurant),
+//   RestaurantController.updateRestaurantIntoDB,
+// );
+
 router.patch(
   '/update/:id',
   auth('Admin', 'Provider'),
-  uploads.fields([
-    { name: 'thumbnail', maxCount: 1 },
-    { name: 'files', maxCount: 20 },
-  ]),
+  (req, res, next) => {
+    const contentType = req.headers['content-type'] || '';
+    console.log('content type : ', req.files, contentType);
+    if (contentType.includes('multipart/form-data')) {
+      return uploads.fields([
+        { name: 'thumbnail', maxCount: 1 },
+        { name: 'files', maxCount: 20 },
+      ])(req, res, next);
+    }
+
+    next();
+  },
   convertHeicToPngMiddleware(USER_UPLOADS_FOLDER),
   validateRequest(RestaurantValidations.updateRestaurant),
-  RestaurantController.updateRestaurantIntoDB
+  RestaurantController.updateRestaurantIntoDB,
 );
 
 // update service fee
@@ -72,14 +91,14 @@ router.patch(
   '/service-fee/update',
   auth('Admin'),
   validateRequest(RestaurantValidations.updateServiceFee),
-  RestaurantController.updateRestaurantServiceFee
+  RestaurantController.updateRestaurantServiceFee,
 );
 
 // delete
 router.delete(
   '/delete/:id',
   auth('Admin', 'Provider'),
-  RestaurantController.deleteRestaurantIntoDB
+  RestaurantController.deleteRestaurantIntoDB,
 );
 
 export const RestaurantRoutes = router;
