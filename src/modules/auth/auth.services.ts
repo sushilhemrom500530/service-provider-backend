@@ -156,9 +156,7 @@ const verifyOtp = async (payload: IVerifyOtpData) => {
     verified: true,
   };
 };
-
-
-
+ 
 
 const forgotPassword = async (email: string) => {
   const user = await User.findOne({ email });

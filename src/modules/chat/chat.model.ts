@@ -1,72 +1,222 @@
-import mongoose, { Schema } from 'mongoose';
-import { ChatType, IChat, IChatModel } from './chat.interface';
-import paginationPlugin from '../../common/plugins/pagination.plugin';
+import { model, Schema, Types } from 'mongoose';
+import {
+  IChat,
+  IMessage,
+  IBlockedUser,
+  IChatModel,
+  IMessageModel,
+  IBlockedUserModel,
+  MessageType,
+  MessageStatus,
+  ChatType,
+} from './chat.interface';
 
-const chatSchema = new Schema<IChat>(
+// Message Schema
+const messageSchema = new Schema<IMessage, IMessageModel>(
   {
-    chatType: {
-      type: String,
-      enum: [ChatType.GROUP, ChatType.SINGLE],
-      required: [true, 'Chat type is required'],
-      default: ChatType.SINGLE,
+    chatId: {
+      type: Schema.Types.ObjectId,
+      ref: 'Chat',
+      required: true,
+      index: true,
     },
-    participants: [
-      {
-        type: mongoose.Schema.Types.ObjectId,
-        ref: 'User',
-        required: [true, 'Participants are required'],
-      },
-    ],
-    chatName: {
+    sender: {
+      type: Schema.Types.ObjectId,
+      ref: 'User',
+      required: true,
+      index: true,
+    },
+    receiver: {
+      type: Schema.Types.ObjectId,
+      ref: 'User',
+      required: true,
+      index: true,
+    },
+    content: {
       type: String,
       trim: true,
     },
-    lastMessage: {
-      type: mongoose.Schema.Types.ObjectId,
-      ref: 'Message',
+    messageType: {
+      type: String,
+      enum: Object.values(MessageType),
+      required: true,
+      default: MessageType.TEXT,
     },
-    isGroupChat: {
-      type: Boolean,
-      default: false,
+    mediaUrl: {
+      type: String,
     },
-    groupAdmin: {
-      type: mongoose.Schema.Types.ObjectId,
-      ref: 'User',
+    mediaType: {
+      type: String,
     },
-    isDeleted: {
-      type: Boolean,
-      default: false,
+    mediaSize: {
+      type: Number,
     },
-    pinnedMessages: [
+    status: {
+      type: String,
+      enum: Object.values(MessageStatus),
+      default: MessageStatus.SENT,
+    },
+    readBy: [
       {
-        type: mongoose.Schema.Types.ObjectId,
-        ref: 'Message',
+        type: Schema.Types.ObjectId,
+        ref: 'User',
       },
     ],
-    groupSettings: {
-      allowAddParticipants: {
-        type: Boolean,
-        default: true,
+    deliveredTo: [
+      {
+        type: Schema.Types.ObjectId,
+        ref: 'User',
       },
-      allowRemoveParticipants: {
-        type: Boolean,
-        default: true,
+    ],
+    isEdited: {
+      type: Boolean,
+      default: false,
+    },
+    editedAt: {
+      type: Date,
+    },
+    deletedBy: [
+      {
+        type: Schema.Types.ObjectId,
+        ref: 'User',
       },
+    ],
+    replyTo: {
+      type: Schema.Types.ObjectId,
+      ref: 'Message',
     },
   },
   {
     timestamps: true,
-    toJSON: {
-      virtuals: true,
-    },
-  }
+    collection: 'messages',
+    versionKey: false,
+  },
 );
 
-chatSchema.plugin(paginationPlugin);
+// Message Indexes
+messageSchema.index({ chatId: 1, createdAt: -1 });
+messageSchema.index({ sender: 1, createdAt: -1 });
 
-export const Chat =
-  (mongoose.models.Chat as IChatModel) ||
-  mongoose.model<IChat, IChatModel>('Chat', chatSchema);
+// Message Static Methods
+messageSchema.statics.getChatMessages = async function (
+  chatId: Types.ObjectId,
+  limit: number = 50,
+  offset: number = 0,
+): Promise<IMessage[]> {
+  return await this.find({ chatId })
+    .populate('sender', 'name email profileImage')
+    .populate('replyTo')
+    .sort({ createdAt: -1 })
+    .skip(offset)
+    .limit(limit);
+};
 
-// const Chat = mongoose.model<IChat, IChatModel>('Chat', chatSchema);
-// export default Chat;
+// Chat Schema
+const chatSchema = new Schema<IChat, IChatModel>(
+  {
+    participants: [
+      {
+        type: Schema.Types.ObjectId,
+        ref: 'User',
+        required: true,
+      },
+    ],
+    chatType: {
+      type: String,
+      enum: Object.values(ChatType),
+      default: ChatType.PRIVATE,
+    },
+    lastMessage: {
+      type: Schema.Types.ObjectId,
+      ref: 'Message',
+    },
+    lastMessageAt: {
+      type: Date,
+    },
+    unreadCount: {
+      type: Map,
+      of: Number,
+      default: {},
+    },
+    isActive: {
+      type: Boolean,
+      default: true,
+    },
+    deletedBy: [
+      {
+        type: Schema.Types.ObjectId,
+        ref: 'User',
+      },
+    ],
+  },
+  {
+    timestamps: true,
+    collection: 'chats',
+    versionKey: false,
+  },
+);
+
+// Chat Indexes
+chatSchema.index({ participants: 1 });
+chatSchema.index({ lastMessageAt: -1 });
+
+// Chat Static Methods
+chatSchema.statics.findChatByParticipants = async function (
+  participant1: Types.ObjectId,
+  participant2: Types.ObjectId,
+): Promise<IChat | null> {
+  return await this.findOne({
+    chatType: ChatType.PRIVATE,
+    participants: { $all: [participant1, participant2], $size: 2 },
+  });
+};
+
+// Blocked User Schema
+const blockedUserSchema = new Schema<IBlockedUser, IBlockedUserModel>(
+  {
+    blocker: {
+      type: Schema.Types.ObjectId,
+      ref: 'User',
+      required: true,
+      index: true,
+    },
+    blocked: {
+      type: Schema.Types.ObjectId,
+      ref: 'User',
+      required: true,
+      index: true,
+    },
+  },
+  {
+    timestamps: true,
+    collection: 'blockedUsers',
+    versionKey: false,
+  },
+);
+
+// Blocked User Indexes
+blockedUserSchema.index({ blocker: 1, blocked: 1 }, { unique: true });
+
+// Blocked User Static Methods
+blockedUserSchema.statics.isBlocked = async function (
+  userId: Types.ObjectId,
+  otherUserId: Types.ObjectId,
+): Promise<boolean> {
+  const block = await this.findOne({
+    $or: [
+      { blocker: userId, blocked: otherUserId },
+      { blocker: otherUserId, blocked: userId },
+    ],
+  });
+  return !!block;
+};
+
+// Export Models
+export const Message = model<IMessage, IMessageModel>('Message', messageSchema);
+
+export const Chat = model<IChat, IChatModel>('Chat', chatSchema);
+
+export const BlockedUser = model<IBlockedUser, IBlockedUserModel>(
+  'BlockedUser',
+  blockedUserSchema,
+);
