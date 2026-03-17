@@ -349,6 +349,7 @@ const getMyBooking = async (user: JwtPayload, query: any) => {
   // Search & Category filter
   const search = query?.search?.toLowerCase() || '';
   const category = query?.category?.toLowerCase() || '';
+  const bookingStatus = query?.bookingStatus?.toLowerCase() || '';
 
   if (!category) {
     return [];
@@ -459,6 +460,12 @@ const getMyBooking = async (user: JwtPayload, query: any) => {
   if (category) {
     bookingsWithTimeInfo = bookingsWithTimeInfo.filter(
       b => b.category?.toLowerCase() === category,
+    );
+  }
+
+  if (bookingStatus) {
+    bookingsWithTimeInfo = bookingsWithTimeInfo.filter(
+      b => b.bookingStatus?.toLowerCase() === bookingStatus,
     );
   }
   // //   newest comes first
