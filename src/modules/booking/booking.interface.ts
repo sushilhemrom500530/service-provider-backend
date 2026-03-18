@@ -42,16 +42,16 @@ export interface IBooking extends Document {
   bookingSeatCount?: number;
   slots?: string[];
 
-
   bookingItems?: IBookingItem[];
   duration?: string;
-  bookinRequestText?: string; 
-  bookingAgentText?:string;
+
+  bookinRequestText?: string;
+  bookingAgentText?: string;
   bookingStatus: BookingStatus;
 
   phoneNumber?: string;
   address?: string;
-
+  destination?: string;
   totalPrice: number;
 
   isPermitted: boolean | false;

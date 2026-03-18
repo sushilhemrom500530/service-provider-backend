@@ -224,11 +224,59 @@ const getSingleBookingFromDB = async (id: string, user: JwtPayload) => {
   }
 
   /* -------------------- Helpers -------------------- */
+  // const msToTime = (ms: number) => {
+  //   const totalSeconds = Math.floor(ms / 1000);
+  //   const hours = Math.floor(totalSeconds / 3600);
+  //   const minutes = Math.floor((totalSeconds % 3600) / 60);
+  //   return `${hours}h ${minutes}m`;
+  // };
+
   const msToTime = (ms: number) => {
-    const totalSeconds = Math.floor(ms / 1000);
-    const hours = Math.floor(totalSeconds / 3600);
-    const minutes = Math.floor((totalSeconds % 3600) / 60);
-    return `${hours}h ${minutes}m`;
+    let seconds = Math.floor(ms / 1000);
+
+    const year = 60 * 60 * 24 * 365;
+    const month = 60 * 60 * 24 * 30;
+    const week = 60 * 60 * 24 * 7;
+    const day = 60 * 60 * 24;
+    const hour = 60 * 60;
+
+    const parts: string[] = [];
+
+    const years = Math.floor(seconds / year);
+    if (years) {
+      parts.push(`${years} year${years > 1 ? 's' : ''}`);
+      seconds %= year;
+    }
+
+    const months = Math.floor(seconds / month);
+    if (months) {
+      parts.push(`${months} month${months > 1 ? 's' : ''}`);
+      seconds %= month;
+    }
+
+    const weeks = Math.floor(seconds / week);
+    if (weeks) {
+      parts.push(`${weeks} week${weeks > 1 ? 's' : ''}`);
+      seconds %= week;
+    }
+
+    const days = Math.floor(seconds / day);
+    if (days) {
+      parts.push(`${days} day${days > 1 ? 's' : ''}`);
+      seconds %= day;
+    }
+
+    const hours = Math.floor(seconds / hour);
+    if (hours) {
+      parts.push(`${hours} hour${hours > 1 ? 's' : ''}`);
+    }
+
+    if (parts.length === 0) {
+      const minutes = Math.floor(seconds / 60);
+      return `${minutes} minute${minutes > 1 ? 's' : ''}`;
+    }
+
+    return parts.slice(0, 2).join(' ');
   };
 
   /* -------------------- Product & Category -------------------- */
@@ -355,11 +403,59 @@ const getMyBooking = async (user: JwtPayload, query: any) => {
     return [];
   }
 
+  // const msToTime = (ms: number) => {
+  //   const totalSeconds = Math.floor(ms / 1000);
+  //   const hours = Math.floor(totalSeconds / 3600);
+  //   const minutes = Math.floor((totalSeconds % 3600) / 60);
+  //   return `${hours}h ${minutes}m`;
+  // };
+
   const msToTime = (ms: number) => {
-    const totalSeconds = Math.floor(ms / 1000);
-    const hours = Math.floor(totalSeconds / 3600);
-    const minutes = Math.floor((totalSeconds % 3600) / 60);
-    return `${hours}h ${minutes}m`;
+    let seconds = Math.floor(ms / 1000);
+
+    const year = 60 * 60 * 24 * 365;
+    const month = 60 * 60 * 24 * 30;
+    const week = 60 * 60 * 24 * 7;
+    const day = 60 * 60 * 24;
+    const hour = 60 * 60;
+
+    const parts: string[] = [];
+
+    const years = Math.floor(seconds / year);
+    if (years) {
+      parts.push(`${years} year${years > 1 ? 's' : ''}`);
+      seconds %= year;
+    }
+
+    const months = Math.floor(seconds / month);
+    if (months) {
+      parts.push(`${months} month${months > 1 ? 's' : ''}`);
+      seconds %= month;
+    }
+
+    const weeks = Math.floor(seconds / week);
+    if (weeks) {
+      parts.push(`${weeks} week${weeks > 1 ? 's' : ''}`);
+      seconds %= week;
+    }
+
+    const days = Math.floor(seconds / day);
+    if (days) {
+      parts.push(`${days} day${days > 1 ? 's' : ''}`);
+      seconds %= day;
+    }
+
+    const hours = Math.floor(seconds / hour);
+    if (hours) {
+      parts.push(`${hours} hour${hours > 1 ? 's' : ''}`);
+    }
+
+    if (parts.length === 0) {
+      const minutes = Math.floor(seconds / 60);
+      return `${minutes} minute${minutes > 1 ? 's' : ''}`;
+    }
+
+    return parts.slice(0, 2).join(' ');
   };
 
   // Map and enrich bookings
@@ -520,8 +616,56 @@ const getMyAllBookingIntoDB = async (user: JwtPayload, query: any) => {
   );
 
   // Short helper for time formatting
-  const msToTime = (ms: number) =>
-    `${Math.floor(ms / 3600000)}h ${Math.floor((ms % 3600000) / 60000)}m`;
+  // const msToTime = (ms: number) =>
+  //   `${Math.floor(ms / 3600000)}h ${Math.floor((ms % 3600000) / 60000)}m`;
+
+  const msToTime = (ms: number) => {
+    let seconds = Math.floor(ms / 1000);
+
+    const year = 60 * 60 * 24 * 365;
+    const month = 60 * 60 * 24 * 30;
+    const week = 60 * 60 * 24 * 7;
+    const day = 60 * 60 * 24;
+    const hour = 60 * 60;
+
+    const parts: string[] = [];
+
+    const years = Math.floor(seconds / year);
+    if (years) {
+      parts.push(`${years} year${years > 1 ? 's' : ''}`);
+      seconds %= year;
+    }
+
+    const months = Math.floor(seconds / month);
+    if (months) {
+      parts.push(`${months} month${months > 1 ? 's' : ''}`);
+      seconds %= month;
+    }
+
+    const weeks = Math.floor(seconds / week);
+    if (weeks) {
+      parts.push(`${weeks} week${weeks > 1 ? 's' : ''}`);
+      seconds %= week;
+    }
+
+    const days = Math.floor(seconds / day);
+    if (days) {
+      parts.push(`${days} day${days > 1 ? 's' : ''}`);
+      seconds %= day;
+    }
+
+    const hours = Math.floor(seconds / hour);
+    if (hours) {
+      parts.push(`${hours} hour${hours > 1 ? 's' : ''}`);
+    }
+
+    if (parts.length === 0) {
+      const minutes = Math.floor(seconds / 60);
+      return `${minutes} minute${minutes > 1 ? 's' : ''}`;
+    }
+
+    return parts.slice(0, 2).join(' ');
+  };
 
   const enrichedBookings = bookingsWithCategory.map(b => {
     const productItems = b.product?.items || [];
@@ -602,7 +746,7 @@ const getMyBookingForHome = async (user: JwtPayload, selectedDate: string) => {
       'title category serviceArea amount startDateAndTime endDateAndTime time',
     )
     .sort({ createdAt: -1 });
-  console.log('booking data :', bookings);
+  // console.log('booking data :', bookings);
   // Format time into "hh:mm am - hh:mm pm"
   const formatTimeRange = (start: Date, end: Date) => {
     const startStr = format(start, 'hh:mm a');
