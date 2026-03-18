@@ -1211,6 +1211,50 @@ const updatePermitBookingIntoDB = async (
   return result;
 };
 
+const completeBookingIntoDB = async (user: JwtPayload, bookingId: string) => {
+  const isExistsUser = await User.findOne({ email: user?.email });
+  if (!isExistsUser) {
+    throw new AppError(StatusCodes.NOT_FOUND, 'User not found.');
+  }
+  console.log('find current user ===========>', isExistsUser);
+  const existsBooking = await Booking.findById(bookingId).populate({
+    path: 'product',
+    select: 'owner title',
+  });
+  console.log('existsBooking', existsBooking);
+  if (!existsBooking) {
+    throw new AppError(StatusCodes.NOT_FOUND, 'Booking not found.');
+  }
+
+  const productDoc = existsBooking.product as any;
+  const owner = productDoc?.owner;
+
+  if (owner?.toString?.() !== isExistsUser._id.toString()) {
+    throw new AppError(
+      StatusCodes.FORBIDDEN,
+      'You are not the owner of this product. Cannot update booking status.',
+    );
+  }
+
+  const result = await Booking.findByIdAndUpdate(
+    bookingId,
+    { $set: { bookingStatus: 'Completed', isHandOver: true } },
+    { new: true },
+  )
+    .populate('user', 'fullName email')
+    .populate('product');
+
+  await Notification.create({
+    receiverId: result?.user?._id,
+    senderId: isExistsUser._id,
+    title: 'Booking Completed',
+    description: `${result?.product?.title} booking has been completed by ${isExistsUser?.fullName}. Product id:# ${result?.product?._id}`,
+    type: 'booking',
+  });
+
+  return result;
+};
+
 const refundBookingIntoDB = async (
   user: JwtPayload,
   payload: Partial<any | {}>,
@@ -1269,20 +1313,20 @@ const refundBookingIntoDB = async (
   // Prevent duplicate refunds
   const alreadyRefunded = product.refunds?.some(
     (refund: IRefund) =>
-      refund.userId.toString() === isExistsUser._id.toString()
+      refund.userId.toString() === isExistsUser._id.toString(),
   );
 
   if (alreadyRefunded) {
     throw new AppError(
       StatusCodes.BAD_REQUEST,
-      'You have already refunded or canceled this product.'
+      'You have already refunded or canceled this product.',
     );
   }
 
   const result = await Booking.findByIdAndUpdate(
     bookingId,
     { $set: { bookingStatus: 'Cancel' } },
-    { new: true }
+    { new: true },
   )
     .populate('user', 'fullName email')
     .populate('product');
@@ -1466,9 +1510,9 @@ export const BookingService = {
   getMyAllBookingIntoDB,
   updateBookingIntoDB,
   updatePermitBookingIntoDB,
+  completeBookingIntoDB,
   refundBookingIntoDB,
   deleteBookingIntoDB,
   getMyBooking,
-  completeBookingIntoDB,
   getMyBookingForHome,
 };

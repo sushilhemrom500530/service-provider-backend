@@ -59,11 +59,12 @@ router.patch(
   validateRequest(BookingRoutesValidations.updateBookingSchema),
   BookingController.updateBookingStatus,
 );
+
 // complete
 router.patch(
   '/complete/:id',
-  auth('Admin', 'Provider'), 
-  BookingController.completeBooking
+  auth('Admin', 'Provider'),
+  BookingController.completeBooking,
 );
 
 // update permission
