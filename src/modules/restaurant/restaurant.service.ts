@@ -1,4 +1,4 @@
-import { Types } from 'mongoose';
+import mongoose, { Types } from 'mongoose';
 import AppError from '../../errors/AppErro';
 import { StatusCodes } from 'http-status-codes';
 import { Request, Response } from 'express';
@@ -36,7 +36,7 @@ const getAllRestaurantFromDB = async (user: JwtPayload, query: any) => {
         primaryCategoryName: 'Restaurant',
         'subCategory.name': { $regex: query.category, $options: 'i' },
       },
-      { 'subCategory.$': 1 }
+      { 'subCategory.$': 1 },
     );
 
     const categoryIds = categories.map(c => c.subCategory?.[0]?._id);
@@ -77,14 +77,14 @@ const getAllRestaurantFromDB = async (user: JwtPayload, query: any) => {
           primaryCategoryName: 'Restaurant',
           'subCategory._id': item.category,
         },
-        { 'subCategory.$': 1 }
+        { 'subCategory.$': 1 },
       );
 
       return {
         ...item.toObject(),
         category: categoryDoc?.subCategory?.[0] || null,
       };
-    })
+    }),
   );
 
   return {
@@ -122,7 +122,7 @@ const getAllMyRestaurantFromDB = async (user: JwtPayload, query: any) => {
         primaryCategoryName: 'Restaurant',
         'subCategory.name': { $regex: query.category, $options: 'i' },
       },
-      { 'subCategory.$': 1 }
+      { 'subCategory.$': 1 },
     );
 
     const categoryIds = categories.map(c => c.subCategory?.[0]?._id);
@@ -165,14 +165,14 @@ const getAllMyRestaurantFromDB = async (user: JwtPayload, query: any) => {
           primaryCategoryName: 'Restaurant',
           'subCategory._id': item.category,
         },
-        { 'subCategory.$': 1 }
+        { 'subCategory.$': 1 },
       );
 
       return {
         ...item.toObject(),
         category: categoryDoc?.subCategory?.[0] || null,
       };
-    })
+    }),
   );
 
   return {
@@ -191,7 +191,7 @@ const getSingleRestaurantFromDB = async (id: string, user: JwtPayload) => {
   if (!isExistsUser) {
     throw new AppError(
       StatusCodes.NOT_FOUND,
-      'You cannot view this data because your account was not found.'
+      'You cannot view this data because your account was not found.',
     );
   }
   const restaurant = await Restaurant.findById(id)
@@ -217,7 +217,7 @@ const getSingleRestaurantFromDB = async (id: string, user: JwtPayload) => {
       primaryCategoryName: 'Restaurant',
       'subCategory._id': restaurant?.category,
     },
-    { 'subCategory.$': 1 }
+    { 'subCategory.$': 1 },
   );
 
   const subCategoryData = categoryDoc?.subCategory?.[0] || null;
@@ -374,12 +374,12 @@ const addRestaurantIntoDB = async (req: Request) => {
   if (isExistsUser.role !== 'Provider')
     throw new AppError(
       StatusCodes.FORBIDDEN,
-      'You are not authorized to create a restaurant.'
+      'You are not authorized to create a restaurant.',
     );
   if (isExistsUser.providerType !== 'Restaurant')
     throw new AppError(
       StatusCodes.FORBIDDEN,
-      'Provider must be Restaurant type.'
+      'Provider must be Restaurant type.',
     );
 
   // Validate category
@@ -391,7 +391,7 @@ const addRestaurantIntoDB = async (req: Request) => {
 
   const subCategoryItems = category?.subCategory || [];
   const exists = subCategoryItems.some(
-    (item: any) => item?._id?.toString() === req.body?.category?.toString()
+    (item: any) => item?._id?.toString() === req.body?.category?.toString(),
   ) as boolean;
   if (!exists)
     throw new AppError(StatusCodes.BAD_REQUEST, 'Invalid sub-category ID.');
@@ -406,7 +406,7 @@ const addRestaurantIntoDB = async (req: Request) => {
     throw new AppError(StatusCodes.BAD_REQUEST, 'Thumbnail file not found.');
   const thumbnailUrl = await s3Services.uploadSingleFileToS3(
     thumbnailFile,
-    USER_UPLOADS_FOLDER
+    USER_UPLOADS_FOLDER,
   );
 
   // Parse menu items (ICategoryItem[])
@@ -418,7 +418,7 @@ const addRestaurantIntoDB = async (req: Request) => {
   } else {
     throw new AppError(
       StatusCodes.BAD_REQUEST,
-      'Items data is missing or invalid.'
+      'Items data is missing or invalid.',
     );
   }
 
@@ -426,19 +426,19 @@ const addRestaurantIntoDB = async (req: Request) => {
   if (items.length !== 2) {
     throw new AppError(
       StatusCodes.BAD_REQUEST,
-      'Items must contain exactly 2 seat types: Normal and VIP.'
+      'Items must contain exactly 2 seat types: Normal and VIP.',
     );
   }
 
   // Check for duplicate seat names (case-insensitive)
   const seatNames = items.map(i => i?.seat?.trim().toLowerCase());
   const duplicateSeat = seatNames.some(
-    (seat, index) => seatNames.indexOf(seat) !== index
+    (seat, index) => seatNames.indexOf(seat) !== index,
   );
   if (duplicateSeat) {
     throw new AppError(
       StatusCodes.BAD_REQUEST,
-      'Duplicate seat types are not allowed.'
+      'Duplicate seat types are not allowed.',
     );
   }
 
@@ -463,7 +463,7 @@ const addRestaurantIntoDB = async (req: Request) => {
       if (file) {
         photoUrl = await s3Services.uploadSingleFileToS3(
           file,
-          USER_UPLOADS_FOLDER
+          USER_UPLOADS_FOLDER,
         );
       }
       return {
@@ -473,7 +473,7 @@ const addRestaurantIntoDB = async (req: Request) => {
         price: Number(item.price),
         photo: photoUrl,
       };
-    })
+    }),
   );
 
   // Parse slots and availableSlots (ISlot[])
@@ -509,14 +509,14 @@ const addRestaurantIntoDB = async (req: Request) => {
 export const reviewRestaurant = async (
   id: string,
   user: JwtPayload,
-  payload: Partial<IReview>
+  payload: Partial<IReview>,
 ) => {
   // Verify user exists
   const isExistsUser = await User.findOne({ email: user?.email });
   if (!isExistsUser) {
     throw new AppError(
       StatusCodes.NOT_FOUND,
-      'You cannot view this data because your account was not found.'
+      'You cannot view this data because your account was not found.',
     );
   }
 
@@ -524,7 +524,7 @@ export const reviewRestaurant = async (
   if (isExistsUser?.role !== 'User') {
     throw new AppError(
       StatusCodes.FORBIDDEN,
-      'You cannot add a review because your account is not a user.'
+      'You cannot add a review because your account is not a user.',
     );
   }
 
@@ -537,12 +537,12 @@ export const reviewRestaurant = async (
   //  (Optional) Prevent duplicate reviews by the same user
   const alreadyReviewed =
     restaurant.reviews?.some(
-      review => review?.userId.toString() === isExistsUser?._id.toString()
+      review => review?.userId.toString() === isExistsUser?._id.toString(),
     ) || false;
   if (alreadyReviewed) {
     throw new AppError(
       StatusCodes.BAD_REQUEST,
-      'You have already reviewed this restaurant.'
+      'You have already reviewed this restaurant.',
     );
   }
 
@@ -563,7 +563,7 @@ export const reviewRestaurant = async (
   // Recalculate average rating
   const total: number = restaurant.reviews.reduce(
     (sum: number, r: IReview) => sum + (r?.rating || 0),
-    0
+    0,
   );
   restaurant.averageRating = restaurant.reviews.length
     ? parseFloat((total / restaurant.reviews.length).toFixed(1))
@@ -753,7 +753,7 @@ export const reviewRestaurant = async (
 export const updateRestaurantIntoDB = async (req: Request) => {
   const id = req.params.id;
   const user = req.user as JwtPayload;
-
+  console.log('get all form data :', req.body);
   // Check if restaurant exists
   const restaurant = await Restaurant.findById(id);
   if (!restaurant)
@@ -770,7 +770,7 @@ export const updateRestaurantIntoDB = async (req: Request) => {
   ) {
     throw new AppError(
       StatusCodes.FORBIDDEN,
-      'You are not authorized to update this restaurant.'
+      'You are not authorized to update this restaurant.',
     );
   }
   console.log('get all form data :', req.body);
@@ -784,12 +784,12 @@ export const updateRestaurantIntoDB = async (req: Request) => {
     if (!category)
       throw new AppError(
         StatusCodes.NOT_FOUND,
-        'Restaurant category not found.'
+        'Restaurant category not found.',
       );
 
     const subCategoryItems = category?.subCategory || [];
     const exists = subCategoryItems.some(
-      (item: any) => item?._id.toString() === req.body.category
+      (item: any) => item?._id.toString() === req.body.category,
     ) as boolean;
 
     if (!exists)
@@ -811,7 +811,7 @@ export const updateRestaurantIntoDB = async (req: Request) => {
   if (thumbnailFile) {
     const thumbnailUrl = await s3Services.uploadSingleFileToS3(
       thumbnailFile,
-      USER_UPLOADS_FOLDER
+      USER_UPLOADS_FOLDER,
     );
     restaurant.thumbnail = thumbnailUrl;
   }
@@ -828,19 +828,19 @@ export const updateRestaurantIntoDB = async (req: Request) => {
     else
       throw new AppError(
         StatusCodes.BAD_REQUEST,
-        'Items data is missing or invalid.'
+        'Items data is missing or invalid.',
       );
 
     // Duplicate seat validation
     const seatNames = items.map(i => (i.seat || '').trim().toLowerCase());
     const duplicateSeat = seatNames.some(
-      (seat, index) => seat && seatNames.indexOf(seat) !== index
+      (seat, index) => seat && seatNames.indexOf(seat) !== index,
     );
 
     if (duplicateSeat) {
       throw new AppError(
         StatusCodes.BAD_REQUEST,
-        'Duplicate seat types are not allowed.'
+        'Duplicate seat types are not allowed.',
       );
     }
 
@@ -873,7 +873,7 @@ export const updateRestaurantIntoDB = async (req: Request) => {
 
         const existing = existingItems.find(
           (ei: any) =>
-            (ei.seat || '').toString().trim().toLowerCase() === seatNormalized
+            (ei.seat || '').toString().trim().toLowerCase() === seatNormalized,
         );
 
         // ---- PHOTO ----
@@ -881,7 +881,7 @@ export const updateRestaurantIntoDB = async (req: Request) => {
         if (file) {
           photoUrl = await s3Services.uploadSingleFileToS3(
             file,
-            USER_UPLOADS_FOLDER
+            USER_UPLOADS_FOLDER,
           );
         }
 
@@ -917,8 +917,8 @@ export const updateRestaurantIntoDB = async (req: Request) => {
           item.price !== undefined
             ? Number(item.price)
             : existing
-            ? existing.price
-            : 0;
+              ? existing.price
+              : 0;
 
         const out: any = {
           seat: item.seat,
@@ -935,7 +935,7 @@ export const updateRestaurantIntoDB = async (req: Request) => {
         }
 
         return out;
-      })
+      }),
     );
 
     // ------------- MERGE -------------
@@ -986,27 +986,51 @@ export const updateRestaurantIntoDB = async (req: Request) => {
     }
 
     const oldSlots = restaurant.slots || [];
-    const mergedSlots: ISlot[] = [];
+    const oldAvailableSlots = restaurant.availableSlots || [];
 
-    newSlots.forEach((slot, index) => {
-      if (oldSlots[index]) {
+    const mergedSlots: any[] = [];
+
+    // 1️⃣ Merge slots with preservation of existing _id
+    newSlots.forEach(slot => {
+      if (slot._id) {
         mergedSlots.push({
-          _id: oldSlots[index]._id,
+          _id: slot._id,
           startTime: slot.startTime,
           endTime: slot.endTime,
         });
       } else {
         mergedSlots.push({
+          _id: new mongoose.Types.ObjectId(),
           startTime: slot.startTime,
           endTime: slot.endTime,
-        } as ISlot);
+        });
       }
     });
 
     restaurant.slots = mergedSlots;
-    restaurant.availableSlots = mergedSlots;
-  }
 
+    const oldAvailableMap = new Map(
+      oldAvailableSlots.map(s => [s._id?.toString(), s]),
+    );
+
+    const newAvailableSlots: any[] = [];
+
+    mergedSlots.forEach(slot => {
+      const slotId = slot._id.toString();
+
+      if (oldAvailableMap.has(slotId)) {
+        newAvailableSlots.push(oldAvailableMap.get(slotId));
+      } else {
+        newAvailableSlots.push({
+          _id: slot._id,
+          startTime: slot.startTime,
+          endTime: slot.endTime,
+        });
+      }
+    });
+
+    restaurant.availableSlots = newAvailableSlots;
+  }
   // -----------------------
   // UPDATE OTHER FIELDS
   // -----------------------
@@ -1029,7 +1053,7 @@ export const updateRestaurantIntoDB = async (req: Request) => {
   if (req.body.openTime && req.body.closeTime) {
     restaurant.status = isRestaurantOpen(
       restaurant.openTime,
-      restaurant.closeTime
+      restaurant.closeTime,
     )
       ? 'Open'
       : 'Closed';
@@ -1044,7 +1068,7 @@ const deleteRestaurantIntoDB = async (id: string, user: JwtPayload) => {
   if (!isExistsUser) {
     throw new AppError(
       StatusCodes.NOT_FOUND,
-      'You cannot view this data because your account was not found.'
+      'You cannot view this data because your account was not found.',
     );
   }
 
@@ -1056,7 +1080,7 @@ const deleteRestaurantIntoDB = async (id: string, user: JwtPayload) => {
   if (restaurant?.owner.toString() !== isExistsUser?._id.toString()) {
     throw new AppError(
       StatusCodes.FORBIDDEN,
-      'You are not authorized to delete this restaurant.'
+      'You are not authorized to delete this restaurant.',
     );
   }
 

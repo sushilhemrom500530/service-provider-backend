@@ -13,7 +13,7 @@ const bookingItemSchema = new Schema(
       required: true,
     },
   },
-  { _id: false }
+  { _id: false },
 );
 
 const bookingSchema = new Schema<IBooking>(
@@ -83,6 +83,9 @@ const bookingSchema = new Schema<IBooking>(
     address: {
       type: String,
     },
+    destination: {
+      type: String,
+    },
 
     isPermitted: {
       type: Boolean,
@@ -95,7 +98,7 @@ const bookingSchema = new Schema<IBooking>(
   },
   {
     timestamps: true,
-  }
+  },
 );
 
 export const Booking = model<IBooking>('Booking', bookingSchema);

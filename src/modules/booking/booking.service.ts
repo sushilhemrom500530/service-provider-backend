@@ -107,7 +107,7 @@ const getAllBookingFromDB = async (user: JwtPayload, query: any) => {
     const fullSlots = (booking.slots || [])
       .map(slotId => {
         return booking.product?.slots?.find(
-          s => s._id.toString() === slotId.toString()
+          s => s._id.toString() === slotId.toString(),
         );
       })
       .filter(Boolean);
@@ -116,7 +116,7 @@ const getAllBookingFromDB = async (user: JwtPayload, query: any) => {
     const fullBookingItems = booking.bookingItems.map(item => {
       const fullItem =
         booking.product?.items?.find(
-          p => p._id.toString() === item.itemId.toString()
+          p => p._id.toString() === item.itemId.toString(),
         ) || null;
 
       return {
@@ -157,7 +157,7 @@ const getAllBookingFromDB = async (user: JwtPayload, query: any) => {
 //     })
 //     .populate(
 //       'user',
-//       '_id fullName email profileUrl address phoneNumber status'
+//       '_id fullName email profileUrl address phoneNumber status',
 //     )
 //     .lean();
 
@@ -168,11 +168,12 @@ const getAllBookingFromDB = async (user: JwtPayload, query: any) => {
 //   const product = booking?.product as any;
 //   // const product = booking?.product || [];
 //   const productItems = product?.items || [];
+//   // console.log('product', product);
 //   // const enrichedBookingItems = booking?.bookingItems.map((bi: any) => {
 //   const enrichedBookingItems = (booking?.bookingItems || []).map((bi: any) => {
 //     const matchedItem =
 //       productItems.find(
-//         (itm: any) => itm._id.toString() === bi.itemId.toString()
+//         (itm: any) => itm._id.toString() === bi.itemId.toString(),
 //       ) || null;
 
 //     return {
@@ -184,7 +185,7 @@ const getAllBookingFromDB = async (user: JwtPayload, query: any) => {
 //   const slots = (booking?.slots || [])
 //     .map((slotId: any) => {
 //       return product.slots.find(
-//         (s: any) => s._id.toString() === slotId.toString()
+//         (s: any) => s._id.toString() === slotId.toString(),
 //       );
 //     })
 //     .filter(Boolean);
@@ -210,11 +211,11 @@ const getSingleBookingFromDB = async (id: string, user: JwtPayload) => {
   const booking = await Booking.findById(id)
     .populate(
       'product',
-      '-owner -totalPrice -__v -reviews -refunds -averageRating -createdAt -updatedAt'
+      '-owner -totalPrice -__v -reviews -refunds -averageRating -createdAt -updatedAt',
     )
     .populate(
       'user',
-      '_id fullName email profileUrl address phoneNumber status'
+      '_id fullName email profileUrl address phoneNumber status',
     )
     .lean({ defaults: true });
 
@@ -223,11 +224,59 @@ const getSingleBookingFromDB = async (id: string, user: JwtPayload) => {
   }
 
   /* -------------------- Helpers -------------------- */
+  // const msToTime = (ms: number) => {
+  //   const totalSeconds = Math.floor(ms / 1000);
+  //   const hours = Math.floor(totalSeconds / 3600);
+  //   const minutes = Math.floor((totalSeconds % 3600) / 60);
+  //   return `${hours}h ${minutes}m`;
+  // };
+
   const msToTime = (ms: number) => {
-    const totalSeconds = Math.floor(ms / 1000);
-    const hours = Math.floor(totalSeconds / 3600);
-    const minutes = Math.floor((totalSeconds % 3600) / 60);
-    return `${hours}h ${minutes}m`;
+    let seconds = Math.floor(ms / 1000);
+
+    const year = 60 * 60 * 24 * 365;
+    const month = 60 * 60 * 24 * 30;
+    const week = 60 * 60 * 24 * 7;
+    const day = 60 * 60 * 24;
+    const hour = 60 * 60;
+
+    const parts: string[] = [];
+
+    const years = Math.floor(seconds / year);
+    if (years) {
+      parts.push(`${years} year${years > 1 ? 's' : ''}`);
+      seconds %= year;
+    }
+
+    const months = Math.floor(seconds / month);
+    if (months) {
+      parts.push(`${months} month${months > 1 ? 's' : ''}`);
+      seconds %= month;
+    }
+
+    const weeks = Math.floor(seconds / week);
+    if (weeks) {
+      parts.push(`${weeks} week${weeks > 1 ? 's' : ''}`);
+      seconds %= week;
+    }
+
+    const days = Math.floor(seconds / day);
+    if (days) {
+      parts.push(`${days} day${days > 1 ? 's' : ''}`);
+      seconds %= day;
+    }
+
+    const hours = Math.floor(seconds / hour);
+    if (hours) {
+      parts.push(`${hours} hour${hours > 1 ? 's' : ''}`);
+    }
+
+    if (parts.length === 0) {
+      const minutes = Math.floor(seconds / 60);
+      return `${minutes} minute${minutes > 1 ? 's' : ''}`;
+    }
+
+    return parts.slice(0, 2).join(' ');
   };
 
   /* -------------------- Product & Category -------------------- */
@@ -236,7 +285,7 @@ const getSingleBookingFromDB = async (id: string, user: JwtPayload) => {
   if (product?.category) {
     const categoryDoc = await Category.findOne(
       { 'subCategory._id': product.category },
-      { 'subCategory.$': 1, primaryCategoryName: 1 }
+      { 'subCategory.$': 1, primaryCategoryName: 1 },
     );
 
     if (categoryDoc) {
@@ -253,7 +302,7 @@ const getSingleBookingFromDB = async (id: string, user: JwtPayload) => {
   const enrichedBookingItems = (booking?.bookingItems || []).map((bi: any) => {
     const matchedItem =
       productItems.find(
-        (itm: any) => itm?._id?.toString() === bi?.itemId?.toString()
+        (itm: any) => itm?._id?.toString() === bi?.itemId?.toString(),
       ) || null;
 
     return {
@@ -266,8 +315,8 @@ const getSingleBookingFromDB = async (id: string, user: JwtPayload) => {
   const slots = (booking?.slots || [])
     .map((slotId: any) =>
       product?.slots?.find(
-        (s: any) => s?._id?.toString() === slotId?.toString()
-      )
+        (s: any) => s?._id?.toString() === slotId?.toString(),
+      ),
     )
     .filter(Boolean);
 
@@ -315,8 +364,8 @@ const getSingleBookingFromDB = async (id: string, user: JwtPayload) => {
     product,
     bookingItems: enrichedBookingItems,
     slots,
-    // startTime,
-    // endTime,
+    startTime,
+    endTime,
     ...(timeLabel && { timeLabel }),
     ...(overTimeAmount > 0 && { overTimeAmount }),
   };
@@ -336,7 +385,7 @@ const getMyBooking = async (user: JwtPayload, query: any) => {
     })
     .populate(
       'user',
-      '_id fullName email profileUrl address phoneNumber status'
+      '_id fullName email profileUrl address phoneNumber status',
     );
 
   // Pagination
@@ -354,11 +403,59 @@ const getMyBooking = async (user: JwtPayload, query: any) => {
     return [];
   }
 
+  // const msToTime = (ms: number) => {
+  //   const totalSeconds = Math.floor(ms / 1000);
+  //   const hours = Math.floor(totalSeconds / 3600);
+  //   const minutes = Math.floor((totalSeconds % 3600) / 60);
+  //   return `${hours}h ${minutes}m`;
+  // };
+
   const msToTime = (ms: number) => {
-    const totalSeconds = Math.floor(ms / 1000);
-    const hours = Math.floor(totalSeconds / 3600);
-    const minutes = Math.floor((totalSeconds % 3600) / 60);
-    return `${hours}h ${minutes}m`;
+    let seconds = Math.floor(ms / 1000);
+
+    const year = 60 * 60 * 24 * 365;
+    const month = 60 * 60 * 24 * 30;
+    const week = 60 * 60 * 24 * 7;
+    const day = 60 * 60 * 24;
+    const hour = 60 * 60;
+
+    const parts: string[] = [];
+
+    const years = Math.floor(seconds / year);
+    if (years) {
+      parts.push(`${years} year${years > 1 ? 's' : ''}`);
+      seconds %= year;
+    }
+
+    const months = Math.floor(seconds / month);
+    if (months) {
+      parts.push(`${months} month${months > 1 ? 's' : ''}`);
+      seconds %= month;
+    }
+
+    const weeks = Math.floor(seconds / week);
+    if (weeks) {
+      parts.push(`${weeks} week${weeks > 1 ? 's' : ''}`);
+      seconds %= week;
+    }
+
+    const days = Math.floor(seconds / day);
+    if (days) {
+      parts.push(`${days} day${days > 1 ? 's' : ''}`);
+      seconds %= day;
+    }
+
+    const hours = Math.floor(seconds / hour);
+    if (hours) {
+      parts.push(`${hours} hour${hours > 1 ? 's' : ''}`);
+    }
+
+    if (parts.length === 0) {
+      const minutes = Math.floor(seconds / 60);
+      return `${minutes} minute${minutes > 1 ? 's' : ''}`;
+    }
+
+    return parts.slice(0, 2).join(' ');
   };
 
   // Map and enrich bookings
@@ -420,7 +517,7 @@ const getMyBooking = async (user: JwtPayload, query: any) => {
     const enrichedBookingItems = (booking.bookingItems || []).map((bi: any) => {
       bookingSeatCount = bi?.quantity || 0;
       const matchedItem = productItems.find(
-        (itm: any) => itm?._id?.toString() === bi?.itemId?.toString()
+        (itm: any) => itm?._id?.toString() === bi?.itemId?.toString(),
       );
       return {
         ...(bi ? bi.toObject?.() || bi : {}),
@@ -453,14 +550,20 @@ const getMyBooking = async (user: JwtPayload, query: any) => {
   // Apply search filter
   if (search) {
     bookingsWithTimeInfo = bookingsWithTimeInfo.filter(b =>
-      b.product?.title?.toLowerCase().includes(search)
+      b.product?.title?.toLowerCase().includes(search),
     );
   }
 
   // FIXED BUG: category optional
   if (category) {
     bookingsWithTimeInfo = bookingsWithTimeInfo.filter(
-      b => b.category?.toLowerCase() === category
+      b => b.category?.toLowerCase() === category,
+    );
+  }
+
+  if (bookingStatus) {
+    bookingsWithTimeInfo = bookingsWithTimeInfo.filter(
+      b => b.bookingStatus?.toLowerCase() === bookingStatus,
     );
   }
   // //   newest comes first
@@ -481,6 +584,158 @@ const getMyBooking = async (user: JwtPayload, query: any) => {
   };
 };
 
+const getMyAllBookingIntoDB = async (user: JwtPayload, query: any) => {
+  const isExistsUser = await User.findOne({ email: user?.email });
+  if (!isExistsUser)
+    throw new AppError(StatusCodes.NOT_FOUND, 'User not found.');
+
+  const bookings = await Booking.find({ user: isExistsUser._id }).populate({
+    path: 'product',
+    select:
+      'title thumbnail serviceFee serviceArea description category items extraChargePerHour extraChargePerHours',
+  });
+
+  const bookingsWithCategory = await Promise.all(
+    bookings.map(async b => {
+      const bookingObj = typeof b.toObject === 'function' ? b.toObject() : b;
+      let product = bookingObj.product;
+      if (product && typeof product.toObject === 'function')
+        product = product.toObject();
+
+      if (bookingObj.productModel === 'Restaurant' && product?.category) {
+        const categoryDoc = await Category.findOne(
+          {
+            primaryCategoryName: 'Restaurant',
+            'subCategory._id': product.category,
+          },
+          { 'subCategory.$': 1 },
+        );
+        product.category = categoryDoc?.subCategory?.[0] || null;
+      }
+
+      return { ...bookingObj, product };
+    }),
+  );
+
+  // Short helper for time formatting
+  // const msToTime = (ms: number) =>
+  //   `${Math.floor(ms / 3600000)}h ${Math.floor((ms % 3600000) / 60000)}m`;
+
+  const msToTime = (ms: number) => {
+    let seconds = Math.floor(ms / 1000);
+
+    const year = 60 * 60 * 24 * 365;
+    const month = 60 * 60 * 24 * 30;
+    const week = 60 * 60 * 24 * 7;
+    const day = 60 * 60 * 24;
+    const hour = 60 * 60;
+
+    const parts: string[] = [];
+
+    const years = Math.floor(seconds / year);
+    if (years) {
+      parts.push(`${years} year${years > 1 ? 's' : ''}`);
+      seconds %= year;
+    }
+
+    const months = Math.floor(seconds / month);
+    if (months) {
+      parts.push(`${months} month${months > 1 ? 's' : ''}`);
+      seconds %= month;
+    }
+
+    const weeks = Math.floor(seconds / week);
+    if (weeks) {
+      parts.push(`${weeks} week${weeks > 1 ? 's' : ''}`);
+      seconds %= week;
+    }
+
+    const days = Math.floor(seconds / day);
+    if (days) {
+      parts.push(`${days} day${days > 1 ? 's' : ''}`);
+      seconds %= day;
+    }
+
+    const hours = Math.floor(seconds / hour);
+    if (hours) {
+      parts.push(`${hours} hour${hours > 1 ? 's' : ''}`);
+    }
+
+    if (parts.length === 0) {
+      const minutes = Math.floor(seconds / 60);
+      return `${minutes} minute${minutes > 1 ? 's' : ''}`;
+    }
+
+    return parts.slice(0, 2).join(' ');
+  };
+
+  const enrichedBookings = bookingsWithCategory.map(b => {
+    const productItems = b.product?.items || [];
+    let bookingSeatCount = 0;
+    let timeLabel: string | undefined;
+    let overTimeAmount = 0;
+
+    if (['Ski_Hire', 'Transport'].includes(b.category) && b.endDateAndTime) {
+      const now = new Date(),
+        endTime = new Date(b.endDateAndTime);
+      const diffMs = now.getTime() - endTime.getTime();
+      if (diffMs < 0) timeLabel = `Time Left: ${msToTime(-diffMs)}`;
+      else {
+        timeLabel = `Over Time: ${msToTime(diffMs)}`;
+        const hourlyRate =
+          b.category === 'Ski_Hire'
+            ? Number(b.product?.extraChargePerHour || 0)
+            : Number(b.product?.extraChargePerHours || 0);
+        overTimeAmount = +((diffMs / 3600000) * hourlyRate).toFixed(2);
+      }
+    }
+
+    const bookingItems = (b.bookingItems || []).map((bi: any) => {
+      bookingSeatCount = bi?.quantity || 0;
+      const item =
+        productItems.find(
+          (i: any) => i._id?.toString() === bi?.itemId?.toString(),
+        ) || null;
+      return { ...bi, item };
+    });
+
+    return {
+      ...b,
+      product: b.product && { ...b.product, items: undefined },
+      bookingItems,
+      startTime: b.startDateAndTime,
+      endTime: b.endDateAndTime,
+      timeLabel,
+      overTimeAmount: overTimeAmount || undefined,
+      bookingSeatCount:
+        b.category === 'Restaurant' ? bookingSeatCount : undefined,
+    };
+  });
+
+  // Apply filters
+  const search = query?.search?.toLowerCase();
+  const category = query?.category?.toLowerCase();
+  const filtered = enrichedBookings.filter(
+    b =>
+      (!search || b.product?.title?.toLowerCase().includes(search)) &&
+      (!category || b.category?.toLowerCase() === category),
+  );
+
+  const page = Number(query?.page) || 1;
+  const limit = Number(query?.limit) || 10;
+  const startIndex = (page - 1) * limit;
+
+  return {
+    pagination: {
+      total: filtered.length,
+      page,
+      limit,
+      totalPages: Math.ceil(filtered.length / limit),
+    },
+    result: filtered.slice(startIndex, startIndex + limit),
+  };
+};
+
 const getMyBookingForHome = async (user: JwtPayload, selectedDate: string) => {
   const isExistsUser = await User.findOne({ email: user?.email });
   if (!isExistsUser)
@@ -490,10 +745,10 @@ const getMyBookingForHome = async (user: JwtPayload, selectedDate: string) => {
     .populate('user', 'fullName email address phoneNumber')
     .populate(
       'product',
-      'title category serviceArea amount startDateAndTime endDateAndTime time'
+      'title category serviceArea amount startDateAndTime endDateAndTime time',
     )
     .sort({ createdAt: -1 });
-
+  // console.log('booking data :', bookings);
   // Format time into "hh:mm am - hh:mm pm"
   const formatTimeRange = (start: Date, end: Date) => {
     const startStr = format(start, 'hh:mm a');
@@ -577,7 +832,7 @@ const addBookingIntoDB = async (user: JwtPayload, payload: IBooking) => {
 
   if (
     ['Delete', 'Blocked', 'Banned', 'Inactive', 'Unverified'].includes(
-      dbUser.status
+      dbUser.status,
     )
   )
     throw new AppError(StatusCodes.UNAUTHORIZED, 'User status is not active.');
@@ -621,7 +876,7 @@ const addBookingIntoDB = async (user: JwtPayload, payload: IBooking) => {
     if (payload.date && isPastDate(payload.date)) {
       throw new AppError(
         StatusCodes.BAD_REQUEST,
-        'Booking date cannot be in the past.'
+        'Booking date cannot be in the past.',
       );
     }
   }
@@ -631,7 +886,7 @@ const addBookingIntoDB = async (user: JwtPayload, payload: IBooking) => {
     if (!payload.startDateAndTime || !payload.endDateAndTime) {
       throw new AppError(
         StatusCodes.BAD_REQUEST,
-        'Start and end date/time required.'
+        'Start and end date/time required.',
       );
     }
 
@@ -641,14 +896,14 @@ const addBookingIntoDB = async (user: JwtPayload, payload: IBooking) => {
     if (isPastDate(start)) {
       throw new AppError(
         StatusCodes.BAD_REQUEST,
-        'Start date/time cannot be in the past.'
+        'Start date/time cannot be in the past.',
       );
     }
 
     if (end <= start) {
       throw new AppError(
         StatusCodes.BAD_REQUEST,
-        'End date must be later than start date.'
+        'End date must be later than start date.',
       );
     }
   }
@@ -657,7 +912,7 @@ const addBookingIntoDB = async (user: JwtPayload, payload: IBooking) => {
     if (payload.date && isPastDate(payload.date)) {
       throw new AppError(
         StatusCodes.BAD_REQUEST,
-        'Booking date cannot be in the past.'
+        'Booking date cannot be in the past.',
       );
     }
   }
@@ -676,7 +931,7 @@ const addBookingIntoDB = async (user: JwtPayload, payload: IBooking) => {
 
       const updatedItems = matchedProduct.items.map((item: any) => {
         const booked = payload.bookingItems.find(
-          (b: any) => b.itemId.toString() === item._id.toString()
+          (b: any) => b.itemId.toString() === item._id.toString(),
         );
 
         if (booked) {
@@ -684,7 +939,7 @@ const addBookingIntoDB = async (user: JwtPayload, payload: IBooking) => {
           if (item.availableQty < booked.quantity) {
             throw new AppError(
               StatusCodes.BAD_REQUEST,
-              `Insufficient quantity for ${item.seat}. Only ${item.availableQty} available.`
+              `Insufficient quantity for ${item.seat}. Only ${item.availableQty} available.`,
             );
           }
 
@@ -713,22 +968,22 @@ const addBookingIntoDB = async (user: JwtPayload, payload: IBooking) => {
       // totalPrice = validatedItems.reduce((a, b) => a + b.total, 0);
 
       const validSlotIds = matchedProduct.availableSlots.map((s: any) =>
-        s._id.toString()
+        s._id.toString(),
       );
 
       const invalid = payload.slots.filter(
-        (s: string) => !validSlotIds.includes(s.toString())
+        (s: string) => !validSlotIds.includes(s.toString()),
       );
 
       if (invalid.length)
         throw new AppError(
           StatusCodes.BAD_REQUEST,
-          `Invalid slot(s): ${invalid.join(', ')}`
+          `Invalid slot(s): ${invalid.join(', ')}`,
         );
 
       // Remove booked slots
       const remainingSlots = matchedProduct.availableSlots.filter(
-        (s: any) => !payload.slots.includes(s._id.toString())
+        (s: any) => !payload.slots.includes(s._id.toString()),
       );
 
       //  Update both items
@@ -739,7 +994,7 @@ const addBookingIntoDB = async (user: JwtPayload, payload: IBooking) => {
             items: updatedItems,
             availableSlots: remainingSlots,
           },
-        }
+        },
       );
       break;
     }
@@ -752,14 +1007,14 @@ const addBookingIntoDB = async (user: JwtPayload, payload: IBooking) => {
 
       const updatedItems = dbSkiHire.items.map(item => {
         const booked = payload.bookingItems.find(
-          b => b.itemId.toString() === item._id.toString()
+          b => b.itemId.toString() === item._id.toString(),
         );
 
         if (booked) {
           if (item.availableQty < booked.quantity)
             throw new AppError(
               StatusCodes.BAD_REQUEST,
-              `Insufficient quantity for ${item.productName}. Only ${item.availableQty} units are available. `
+              `Insufficient quantity for ${item.productName}. Only ${item.availableQty} units are available. `,
             );
 
           totalPrice += item.price * booked.quantity;
@@ -774,7 +1029,7 @@ const addBookingIntoDB = async (user: JwtPayload, payload: IBooking) => {
 
       await SkiHire.updateOne(
         { _id: matchedProduct._id },
-        { $set: { items: updatedItems } }
+        { $set: { items: updatedItems } },
       );
 
       break;
@@ -784,7 +1039,7 @@ const addBookingIntoDB = async (user: JwtPayload, payload: IBooking) => {
       if (!payload.startDateAndTime || !payload.endDateAndTime)
         throw new AppError(
           StatusCodes.BAD_REQUEST,
-          'Start & End date/time required.'
+          'Start & End date/time required.',
         );
 
       totalPrice = matchedProduct.amount || 0;
@@ -858,7 +1113,7 @@ const addBookingIntoDB = async (user: JwtPayload, payload: IBooking) => {
 const updateBookingIntoDB = async (
   user: JwtPayload,
   payload: { bookingStatus?: BookingStatus; isPermitted?: boolean },
-  bookingId: string
+  bookingId: string,
 ) => {
   // Verify logged-in user
   const isExistsUser = await User.findOne({ email: user?.email });
@@ -898,14 +1153,14 @@ const updateBookingIntoDB = async (
   if (user.role !== 'Admin' && ownerId !== isExistsUser?._id.toString()) {
     throw new AppError(
       StatusCodes.FORBIDDEN,
-      'You are not allowed to update this booking.'
+      'You are not allowed to update this booking.',
     );
   }
   // Update booking status
   const result = await Booking.findByIdAndUpdate(
     bookingId,
     { $set: updateData },
-    { new: true }
+    { new: true },
   )
     .populate('user', 'fullName email')
     .populate('product');
@@ -916,7 +1171,7 @@ const updateBookingIntoDB = async (
 const updatePermitBookingIntoDB = async (
   user: JwtPayload,
   isPermitted: boolean,
-  bookingId: string
+  bookingId: string,
 ) => {
   // Check user
   const isExistsUser = await User.findOne({ email: user?.email });
@@ -941,53 +1196,14 @@ const updatePermitBookingIntoDB = async (
   if (owner?.toString?.() !== isExistsUser._id.toString()) {
     throw new AppError(
       StatusCodes.FORBIDDEN,
-      'You are not the owner of this product. Cannot update booking status.'
+      'You are not the owner of this product. Cannot update booking status.',
     );
   }
 
   const result = await Booking.findByIdAndUpdate(
     bookingId,
     { $set: { isPermitted } },
-    { new: true }
-  )
-    .populate('user', 'fullName email')
-    .populate('product');
-
-  return result;
-};
-
-const completeBookingIntoDB = async (user: JwtPayload, bookingId: string) => {
-  // Check user
-  const isExistsUser = await User.findOne({ email: user?.email });
-  if (!isExistsUser) {
-    throw new AppError(StatusCodes.NOT_FOUND, 'User not found.');
-  }
-  // console.log('find current user ===========>', isExistsUser);
-  const existsBooking = await Booking.findById(bookingId).populate({
-    path: 'product',
-    select: 'owner',
-  });
-
-  if (!existsBooking) {
-    throw new AppError(StatusCodes.NOT_FOUND, 'Booking not found.');
-  }
-
-  // Check ownership
-  // const owner = existsBooking?.product?.owner;
-  // if (owner?.toString() !== isExistsUser._id.toString()) {
-  const productDoc = existsBooking.product as any;
-  const owner = productDoc?.owner;
-  if (owner?.toString?.() !== isExistsUser._id.toString()) {
-    throw new AppError(
-      StatusCodes.FORBIDDEN,
-      'You are not the owner of this product. Cannot update booking status.'
-    );
-  }
-
-  const result = await Booking.findByIdAndUpdate(
-    bookingId,
-    { $set: { isHandOver: true } },
-    { new: true }
+    { new: true },
   )
     .populate('user', 'fullName email')
     .populate('product');
@@ -998,7 +1214,7 @@ const completeBookingIntoDB = async (user: JwtPayload, bookingId: string) => {
 const refundBookingIntoDB = async (
   user: JwtPayload,
   payload: Partial<any | {}>,
-  bookingId: string
+  bookingId: string,
 ) => {
   // Check user
   const isExistsUser = await User.findOne({
@@ -1040,7 +1256,7 @@ const refundBookingIntoDB = async (
   if (!ProductModel) {
     throw new AppError(
       StatusCodes.BAD_REQUEST,
-      `Invalid product model: ${productModel}`
+      `Invalid product model: ${productModel}`,
     );
   }
 
@@ -1124,7 +1340,7 @@ const refundBookingIntoDB = async (
 
         if (slot) {
           const alreadyAvailable = product.availableSlots.some(
-            s => s._id && s._id.equals(slot._id)
+            s => s._id && s._id.equals(slot._id),
           );
 
           if (!alreadyAvailable) {
@@ -1144,7 +1360,7 @@ const refundBookingIntoDB = async (
         const itemId = new mongoose.Types.ObjectId(item.itemId);
 
         const foundItem = product.items.find(
-          i => i._id && i._id.equals(itemId)
+          i => i._id && i._id.equals(itemId),
         );
 
         if (foundItem) {
@@ -1167,7 +1383,7 @@ const refundBookingIntoDB = async (
         const itemId = new mongoose.Types.ObjectId(item.itemId);
 
         const foundItem = product.items.find(
-          i => i._id && i._id.equals(itemId)
+          i => i._id && i._id.equals(itemId),
         );
 
         if (foundItem) {
@@ -1226,7 +1442,7 @@ const deleteBookingIntoDB = async (id: string, user: JwtPayload) => {
   if (bookingUserId !== isExistsUser._id.toString()) {
     throw new AppError(
       StatusCodes.FORBIDDEN,
-      'You are not authorized to delete this booking. Only the booking owner can delete it.'
+      'You are not authorized to delete this booking. Only the booking owner can delete it.',
     );
   }
 
@@ -1236,7 +1452,7 @@ const deleteBookingIntoDB = async (id: string, user: JwtPayload) => {
   if (!result) {
     throw new AppError(
       StatusCodes.INTERNAL_SERVER_ERROR,
-      'Failed to delete booking.'
+      'Failed to delete booking.',
     );
   }
 
@@ -1247,6 +1463,7 @@ export const BookingService = {
   getAllBookingFromDB,
   getSingleBookingFromDB,
   addBookingIntoDB,
+  getMyAllBookingIntoDB,
   updateBookingIntoDB,
   updatePermitBookingIntoDB,
   refundBookingIntoDB,

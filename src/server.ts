@@ -5,7 +5,8 @@ import app from './app';
 import { errorLogger, logger } from './shared/logger';
 import { config } from './config';
 import { startAllCronJobs } from './jobs/automaticUpdateJobService';
-import { socketHelper } from './socket/index';
+import { setIO } from './socket/socketInstance';
+import { socketHelper } from './socket';
 
 // Type for server instance
 let server: any;
@@ -60,7 +61,7 @@ const startServer = (): void => {
 
   server = app.listen(port, config.backend.ip as string, () => {
     logger.info(
-      `♻️  Application listening on port ${config.backend.baseUrl}/test`
+      `♻️  Application listening on port ${config.backend.baseUrl}/test`,
     );
   });
 
@@ -74,23 +75,29 @@ const startServer = (): void => {
  * Setup Socket.IO
  */
 const setupSocketIO = (): void => {
+  // const io = new Server(server, {
+  //   pingTimeout: 60000,
+  //   cors: {
+  //     origin: ['http://localhost:3000'],
+  //     origin: (origin, callback) => {
+  //       callback(null, origin); // Allow any domain
+  //     },
+  //     methods: ['GET', 'POST'],
+  //     credentials: true,
+  //   },
+  // });
+
   const io = new Server(server, {
     pingTimeout: 60000,
     cors: {
-      // showing all origin or url here
-      // origin: ['http://localhost:3000'],
-      origin: (origin, callback) => {
-        callback(null, origin); // Allow any domain
-      },
-      methods: ['GET', 'POST'],
-      credentials: true,
+      origin: '*',
     },
   });
-
-  socketHelper.socket(io);
-  global.io = io;
-
+  // socketHelper.socket(io);
+  // global.io = io;
   logger.info('Socket.IO server initialized');
+  setIO(io);
+  socketHelper.socket(io);
 };
 
 /**
@@ -120,7 +127,7 @@ const gracefulShutdown = (signal: string): void => {
     // Force close after timeout
     setTimeout(() => {
       logger.error(
-        'Could not close connections in time, forcefully shutting down'
+        'Could not close connections in time, forcefully shutting down',
       );
       process.exit(1);
     }, 10000);
@@ -158,7 +165,7 @@ process.on(
   (reason: unknown, promise: Promise<unknown>) => {
     errorLogger.error('Unhandled Promise Rejection:', { reason, promise });
     gracefulShutdown('UNHANDLED_REJECTION');
-  }
+  },
 );
 
 // Handle SIGTERM

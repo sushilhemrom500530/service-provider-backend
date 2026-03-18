@@ -14,28 +14,34 @@ const router = Router();
 router.get(
   '/all',
   auth('User', 'Admin', 'Provider'),
-  BookingController.getAllBookingFromDB
+  BookingController.getAllBookingFromDB,
 );
 
 // get my booking
 router.get(
   '/my-booking',
   auth('User', 'Admin', 'Provider'),
-  BookingController.getMyBookingIntoDB
+  BookingController.getMyBookingIntoDB,
+);
+
+router.get(
+  '/itinerary',
+  auth('User', 'Admin', 'Provider'),
+  BookingController.getMyAllBookingIntoDB,
 );
 
 // get my booking for home
 router.get(
   '/my-booking-home',
   auth('User', 'Admin', 'Provider'),
-  BookingController.getMyBookingForHome
+  BookingController.getMyBookingForHome,
 );
 
 // get single
 router.get(
   '/:id',
   auth('User', 'Admin', 'Provider'),
-  BookingController.getSingleBookingFromDB
+  BookingController.getSingleBookingFromDB,
 );
 
 // create
@@ -43,7 +49,7 @@ router.post(
   '/create',
   auth('User'),
   validateRequest(BookingRoutesValidations.createBookingSchema),
-  BookingController.addBookingIntoDB
+  BookingController.addBookingIntoDB,
 );
 
 // update
@@ -51,7 +57,7 @@ router.patch(
   '/update-status/:id',
   auth('Admin', 'Provider'),
   validateRequest(BookingRoutesValidations.updateBookingSchema),
-  BookingController.updateBookingStatus
+  BookingController.updateBookingStatus,
 );
 // complete
 router.patch(
@@ -65,7 +71,7 @@ router.patch(
   '/update-permit/:id',
   auth('Admin', 'Provider'),
   validateRequest(BookingRoutesValidations.updatePermitBookingSchema),
-  BookingController.updatePermitBookingStatus
+  BookingController.updatePermitBookingStatus,
 );
 
 // refund
@@ -73,14 +79,14 @@ router.patch(
   '/refund/:id',
   auth('User'),
   validateRequest(CommonValidations.refundSchema),
-  BookingController.refundBookingIntoDB
+  BookingController.refundBookingIntoDB,
 );
 
 // delete
 router.delete(
   '/delete/:id',
   auth('Admin', 'User'),
-  BookingController.deleteBookingIntoDB
+  BookingController.deleteBookingIntoDB,
 );
 
 export const BookingRoutes = router;

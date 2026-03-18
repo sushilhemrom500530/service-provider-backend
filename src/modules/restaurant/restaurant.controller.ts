@@ -11,14 +11,14 @@ const getAllRestaurantFromDB = catchAsync(
     const user = req.user as JwtPayload;
     const result = await RestaurantService.getAllRestaurantFromDB(
       user,
-      req.query as any
+      req.query as any,
     );
     sendResponse(res, {
       code: StatusCodes.OK,
       message: 'Restaurant fetched successfully.',
       data: result,
     });
-  }
+  },
 );
 
 const getAllMyRestaurantFromDB = catchAsync(
@@ -26,14 +26,14 @@ const getAllMyRestaurantFromDB = catchAsync(
     const user = req.user as JwtPayload;
     const result = await RestaurantService.getAllMyRestaurantFromDB(
       user,
-      req.query as any
+      req.query as any,
     );
     sendResponse(res, {
       code: StatusCodes.OK,
       message: 'Restaurant fetched successfully.',
       data: result,
     });
-  }
+  },
 );
 
 const getSingleRestaurantFromDB = catchAsync(
@@ -47,7 +47,7 @@ const getSingleRestaurantFromDB = catchAsync(
       message: 'Restaurant fetched successfully',
       data: result,
     });
-  }
+  },
 );
 
 const addRestaurantIntoDB = catchAsync(async (req: Request, res: Response) => {
@@ -66,7 +66,7 @@ const reviewRestaurant = catchAsync(async (req: Request, res: Response) => {
   const result = await RestaurantService.reviewRestaurant(
     id as string,
     user,
-    reviewData as IReview
+    reviewData as IReview,
   );
   sendResponse(res, {
     code: StatusCodes.OK,
@@ -83,20 +83,18 @@ const updateRestaurantIntoDB = catchAsync(
       message: 'Restaurant updated successfully',
       data: result,
     });
-  }
+  },
 );
 
 const updateRestaurantServiceFee = catchAsync(
   async (req: Request, res: Response) => {
-    const result = await RestaurantService.updateServiceFee(
-      req.body as any
-    );
+    const result = await RestaurantService.updateServiceFee(req.body as any);
     sendResponse(res, {
       code: StatusCodes.OK,
       message: 'Restaurant Service fee updated successfully',
       data: result,
     });
-  }
+  },
 );
 
 const deleteRestaurantIntoDB = catchAsync(
@@ -109,7 +107,7 @@ const deleteRestaurantIntoDB = catchAsync(
       message: 'Restaurant deleted successfully',
       data: result,
     });
-  }
+  },
 );
 
 export const RestaurantController = {

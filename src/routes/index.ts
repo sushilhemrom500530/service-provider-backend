@@ -84,13 +84,7 @@ const apiRoutes = [
   {
     path: '/common/category',
     route: CommonRoutes,
-  },
-
-  {
-    path: '/message',
-    route: MessageRoutes,
-  },
-
+  }, 
   {
     path: '/payment',
     route: PaymentRoutes,

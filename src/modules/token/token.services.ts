@@ -25,7 +25,7 @@ const getExpirationTime = (expiration: string) => {
 const generateToken = (
   payload: object,
   secret: Secret,
-  expireTime: SignOptions['expiresIn']
+  expireTime: SignOptions['expiresIn'],
 ): string => {
   return jwt.sign(payload, secret, { expiresIn: expireTime });
 };
@@ -34,7 +34,7 @@ const saveToken = async (
   token: string,
   userId: string,
   type: string,
-  expiresAt: Date
+  expiresAt: Date,
 ) => {
   const tokenDoc = await Token.create({
     token,
@@ -48,7 +48,7 @@ const saveToken = async (
 const verifyToken = async (
   token: string,
   secret: Secret,
-  type: string
+  type: string,
 ): Promise<TokenPayload | null> => {
   try {
     const payload = jwt.verify(token, secret) as TokenPayload;
@@ -76,15 +76,15 @@ const accessAndRefreshToken = async (user: IUser) => {
   const accessToken = generateToken(
     accessTokenPayload,
     config.jwt.accessSecret as Secret,
-    config.jwt.accessExpiration as SignOptions['expiresIn']
+    '365d' as SignOptions['expiresIn'],
   );
 
-  const accessTokenExpires = getExpirationTime(config.jwt.accessExpiration);
+  const accessTokenExpires = getExpirationTime('365d');
   await saveToken(
     accessToken,
     (user as any)?._id?.toString(),
     TokenType.ACCESS,
-    accessTokenExpires
+    accessTokenExpires,
   );
 
   const refreshTokenPayload: TokenPayload = {
@@ -96,16 +96,16 @@ const accessAndRefreshToken = async (user: IUser) => {
   const refreshToken = generateToken(
     refreshTokenPayload,
     config.jwt.refreshSecret as Secret,
-    config.jwt.refreshExpiration as SignOptions['expiresIn']
+    '365d' as SignOptions['expiresIn'],
   );
 
-  const refreshTokenExpires = getExpirationTime(config.jwt.refreshExpiration);
+  const refreshTokenExpires = getExpirationTime('365d');
 
   await saveToken(
     refreshToken,
     (user as any)?._id?.toString(),
     TokenType.REFRESH,
-    refreshTokenExpires
+    refreshTokenExpires,
   );
 
   return { accessToken, refreshToken };
@@ -120,18 +120,18 @@ const createResetPasswordToken = async (user: IUser) => {
   const resetPasswordToken = generateToken(
     resetPasswordTokenPayload,
     config.token.TokenSecret as Secret,
-    config.token.resetPasswordTokenExpiration as SignOptions['expiresIn']
+    config.token.resetPasswordTokenExpiration as SignOptions['expiresIn'],
   );
 
   const resetPasswordExpires = getExpirationTime(
-    config.token.resetPasswordTokenExpiration
+    config.token.resetPasswordTokenExpiration,
   );
 
   await saveToken(
     resetPasswordToken,
     (user as any)?._id?.toString(),
     TokenType.RESET_PASSWORD,
-    resetPasswordExpires
+    resetPasswordExpires,
   );
 
   return resetPasswordToken;

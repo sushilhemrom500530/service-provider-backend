@@ -13,18 +13,17 @@ const generateOTP = (): string => {
 const createOTP = async (
   userEmail: string,
   expiresInMinutes: string,
-  type: string
+  type: string,
 ) => {
- 
   const lastOtp = await OTP.findOne({ userEmail, type }).sort({
     createdAt: -1,
   });
-  if (lastOtp && moment().diff(lastOtp.createdAt, 'seconds') < 60) {
-    throw new AppError(
-      StatusCodes.TOO_MANY_REQUESTS,
-      'Please wait 1 minute before requesting a new OTP.'
-    );
-  }
+  // if (lastOtp && moment().diff(lastOtp.createdAt, 'seconds') < 60) {
+  //   throw new AppError(
+  //     StatusCodes.TOO_MANY_REQUESTS,
+  //     'Please wait 1 minute before requesting a new OTP.'
+  //   );
+  // }
 
   const existingOTP = await OTP.findOne({
     userEmail,
@@ -44,7 +43,7 @@ const createOTP = async (
     ) {
       throw new AppError(
         StatusCodes.TOO_MANY_REQUESTS,
-        `Too many attempts. Try again after ${config.otp.attemptWindowMinutes} minutes.`
+        `Too many attempts. Try again after ${config.otp.attemptWindowMinutes} minutes.`,
       );
     }
   }
@@ -64,14 +63,11 @@ const createOTP = async (
 };
 
 const verifyOTP = async (userEmail: string, otp: string, type?: string) => {
- 
- 
   const otpDoc = await OTP.findOne({
     userEmail,
     otp,
   });
- 
- 
+
   if (!otpDoc) {
     throw new AppError(StatusCodes.NOT_FOUND, 'Invalid OTP.');
   }
@@ -87,7 +83,7 @@ const verifyOTP = async (userEmail: string, otp: string, type?: string) => {
     await otpDoc.save();
     throw new AppError(
       StatusCodes.TOO_MANY_REQUESTS,
-      `Too many attempts. Try again after ${config.otp.attemptWindowMinutes} minutes.`
+      `Too many attempts. Try again after ${config.otp.attemptWindowMinutes} minutes.`,
     );
   }
 
@@ -112,7 +108,7 @@ const createVerificationEmailOtp = async (email: string) => {
   const otpDoc = await createOTP(
     email,
     config.otp.otpExpiration.toString(),
-    'verify'
+    'verify',
   );
   await emailService.sendVerificationEmail(email, otpDoc.otp);
   return otpDoc;
@@ -122,7 +118,7 @@ const createResetPasswordOtp = async (email: string) => {
   const otpDoc = await createOTP(
     email,
     config.otp.otpExpiration.toString(),
-    'resetPassword'
+    'resetPassword',
   );
   await emailService.sendResetPasswordEmail(email, otpDoc.otp);
   return otpDoc;
@@ -132,7 +128,7 @@ const createLoginMfaOtp = async (email: string) => {
   const otpDoc = await createOTP(
     email,
     config.otp.otpExpiration.toString(),
-    'loginMfa'
+    'loginMfa',
   );
   await emailService.sendLoginVerificationEmail(email, otpDoc?.otp);
   return otpDoc;
