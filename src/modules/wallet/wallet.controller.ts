@@ -20,7 +20,7 @@ const updateWalletProfit = catchAsync(async (req: Request, res: Response) => {
 });
 
 const getBalanceById = catchAsync(async (req: Request, res: Response) => {
-  const user = req.user as JwtPayload; 
+  const user = req.user as JwtPayload;
 
   const result = await WalletService.getBalanceById(user);
 
@@ -44,11 +44,21 @@ const addWallet = catchAsync(async (req: Request, res: Response) => {
   });
 });
 
+const getMyWallet = catchAsync(async (req: Request, res: Response) => {
+  const user = req.user as JwtPayload;
+
+  const result = await WalletService.getMyWalletAccount(user);
+
+  sendResponse(res, {
+    code: StatusCodes.OK,
+    message: 'Wallet retrieved successfully',
+    data: result,
+  });
+});
 
 const getSummary = catchAsync(async (req: Request, res: Response) => {
-
   const user = req.user as JwtPayload;
- 
+
   const result = await WalletService.getWalletSummary(user);
 
   sendResponse(res, {
@@ -61,6 +71,7 @@ const getSummary = catchAsync(async (req: Request, res: Response) => {
 export const WalletController = {
   updateWalletProfit,
   addWallet,
+  getMyWallet,
   getBalanceById,
-  getSummary
+  getSummary,
 };

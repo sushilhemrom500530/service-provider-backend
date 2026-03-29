@@ -31,6 +31,11 @@ const WithdrawSchema = new Schema<IWithdraw>(
       enum: ['Pending', 'Paid', 'Unpaid', 'Rejected', 'Completed'],
       default: 'Pending',
     },
+    acceptStatus: {
+      type: String,
+      enum: ['accept', 'reject'],
+      default: 'reject',
+    },
     transactionId: {
       type: String,
       required: true,
@@ -41,7 +46,7 @@ const WithdrawSchema = new Schema<IWithdraw>(
       trim: true,
     },
   },
-  { timestamps: true }
+  { timestamps: true },
 );
 
 // Generate a unique transaction ID

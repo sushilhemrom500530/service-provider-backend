@@ -228,7 +228,6 @@ const getSingleRestaurantFromDB = async (id: string, user: JwtPayload) => {
   };
 };
 
-
 // const addRestaurantIntoDB = async (req: Request) => {
 //   const user = req.user as JwtPayload;
 
@@ -976,60 +975,146 @@ export const updateRestaurantIntoDB = async (req: Request) => {
   // UPDATE SLOTS (same logic)
   // -----------------------
 
-  if (req.body.slots) {
-    let newSlots: ISlot[] = [];
+  // if (req.body.slots) {
+  //   let newSlots: ISlot[] = [];
 
+  //   if (typeof req.body.slots === 'string') {
+  //     newSlots = JSON.parse(req.body.slots);
+  //   } else if (Array.isArray(req.body.slots)) {
+  //     newSlots = req.body.slots;
+  //   }
+
+  //   const oldSlots = restaurant.slots || [];
+  //   const oldAvailableSlots = restaurant.availableSlots || [];
+
+  //   const mergedSlots: any[] = [];
+
+  //   // 1️⃣ Merge slots with preservation of existing _id
+  //   newSlots.forEach(slot => {
+  //     if (slot._id) {
+  //       mergedSlots.push({
+  //         _id: slot._id,
+  //         startTime: slot.startTime,
+  //         endTime: slot.endTime,
+  //       });
+  //     } else {
+  //       mergedSlots.push({
+  //         _id: new mongoose.Types.ObjectId(),
+  //         startTime: slot.startTime,
+  //         endTime: slot.endTime,
+  //       });
+  //     }
+  //   });
+
+  //   restaurant.slots = mergedSlots;
+
+  //   const oldAvailableMap = new Map(
+  //     oldAvailableSlots.map(s => [s._id?.toString(), s]),
+  //   );
+
+  //   const newAvailableSlots: any[] = [];
+
+  //   mergedSlots.forEach(slot => {
+  //     const slotId = slot._id.toString();
+
+  //     if (oldAvailableMap.has(slotId)) {
+  //       newAvailableSlots.push(oldAvailableMap.get(slotId));
+  //     } else {
+  //       newAvailableSlots.push({
+  //         _id: slot._id,
+  //         startTime: slot.startTime,
+  //         endTime: slot.endTime,
+  //       });
+  //     }
+  //   });
+
+  //   restaurant.availableSlots = newAvailableSlots;
+  // }
+
+  // -----------------------
+  // UPDATE SLOTS (FIXED)
+  // -----------------------
+
+  // -----------------------
+  // UPDATE SLOTS (PATCH STYLE ✅)
+  // -----------------------
+
+  // -----------------------
+  // UPDATE SLOTS (FINAL FIX)
+  // -----------------------
+
+  if (req.body.slots) {
+    let incomingSlots: any[] = [];
+
+    // ✅ Parse input
     if (typeof req.body.slots === 'string') {
-      newSlots = JSON.parse(req.body.slots);
+      incomingSlots = JSON.parse(req.body.slots);
     } else if (Array.isArray(req.body.slots)) {
-      newSlots = req.body.slots;
+      incomingSlots = req.body.slots;
     }
 
-    const oldSlots = restaurant.slots || [];
-    const oldAvailableSlots = restaurant.availableSlots || [];
+    // ✅ Remove empty items (VERY IMPORTANT for your case)
+    incomingSlots = incomingSlots
+      .filter((slot: any) => slot && (slot.startTime || slot.endTime))
+      .map((slot: any) => ({
+        _id: slot._id?.toString(),
+        startTime: slot.startTime,
+        endTime: slot.endTime,
+      }));
 
-    const mergedSlots: any[] = [];
+    const existingSlots = restaurant.slots || [];
 
-    // 1️⃣ Merge slots with preservation of existing _id
-    newSlots.forEach(slot => {
-      if (slot._id) {
-        mergedSlots.push({
-          _id: slot._id,
-          startTime: slot.startTime,
-          endTime: slot.endTime,
-        });
-      } else {
-        mergedSlots.push({
-          _id: new mongoose.Types.ObjectId(),
-          startTime: slot.startTime,
-          endTime: slot.endTime,
-        });
-      }
-    });
-
-    restaurant.slots = mergedSlots;
-
-    const oldAvailableMap = new Map(
-      oldAvailableSlots.map(s => [s._id?.toString(), s]),
+    const existingMap = new Map(
+      existingSlots.map((s: any) => [s._id.toString(), s]),
     );
 
-    const newAvailableSlots: any[] = [];
+    // 🔁 PATCH behavior (update + create, no delete)
+    for (const slot of incomingSlots) {
+      if (!slot) continue;
 
-    mergedSlots.forEach(slot => {
-      const slotId = slot._id.toString();
+      if (slot._id && existingMap.has(slot._id)) {
+        // ✅ UPDATE EXISTING SLOT
+        const existing = existingMap.get(slot._id);
 
-      if (oldAvailableMap.has(slotId)) {
-        newAvailableSlots.push(oldAvailableMap.get(slotId));
+        if (slot.startTime !== undefined) {
+          existing.startTime = slot.startTime;
+        }
+        if (slot.endTime !== undefined) {
+          existing.endTime = slot.endTime;
+        }
+
+        // 🔁 sync availableSlots
+        const available = (restaurant.availableSlots || []).find(
+          (a: any) => a._id.toString() === slot._id,
+        );
+
+        if (available) {
+          available.startTime = existing.startTime;
+          available.endTime = existing.endTime;
+        }
       } else {
-        newAvailableSlots.push({
-          _id: slot._id,
+        // 🆕 CREATE NEW SLOT
+        const newId = new mongoose.Types.ObjectId();
+
+        const newSlot = {
+          _id: newId,
+          startTime: slot.startTime,
+          endTime: slot.endTime,
+        };
+
+        restaurant.slots.push(newSlot);
+
+        if (!restaurant.availableSlots) {
+          restaurant.availableSlots = [];
+        }
+
+        restaurant.availableSlots.push({
+          _id: newId,
           startTime: slot.startTime,
           endTime: slot.endTime,
         });
       }
-    });
-
-    restaurant.availableSlots = newAvailableSlots;
+    }
   }
   // -----------------------
   // UPDATE OTHER FIELDS

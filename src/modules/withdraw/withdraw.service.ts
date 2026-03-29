@@ -1,15 +1,14 @@
 import mongoose, { Types } from 'mongoose';
 import { User } from './../user/user.model';
 import AppError from './../../errors/AppErro';
-import { StatusCodes } from 'http-status-codes'; 
+import { StatusCodes } from 'http-status-codes';
 import { Wallet } from './../wallet/wallet.model';
 import { generateTransactionId } from './../../utils/generateTransactionId';
 import { JwtPayload } from 'jsonwebtoken';
-import { WalletTransactionType } from './../wallet/wallet.interface'
+import { WalletTransactionType } from './../wallet/wallet.interface';
 import { Withdraw } from './withdraw.model';
 import { IWithdraw } from './withdraw.inteface';
 import { Notification } from './../notification/notification.model';
-
 
 const getAllFromDB = async (query: any) => {
   const page = Number(query.page) || 1;
@@ -19,7 +18,7 @@ const getAllFromDB = async (query: any) => {
   const match: any = {};
   if (query.status) {
     match.status = { $regex: query.status, $options: 'i' };
-  };
+  }
 
   // Build search regex
   if (query.search) {
@@ -85,38 +84,39 @@ const getAllFromDB = async (query: any) => {
   };
 };
 
-
-
-
-const sendWithdrawRequest = async (
-  user: JwtPayload,
-  payload: IWithdraw
-) => {
+const sendWithdrawRequest = async (user: JwtPayload, payload: IWithdraw) => {
   const isExistsUser = await User.findOne({ email: user?.email });
   if (!isExistsUser)
     throw new AppError(StatusCodes.NOT_FOUND, 'User not found');
+
   if (isExistsUser.role !== 'Provider')
     throw new AppError(
       StatusCodes.FORBIDDEN,
-      'Only providers can withdraw funds'
+      'Only providers can withdraw funds',
     );
-
+  console.log('Payload:', isExistsUser, payload);
   const adminUser = await User.findOne({ role: 'Admin' });
   if (!adminUser) {
     throw new AppError(StatusCodes.NOT_FOUND, 'Admin user not found');
   }
   const ownerId = adminUser?._id || '';
 
-  const wallet = await Wallet.findOne({ user: isExistsUser._id });
+  const wallet = await Wallet.findOne({ user: isExistsUser._id })
+    .select('-transactions -__v')
+    .lean();
+
   if (!wallet) throw new AppError(StatusCodes.NOT_FOUND, 'Wallet not found');
 
   const selectedAccount = wallet?.walletAccounts?.find(
-    acc => acc?.cardNumber.toString() === payload?.cardId.toString()
+    acc => acc?.cardNumber.toString() === payload?.cardId.toString(),
   );
+  console.log('wallet :', wallet);
+  console.log('Selected Account:', selectedAccount);
+  console.log('Wallet payload?.cardId:', payload?.cardId);
   if (!selectedAccount)
     throw new AppError(
       StatusCodes.BAD_REQUEST,
-      'Selected wallet account not found'
+      'Selected wallet account not found',
     );
   if (wallet?.balance < payload.amount)
     throw new AppError(StatusCodes.BAD_REQUEST, 'Insufficient wallet balance');
@@ -137,13 +137,17 @@ const sendWithdrawRequest = async (
     type: 'withdrawal',
     isRead: false,
     senderId: isExistsUser?._id,
-  })
+  });
 
   const result = await Withdraw.create(withdrawData);
   return result;
 };
 
-const acceptWithdrawRequest = async (user: JwtPayload, withdrawId: string) => {
+const acceptWithdrawRequest = async (
+  user: JwtPayload,
+  withdrawId: string,
+  acceptStatus: 'accept' | 'reject',
+) => {
   const isExistsAdmin = await User.findOne({ role: user?.role });
   if (!isExistsAdmin) {
     throw new AppError(StatusCodes.NOT_FOUND, 'Admin user not found');
@@ -162,7 +166,7 @@ const acceptWithdrawRequest = async (user: JwtPayload, withdrawId: string) => {
   if (withdraw?.status === 'Paid') {
     throw new AppError(
       StatusCodes.BAD_REQUEST,
-      'Withdraw request already paided'
+      'Withdraw request already paided',
     );
   }
 
@@ -179,44 +183,47 @@ const acceptWithdrawRequest = async (user: JwtPayload, withdrawId: string) => {
   if (adminWallet.balance < withdrawalAmount) {
     throw new AppError(
       StatusCodes.BAD_REQUEST,
-      'Insufficient admin wallet balance'
+      'Insufficient admin wallet balance',
     );
   }
+  if (acceptStatus === 'accept') {
+    // Update admin wallet
+    adminWallet.balance -= withdrawalAmount;
+    adminWallet.transactions.push({
+      user: new Types.ObjectId(withdraw?.user),
+      balance: -withdrawalAmount,
+      type: WalletTransactionType.WITHDRAW,
+      createdAt: new Date(),
+    });
 
-  // Update admin wallet 
-  adminWallet.balance -= withdrawalAmount;
-  adminWallet.transactions.push({
-    user: new Types.ObjectId(withdraw?.user),
-    balance: -withdrawalAmount,
-    type: WalletTransactionType.WITHDRAW,
-    createdAt: new Date(),
-  });
+    // Update provider wallet
+    providerWallet.balance -= withdraw?.amount;
+    providerWallet.transactions.push({
+      user: new Types.ObjectId(isExistsAdmin?._id),
+      balance: withdraw?.amount,
+      type: WalletTransactionType.WITHDRAW,
+      createdAt: new Date(),
+    });
 
-  // Update provider wallet 
-  providerWallet.balance -= withdraw?.amount;
-  providerWallet.transactions.push({
-    user: new Types.ObjectId(isExistsAdmin?._id),
-    balance: withdraw?.amount,
-    type: WalletTransactionType.WITHDRAW,
-    createdAt: new Date(),
-  });
+    // Save both wallets
+    await adminWallet.save();
+    await providerWallet.save();
 
-  // Save both wallets
-  await adminWallet.save();
-  await providerWallet.save();
-
-  withdraw.status = 'Paid';
-  await withdraw.save();
-
-  // create notification
-  await Notification.create({
-    title: 'Accepted Withdrawal Request',
-    description: 'Your withdrawal request has been accepted',
-    receiverId: providerWallet?.user,
-    type: 'withdrawal',
-    isRead: false,
-    senderId: isExistsAdmin?._id,
-  })
+    withdraw.status = 'Paid';
+    await withdraw.save();
+    // create notification
+    await Notification.create({
+      title: 'Accepted Withdrawal Request',
+      description: 'Your withdrawal request has been accepted',
+      receiverId: providerWallet?.user,
+      type: 'withdrawal',
+      isRead: false,
+      senderId: isExistsAdmin?._id,
+    });
+  } else {
+    withdraw.status = 'Rejected';
+    await withdraw.save();
+  }
 
   return withdraw;
 };

@@ -14,6 +14,7 @@ export interface IWithdraw {
   amount: number;
   profitCharge: number;
   status: 'Pending' | 'Paid' | 'Unpaid' | 'Rejected' | 'Completed';
+  acceptStatus: 'accept' | 'reject';
   transactionId?: string;
   note?: string;
   createdAt?: Date;

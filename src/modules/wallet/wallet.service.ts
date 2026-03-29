@@ -6,17 +6,17 @@ import { StatusCodes } from 'http-status-codes';
 import { config } from './../../config/index';
 import { IWalletAccount } from './wallet.interface';
 import { JwtPayload } from 'jsonwebtoken';
-import {WalletTransactionType} from "./wallet.interface"
+import { WalletTransactionType } from './wallet.interface';
 
 export const updateOrCreateWallet = async (
   ownerId: string, // provider
   senderId: string, // customer
-  amount: number
+  amount: number,
 ) => {
   // Find admin user
   const admin = await User.findOne({ role: 'Admin' });
   if (!admin) {
-    throw new AppError(StatusCodes.NOT_FOUND,'Admin user not found' );
+    throw new AppError(StatusCodes.NOT_FOUND, 'Admin user not found');
   }
 
   // Calculate profit (20%)
@@ -41,7 +41,7 @@ export const updateOrCreateWallet = async (
         },
       },
     },
-    { upsert: true, new: true }
+    { upsert: true, new: true },
   );
 
   // if (!adminWallet) {
@@ -112,27 +112,30 @@ const updateProfit = async (user: JwtPayload, payload: number) => {
   return { messaga: 'success' };
 };
 
-const addWallet = async (user : JwtPayload, payload: IWalletAccount) => {
-  const isExistsProvider = await User.findOne({ role: user?.role });
+const addWallet = async (user: JwtPayload, payload: IWalletAccount) => {
+ 
+  const isExistsProvider = await User.findById(user?.userId); 
   if (!isExistsProvider) {
-    throw new AppError(StatusCodes.NOT_FOUND, 'Provider user not found' );
+    throw new AppError(StatusCodes.NOT_FOUND, 'Provider user not found');
   }
 
   // Find the wallet
-  let wallet = await Wallet.findOne({ user: isExistsProvider?._id });
+  let wallet = await Wallet.findOne({ user: isExistsProvider?._id }).select(
+    '-transactions -__v',
+  );
   // let wallet = await Wallet.findOne({ user: user._id });
 
   if (!wallet) {
     throw new AppError(StatusCodes.NOT_FOUND, 'Wallet not found');
   }
   const selectedAccount = wallet?.walletAccounts.find(
-    acc => acc?.cardNumber.toString() === payload?.cardNumber.toString()
+    acc => acc?.cardNumber.toString() === payload?.cardNumber.toString(),
   );
 
   if (selectedAccount) {
     throw new AppError(
       StatusCodes.BAD_REQUEST,
-      'This Wallet account already exists'
+      'This Wallet account already exists',
     );
   }
 
@@ -146,7 +149,35 @@ const addWallet = async (user : JwtPayload, payload: IWalletAccount) => {
   // Save the wallet
   await wallet.save();
 
+  console.log('Updated Wallet:', wallet);
+
   return wallet;
+};
+
+const getMyWalletAccount = async (user: JwtPayload) => {
+  console.log('User:', user);
+  const isExistsProvider = await User.findById(user?.userId);
+
+  if (!isExistsProvider) {
+    throw new AppError(StatusCodes.NOT_FOUND, 'Provider user not found');
+  }
+
+  const wallet = await Wallet.findOne({ user: new Types.ObjectId(user.userId) })
+    .select('-transactions -__v')
+    .lean();
+
+  if (!wallet) {
+    throw new AppError(StatusCodes.NOT_FOUND, 'Wallet not found');
+  }
+
+  const sortedAccounts = (wallet.walletAccounts || []).sort(
+    (a: any, b: any) =>
+      new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime(),
+  );
+
+  return {
+    ...wallet,
+  };
 };
 
 const getBalanceById = async (user: JwtPayload) => {
@@ -155,13 +186,10 @@ const getBalanceById = async (user: JwtPayload) => {
     throw new AppError(StatusCodes.NOT_FOUND, 'User not found');
   }
 
-  const result = await Wallet.findOne({ user: isExistsUser?._id }).select(
-    '-transactions -__v'
-  );
+  const result = await Wallet.findOne({ user: isExistsUser?._id });
 
   return result;
 };
-
 
 const getWalletSummary = async (user: JwtPayload) => {
   const isExistsUser = await User.findOne({ email: user?.email });
@@ -170,26 +198,25 @@ const getWalletSummary = async (user: JwtPayload) => {
   }
 
   const wallet = await Wallet.findOne({ user: isExistsUser._id }).select(
-    '-transactions -__v'
+    '-transactions -__v',
   );
 
   if (!wallet) {
     throw new AppError(StatusCodes.NOT_FOUND, 'Wallet not found');
-  } 
-  const totalIncome = wallet.balance + wallet?.profitCharge; 
- 
-  return { 
+  }
+  const totalIncome = wallet.balance + wallet?.profitCharge;
+
+  return {
     totalIncome,
-    totalBalance:wallet?.balance,
-    profit:wallet?.profitCharge,
+    totalBalance: wallet?.balance,
+    profit: wallet?.profitCharge,
   };
 };
-
-
 
 export const WalletService = {
   updateProfit,
   addWallet,
+  getMyWalletAccount,
   getBalanceById,
-  getWalletSummary
+  getWalletSummary,
 };

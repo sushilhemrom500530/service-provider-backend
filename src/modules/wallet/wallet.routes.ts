@@ -9,21 +9,23 @@ const router = Router();
 router.patch(
   '/update-profit',
   auth('Admin'),
-  WalletController.updateWalletProfit
+  WalletController.updateWalletProfit,
 );
 
 router.get(
   '/get-balance',
   auth('Admin', 'Provider', 'User'),
-  WalletController.getBalanceById
+  WalletController.getBalanceById,
 );
 
 router.post(
   '/add',
   auth('Admin', 'Provider'),
   validateRequest(WalletValidations.addWallet),
-  WalletController.addWallet
+  WalletController.addWallet,
 );
+
+router.get('/get-my-account', auth('Admin', 'Provider'), WalletController.getMyWallet);
 
 router.get('/get-summary', auth('Admin'), WalletController.getSummary);
 
