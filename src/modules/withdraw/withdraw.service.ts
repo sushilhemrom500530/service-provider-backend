@@ -223,6 +223,16 @@ const acceptWithdrawRequest = async (
   } else {
     withdraw.status = 'Rejected';
     await withdraw.save();
+
+    // create notification
+    await Notification.create({
+      title: 'Rejected Withdrawal Request',
+      description: 'Your withdrawal request has been rejected',
+      receiverId: providerWallet?.user,
+      type: 'withdrawal',
+      isRead: false,
+      senderId: isExistsAdmin?._id,
+    });
   }
 
   return withdraw;
