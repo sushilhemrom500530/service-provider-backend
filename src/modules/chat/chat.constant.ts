@@ -1,3 +1,5 @@
+export const CHAT_UPLOADS_FOLDER = 'uploads/chat';
+
 export const SOCKET_EVENTS = {
   // Connection
   CONNECTION: "connection",

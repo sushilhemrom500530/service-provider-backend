@@ -166,7 +166,8 @@ export class ChatService {
     // const messages = await Message.find({
     //   chatId: chat._id,
     //   deletedBy: { $ne: user1 }, // <--- key fix
-    // })
+    // });
+
     const messages = await Message.find({
       $or: [
         { sender: user1, receiver: user2 },
@@ -291,13 +292,18 @@ export class ChatService {
     });
 
     // Populate sender and reply info
-    await message.populate('sender', 'name email profileUrl');
+    await message.populate('sender', 'fullName email profileUrl');
+    await message.populate('receiver', 'fullName email profileUrl');
     if (replyToId) {
       await message.populate({
         path: 'replyTo',
         populate: {
           path: 'sender',
-          select: 'name email profileUrl',
+          select: 'fullName email profileUrl',
+        },
+        populate: {
+          path: 'receiver',
+          select: 'fullName email profileUrl',
         },
       });
     }
@@ -488,13 +494,14 @@ export class ChatService {
     })
       .populate({
         path: 'participants',
-        select: 'name email role profileUrl',
+        select: 'fullName email role profileUrl',
       })
       .populate({
         path: 'lastMessage',
+        select: '_id content createdAt sender',
         populate: {
           path: 'sender',
-          select: 'name email role profileUrl',
+          select: 'fullName email role profileUrl',
         },
       })
       .sort({ lastMessageAt: -1 });
@@ -518,7 +525,7 @@ export class ChatService {
 
         return {
           chatId: chat._id,
-          receiver: otherUser,
+          otherUser,
           lastMessage: chat.lastMessage,
           unreadCount,
           lastMessageAt: chat.lastMessageAt,

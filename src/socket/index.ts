@@ -25,7 +25,7 @@ const emitChatListToUser = async (
       deletedBy: { $ne: userId },
       isActive: true,
     })
-      .populate('participants', 'email name image lastLoginAt')
+      .populate('participants', 'email fullName profileUrl lastLoginAt')
       .populate({
         path: 'lastMessage',
         select: 'content type createdAt sender',
@@ -41,6 +41,7 @@ const emitChatListToUser = async (
       const other = chat.participants.find(
         (p: any) => p._id.toString() !== userId,
       ) as any;
+
       const lastMsg =
         chat.lastMessage &&
         typeof chat.lastMessage === 'object' &&
@@ -188,7 +189,7 @@ export const socketHelper = {
           socket.handshake.headers.authorization?.split(' ')[1] ||
           socket.handshake.headers.token;
 
-        console.log('token is :', token);
+        // console.log('token is :', token);
 
         if (!token)
           return next(new Error('Authentication error: No token provided'));
@@ -389,7 +390,15 @@ export const socketHelper = {
       socket.on(SOCKET_EVENTS.SEND_MESSAGE, async data => {
         try {
           const { receiverId, content, replyTo, tempId } = data;
-          // console.log('request data : ', data);
+
+          if (
+            new Types.ObjectId(currentUserId).equals(
+              new Types.ObjectId(receiverId),
+            )
+          ) {
+            throw new Error('Sender and receiver cannot be the same user');
+          }
+
           // Save new message
           const newMessage = await ChatService.sendMessage(
             new Types.ObjectId(currentUserId),
@@ -402,6 +411,11 @@ export const socketHelper = {
 
           const chatId = newMessage.chatId.toString();
 
+          console.log(
+            `✅ User ${currentUserId} sent message to ${receiverId} in chat ${chatId}`,
+          );
+
+          console.log('New message:', newMessage);
           // Emit to sender for optimistic update
           socket.emit(SOCKET_EVENTS.MESSAGE_NEW, {
             message: newMessage,
@@ -421,6 +435,11 @@ export const socketHelper = {
             io.to(socketId).emit(SOCKET_EVENTS.MESSAGE_NEW, {
               message: newMessage,
             });
+
+            console.log(
+              "new message emitted to receiver's chat room",
+              newMessage,
+            );
 
             io.to(socketId).emit(SOCKET_EVENTS.CHAT_MESSAGES, {
               chatId,

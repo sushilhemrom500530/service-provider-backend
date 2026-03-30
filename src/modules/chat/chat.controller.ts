@@ -1,19 +1,19 @@
-import { Response } from "express";
-import { StatusCodes } from "http-status-codes";
-import { Types } from "mongoose";
-import { MessageType } from "./chat.interface";
-import { SOCKET_EVENTS } from "./chat.constant";
-import catchAsync from "./../../utils/catchAsync";
-import sendResponse from "./../../utils/sendResponse";
-import { CustomRequest } from "./../../utils/customRequest";
-import { socketHelper } from "./../../utils/socket";
-import { ChatService } from "./chat.service";
+import { Response } from 'express';
+import { Types } from 'mongoose';
+import { MessageType } from './chat.interface';
+import { SOCKET_EVENTS } from './chat.constant';
+import { CustomRequest } from './../../utils/customRequest';
+import { ChatService } from './chat.service';
+import catchAsync from './../../shared/catchAsync';
+import sendResponse from './../../shared/sendResponse';
+import { socketHelper } from './../../socket/index';
+import { StatusCodes } from 'http-status-codes';
 
 export class ChatController {
   // Send media message (Image/Video/Audio) via HTTP
   static sendMediaMessage = catchAsync(
     async (req: CustomRequest, res: Response) => {
-      const { id: currentUserId } = req.user;
+      const { userId: currentUserId } = req.user;
       const { receiverId, messageType, replyTo, content } = req.body;
       const mediaFile = req.file;
 
@@ -21,7 +21,7 @@ export class ChatController {
       if (!mediaFile) {
         return res.status(StatusCodes.BAD_REQUEST).json({
           success: false,
-          message: "Media file is required",
+          message: 'Media file is required',
         });
       }
 
@@ -35,7 +35,7 @@ export class ChatController {
       if (!validMediaTypes.includes(messageType)) {
         return res.status(StatusCodes.BAD_REQUEST).json({
           success: false,
-          message: "Invalid message type for media upload",
+          message: 'Invalid message type for media upload',
         });
       }
 
@@ -53,7 +53,7 @@ export class ChatController {
         replyTo,
       );
 
-      const io = req.app.get("io");
+      const io = req.app.get('io');
       if (io && socketHelper) {
         const chatId = message.chatId.toString();
 
@@ -104,16 +104,16 @@ export class ChatController {
       }
 
       sendResponse(res, {
-        statusCode: StatusCodes.CREATED,
+        code: StatusCodes.CREATED,
         success: true,
-        message: "Media message sent successfully",
+        message: 'Media message sent successfully',
         data: message,
       });
     },
   );
   static sendMessageOnUser = catchAsync(
     async (req: CustomRequest, res: Response) => {
-      const senderId = req.user.id;
+      const { userId: senderId } = req.user;
       const { receiverId } = req.params;
       const { content, replyTo } = req.body;
       const files = req.files as any;
@@ -127,16 +127,16 @@ export class ChatController {
       });
 
       sendResponse(res, {
-        statusCode: 201,
+        code: 201,
         success: true,
-        message: "Message sent successfully",
+        message: 'Message sent successfully',
         data: message,
       });
     },
   );
   // get user message with chat
   static getMessages = catchAsync(async (req: CustomRequest, res: Response) => {
-    const currentUserId = req.user.id;
+    const { userId: currentUserId } = req.user;
     const { otherUserId } = req.params;
     const { limit, offset } = req.query;
 
@@ -148,17 +148,17 @@ export class ChatController {
     );
 
     return sendResponse(res, {
-      statusCode: StatusCodes.OK,
+      code: StatusCodes.OK,
       success: true,
-      message: "Messages fetched successfully",
-      data,
+      message: 'Messages fetched successfully',
+      data: data || [],
     });
   });
 
   // Get chat messages
   static getChatMessages = catchAsync(
     async (req: CustomRequest, res: Response) => {
-      const { id: userId } = req.user;
+      const { userId } = req.user;
       const { chatId } = req.params;
       const { limit = 50, offset = 0 } = req.query;
       const messages = await ChatService.getChatMessages(
@@ -169,9 +169,9 @@ export class ChatController {
       );
 
       sendResponse(res, {
-        statusCode: StatusCodes.OK,
+        code: StatusCodes.OK,
         success: true,
-        message: "Messages retrieved successfully",
+        message: 'Messages retrieved successfully',
         data: messages,
       });
     },
@@ -185,9 +185,9 @@ export class ChatController {
       const chats = await ChatService.getUserChats(userId as any);
 
       sendResponse(res, {
-        statusCode: StatusCodes.OK,
+        code: StatusCodes.OK,
         success: true,
-        message: "Chats retrieved successfully",
+        message: 'Chats retrieved successfully',
         data: chats,
       });
     },
@@ -195,14 +195,14 @@ export class ChatController {
 
   static getChatUsers = catchAsync(
     async (req: CustomRequest, res: Response) => {
-      const currentUserId = req.user.id;
+      const { userId: currentUserId } = req.user;
 
       const users = await ChatService.getChatUsers(currentUserId);
 
       sendResponse(res, {
-        statusCode: 200,
+        code: 200,
         success: true,
-        message: "Chat users fetched successfully",
+        message: 'Chat users fetched successfully',
         data: users,
       });
     },
@@ -211,7 +211,7 @@ export class ChatController {
   // Update message (text only)
   static updateMessage = catchAsync(
     async (req: CustomRequest, res: Response) => {
-      const { id: userId } = req.user;
+      const { userId } = req.user;
       const { messageId } = req.params;
       const { content } = req.body;
 
@@ -222,9 +222,9 @@ export class ChatController {
       );
 
       sendResponse(res, {
-        statusCode: StatusCodes.OK,
+        code: StatusCodes.OK,
         success: true,
-        message: "Message updated successfully",
+        message: 'Message updated successfully',
         data: message,
       });
     },
@@ -233,15 +233,15 @@ export class ChatController {
   // Delete message
   static deleteMessage = catchAsync(
     async (req: CustomRequest, res: Response) => {
-      const { id: userId } = req.user;
+      const { userId } = req.user;
       const { messageId } = req.params;
 
       await ChatService.deleteMessage(messageId, userId as any);
 
       sendResponse(res, {
-        statusCode: StatusCodes.OK,
+        code: StatusCodes.OK,
         success: true,
-        message: "Message deleted successfully",
+        message: 'Message deleted successfully',
         data: { deletedCount: 1 },
       });
     },
@@ -250,15 +250,15 @@ export class ChatController {
   // Delete conversation
   static deleteConversation = catchAsync(
     async (req: CustomRequest, res: Response) => {
-      const userId = (req.user as any).userId as string;
+      const { userId } = req.user;
       const { chatId } = req.params;
 
       await ChatService.deleteConversation(chatId, userId as any);
 
       sendResponse(res, {
-        statusCode: StatusCodes.OK,
+        code: StatusCodes.OK,
         success: true,
-        message: "Conversation deleted successfully",
+        message: 'Conversation deleted successfully',
         data: null,
       });
     },
@@ -272,9 +272,9 @@ export class ChatController {
     await ChatService.blockUser(userId as any, blockedId);
 
     sendResponse(res, {
-      statusCode: StatusCodes.OK,
+      code: StatusCodes.OK,
       success: true,
-      message: "User blocked successfully",
+      message: 'User blocked successfully',
       data: null,
     });
   });
@@ -287,9 +287,9 @@ export class ChatController {
     await ChatService.unblockUser(userId as any, new Types.ObjectId(blockedId));
 
     sendResponse(res, {
-      statusCode: StatusCodes.OK,
+      code: StatusCodes.OK,
       success: true,
-      message: "User unblocked successfully",
+      message: 'User unblocked successfully',
       data: null,
     });
   });
@@ -302,9 +302,9 @@ export class ChatController {
       const blockedUsers = await ChatService.getBlockedUsers(userId as any);
 
       sendResponse(res, {
-        statusCode: StatusCodes.OK,
+        code: StatusCodes.OK,
         success: true,
-        message: "Blocked users retrieved successfully",
+        message: 'Blocked users retrieved successfully',
         data: blockedUsers,
       });
     },
@@ -319,9 +319,9 @@ export class ChatController {
       await ChatService.markMessagesAsRead(chatId, userId as any);
 
       sendResponse(res, {
-        statusCode: 200,
+        code: StatusCodes.OK,
         success: true,
-        message: "Messages marked as read",
+        message: 'Messages marked as read',
         data: null,
       });
     },
