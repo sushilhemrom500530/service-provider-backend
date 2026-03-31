@@ -462,6 +462,43 @@ export const socketHelper = {
       });
 
       socket.on(
+        SOCKET_EVENTS.MESSAGES_READ,
+        async (data: { chatId: string }) => {
+          const { chatId } = data;
+
+          // Mark all messages as read by current user
+          await ChatService.markMessagesAsRead(
+            chatId,
+            new Types.ObjectId(currentUserId),
+          );
+
+          // Emit updated chat list to current user (unreadCount will now be 0)
+          await emitChatListToUser(io, currentUserId);
+
+          // Notify other participant (if online) to update their chat list
+          const chat = await Chat.findById(chatId).lean();
+          if (chat) {
+            const otherUser = chat.participants.find(
+              (p: any) => p.toString() !== currentUserId,
+            );
+            if (otherUser && onlineUsers.has(otherUser.toString())) {
+              io.to(onlineUsers.get(otherUser.toString())!).emit(
+                SOCKET_EVENTS.MESSAGES_READ,
+                {
+                  chatId,
+                  readBy: currentUserId,
+                  readAt: new Date(),
+                },
+              );
+
+              // Update their chat list as well
+              await emitChatListToUser(io, otherUser.toString());
+            }
+          }
+        },
+      );
+
+      socket.on(
         SOCKET_EVENTS.UPDATE_MESSAGE,
         async (data: {
           messageId: string;

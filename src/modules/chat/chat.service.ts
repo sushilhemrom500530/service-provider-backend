@@ -153,13 +153,13 @@ export class ChatService {
     // 1. Check if blocked
     await this.checkIfBlocked(user1, user2);
 
-    // 2. Find chat
-    // const chat = await Chat.findOne({
-    //   participants: { $all: [user1, user2] },
-    // });
+    // 2. Find chat between users
+    const chat = await Chat.findOne({
+      participants: { $all: [user1, user2] },
+    });
 
     // if (!chat) {
-    //   throw new AppError(StatusCodes.NOT_FOUND, "Chat not found");
+    //   throw new AppError(StatusCodes.NOT_FOUND, 'Chat not found');
     // }
 
     // 3. Get messages excluding deleted ones
@@ -180,6 +180,17 @@ export class ChatService {
       .sort({ createdAt: -1 })
       .skip(offset)
       .limit(limit);
+
+    if (chat) {
+      await Chat.findByIdAndUpdate(chat._id, {
+        $set: { [`unreadCount.${user1}`]: 0 },
+      });
+
+      await Message.updateMany(
+        { chatId: chat._id, receiver: user1, readAt: null },
+        { $set: { readAt: new Date() } },
+      );
+    }
 
     return messages;
   }
