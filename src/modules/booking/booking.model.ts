@@ -45,6 +45,7 @@ const bookingSchema = new Schema<IBooking>(
     },
 
     personCount: { type: Number },
+    ticketNumber: { type: String },
 
     date: { type: Date },
     time: { type: String },

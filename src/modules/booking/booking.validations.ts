@@ -5,7 +5,7 @@ const bookingStatusEnum = z.enum(
   {
     required_error: 'Booking Status is required',
     invalid_type_error: 'Booking Status must be one of the allowed strings',
-  }
+  },
 );
 
 const categoryEnum = z
@@ -85,6 +85,7 @@ export const updateBookingSchema = z.object({
     isPermitted: z.boolean().optional(),
   }),
 });
+
 export const updatePermitBookingSchema = z.object({
   body: z.object({
     isPermitted: z.boolean({

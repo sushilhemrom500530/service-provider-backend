@@ -916,9 +916,13 @@ const addBookingIntoDB = async (user: JwtPayload, payload: IBooking) => {
       );
     }
   }
+  function generateTicketNumber(): number {
+    return Math.floor(100000 + Math.random() * 900000);
+  }
   // model swhicher
   let totalPrice = 0;
   let validatedItems: any[] = [];
+  let ticketNumber = '';
 
   switch (productOwner?.providerType) {
     // Restaurant
@@ -1048,6 +1052,7 @@ const addBookingIntoDB = async (user: JwtPayload, payload: IBooking) => {
     // ski pass
     case 'Ski_Pass': {
       totalPrice = matchedProduct.amount || 0;
+      payload.ticketNumber = `TKT-${generateTicketNumber()}`;
       break;
     }
     // massage

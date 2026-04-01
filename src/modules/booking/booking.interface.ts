@@ -33,6 +33,7 @@ export interface IBooking extends Document {
   category: BookingCategory;
 
   personCount?: number;
+  ticketNumber?: string;
   date?: Date;
   time?: string;
 
