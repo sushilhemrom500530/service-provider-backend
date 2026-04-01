@@ -835,7 +835,10 @@ const addBookingIntoDB = async (user: JwtPayload, payload: IBooking) => {
       dbUser.status,
     )
   )
-    throw new AppError(StatusCodes.UNAUTHORIZED, 'User status is not active.');
+    throw new AppError(
+      StatusCodes.UNAUTHORIZED,
+      'This user status is not active.',
+    );
 
   // product model mapping
   const models: Record<string, any> = {
@@ -873,7 +876,7 @@ const addBookingIntoDB = async (user: JwtPayload, payload: IBooking) => {
   if (
     ['Ski_Pass', 'Restaurant', 'Massage'].includes(productOwner.providerType)
   ) {
-    if (payload.date && isPastDate(payload.date)) {
+    if (isPastDate(payload.date)) {
       throw new AppError(
         StatusCodes.BAD_REQUEST,
         'Booking date cannot be in the past.',
@@ -1053,6 +1056,7 @@ const addBookingIntoDB = async (user: JwtPayload, payload: IBooking) => {
     case 'Ski_Pass': {
       totalPrice = matchedProduct.amount || 0;
       payload.ticketNumber = `TKT-${generateTicketNumber()}`;
+      // ticketNumber = `TKT-${Date.now().toString().slice(-4)}-${generateTicketNumber()}`;
       break;
     }
     // massage
