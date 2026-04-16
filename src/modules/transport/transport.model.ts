@@ -25,23 +25,23 @@ const transportSchema = new Schema<ITransport>(
       trim: true,
     },
     personCount: {
-      type: String, 
+      type: String,
     },
     milage: {
       type: String,
       required: true,
     },
     power: {
-      type: String, 
+      type: String,
     },
     extraChargePerHours: {
-      type: String, 
+      type: Number,
       default: 8,
     },
     insuranceFee: {
       type: Number,
       required: true,
-      default: 150, 
+      default: 150,
     },
     maintainCharge: {
       type: Number,
@@ -57,8 +57,8 @@ const transportSchema = new Schema<ITransport>(
       min: 0,
     },
     description: {
-      type: String, 
-    },  
+      type: String,
+    },
     // optional fields for later updates
     averageRating: {
       type: Number,
@@ -77,12 +77,28 @@ const transportSchema = new Schema<ITransport>(
   },
   {
     timestamps: true,
-  }
+  },
 );
 
-transportSchema.pre('save', function (next) {
+// transportSchema.pre('save', function (next) {
+//   if (this.reviews && this.reviews.length > 0) {
+//     const total = this.reviews.reduce(
+//       (sum: number, r: any) => sum + r.rating,
+//       0,
+//     );
+//     this.averageRating = parseFloat((total / this.reviews.length).toFixed(1));
+//   }
+//   next();
+// });
+
+transportSchema.pre('save', function (this: any, next) {
+  // Using 'any' here is the safest way to bypass the Strict Mongoose internal type check
+  // if ITransport doesn't extend mongoose.Document
   if (this.reviews && this.reviews.length > 0) {
-    const total = this.reviews.reduce((sum, r) => sum + r.rating, 0);
+    const total = this.reviews.reduce(
+      (sum: number, r: any) => sum + r.rating,
+      0,
+    );
     this.averageRating = parseFloat((total / this.reviews.length).toFixed(1));
   }
   next();

@@ -27,6 +27,7 @@ export interface IBookingItem {
 }
 
 export interface IBooking extends Document {
+  _id: Types.ObjectId;
   user: Types.ObjectId;
   product: Types.ObjectId;
   productModel: ProductModelName;
@@ -45,6 +46,8 @@ export interface IBooking extends Document {
 
   bookingItems?: IBookingItem[];
   duration?: string;
+
+  transactionId?: string;
 
   bookinRequestText?: string;
   bookingAgentText?: string;

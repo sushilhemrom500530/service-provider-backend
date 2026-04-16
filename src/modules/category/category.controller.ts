@@ -5,7 +5,7 @@ import { s3Services } from '../../aws/s3Service';
 import { JwtPayload } from 'jsonwebtoken';
 import { Category } from './category.model';
 import { CategoryService } from './category.service';
-import { Request } from 'express';
+import { Request, Response } from 'express';
 
 const getAllCategories = catchAsync(async (req, res) => {
   const result = await Category.find();
@@ -36,7 +36,7 @@ const getCategoryById = catchAsync(async (req, res) => {
   });
 });
 
-const createCategory = catchAsync(async (req, res) => { 
+const createCategory = catchAsync(async (req, res) => {
   const result = await CategoryService.createCategory(req as Request);
   sendResponse(res, {
     code: StatusCodes.OK,
@@ -47,7 +47,7 @@ const createCategory = catchAsync(async (req, res) => {
 
 const addSubCategory = catchAsync(async (req, res) => {
   // const result = await CategoryService.addSubCategory(req as Request);
-  const result = await CategoryService.addSubCategory(req as Request, res as any);
+  const result = await CategoryService.addSubCategory(req as Request);
   sendResponse(res, {
     code: StatusCodes.OK,
     message: 'Sub category create successfully.',
@@ -61,7 +61,7 @@ const updateCategory = catchAsync(async (req, res) => {
   const result = await CategoryService.updateCategory(
     req as Request,
     id as string,
-    user
+    user,
   );
   sendResponse(res, {
     code: StatusCodes.OK,
@@ -72,15 +72,15 @@ const updateCategory = catchAsync(async (req, res) => {
 
 const deleteCategory = catchAsync(async (req, res) => {
   const { id } = req.params;
- // Read subCategoryIds from query if present
+  // Read subCategoryIds from query if present
   let subCategoryIds: string[] | undefined;
   if (req.query.subCategoryIds) {
     const queryValue = req.query.subCategoryIds;
     if (Array.isArray(queryValue)) {
-    //   subCategoryIds = queryValue.flatMap(v => v.split(','));
-    // } else {
+      //   subCategoryIds = queryValue.flatMap(v => v.split(','));
+      // } else {
       subCategoryIds = queryValue.flatMap(v =>
-        (typeof v === 'string' ? v : String(v)).split(',')
+        (typeof v === 'string' ? v : String(v)).split(','),
       );
     } else if (typeof queryValue === 'string') {
       subCategoryIds = queryValue.split(',');
@@ -92,9 +92,9 @@ const deleteCategory = catchAsync(async (req, res) => {
   const result = await CategoryService.deleteCategory(
     id,
     req.user as JwtPayload,
-    subCategoryIds
+    subCategoryIds,
   );
-  
+
   sendResponse(res, {
     code: StatusCodes.OK,
     message: 'Sub category deleted successfully.',

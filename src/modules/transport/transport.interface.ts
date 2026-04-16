@@ -9,7 +9,7 @@ export interface ITransport extends Document {
   personCount: string;
   milage: string;
   power: string;
-  extraChargePerHours: string;
+  extraChargePerHours: number;
   insuranceFee: number;
   maintainCharge: number;
   serviceArea: string;

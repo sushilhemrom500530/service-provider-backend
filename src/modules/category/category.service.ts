@@ -14,7 +14,7 @@ const getAllCategories = async (user: JwtPayload) => {
   if (!isExistsUser) {
     throw new AppError(
       StatusCodes.NOT_FOUND,
-      'You cannot view this data because your account was not found.'
+      'You cannot view this data because your account was not found.',
     );
   }
 
@@ -27,7 +27,7 @@ const getCategoryById = async (id: string, user: JwtPayload) => {
   if (!isExistsUser) {
     throw new AppError(
       StatusCodes.NOT_FOUND,
-      'You cannot view this data because your account was not found.'
+      'You cannot view this data because your account was not found.',
     );
   }
   const result = await Category.findById(id);
@@ -49,7 +49,7 @@ const createCategory = async (req: Request) => {
   if (!isExistsUser) {
     throw new AppError(
       StatusCodes.NOT_FOUND,
-      'You cannot view this data because your account was not found.'
+      'You cannot view this data because your account was not found.',
     );
   }
 
@@ -67,20 +67,20 @@ const createCategory = async (req: Request) => {
 
   const thumbnailUrl = await s3Services.uploadSingleFileToS3(
     thumbnailFile,
-    USER_UPLOADS_FOLDER
+    USER_UPLOADS_FOLDER,
   );
 
   if (primaryCategoryName === 'Ski_Pass') {
     throw new AppError(
       StatusCodes.BAD_REQUEST,
-      'The "Ski_Pass" category cannot be created or updated.'
+      'The "Ski_Pass" category cannot be created or updated.',
     );
   }
   const category = await Category.findOne({ primaryCategoryName });
   if (category) {
     throw new AppError(
       StatusCodes.BAD_REQUEST,
-      'Category with this name already exists.'
+      'Category with this name already exists.',
     );
   }
 
@@ -92,7 +92,7 @@ const createCategory = async (req: Request) => {
     } catch {
       throw new AppError(
         StatusCodes.BAD_REQUEST,
-        'Invalid subCategory format. Must be valid JSON.'
+        'Invalid subCategory format. Must be valid JSON.',
       );
     }
   } else if (Array.isArray(req.body?.subCategory)) {
@@ -110,20 +110,20 @@ const createCategory = async (req: Request) => {
         if (!subFile) {
           throw new AppError(
             StatusCodes.BAD_REQUEST,
-            `Subcategory image for "${item?.name}" is missing.`
+            `Subcategory image for "${item?.name}" is missing.`,
           );
         }
 
         const subCategoryPhotoUrl = await s3Services.uploadSingleFileToS3(
           subFile,
-          USER_UPLOADS_FOLDER
+          USER_UPLOADS_FOLDER,
         );
 
         return {
           name: item.name,
           categoryPhoto: subCategoryPhotoUrl,
         };
-      })
+      }),
     );
   }
 
@@ -229,7 +229,7 @@ const createCategory = async (req: Request) => {
 //     message: 'Subcategories added successfully',
 //     data: result,
 //   });
-// }; 
+// };
 const addSubCategory = async (req: Request) => {
   const user = req.user as JwtPayload;
 
@@ -250,7 +250,7 @@ const addSubCategory = async (req: Request) => {
   if (isExistsCategory.primaryCategoryName === 'Ski_Pass') {
     throw new AppError(
       StatusCodes.BAD_REQUEST,
-      'The "Ski_Pass" category cannot be created or updated.'
+      'The "Ski_Pass" category cannot be created or updated.',
     );
   }
 
@@ -262,7 +262,7 @@ const addSubCategory = async (req: Request) => {
       } catch {
         throw new AppError(
           StatusCodes.BAD_REQUEST,
-          'Invalid subCategory format. Must be valid JSON.'
+          'Invalid subCategory format. Must be valid JSON.',
         );
       }
     } else if (Array.isArray(req.body.subCategory)) {
@@ -288,13 +288,13 @@ const addSubCategory = async (req: Request) => {
         : '';
 
       return { name: item.name, categoryPhoto };
-    })
+    }),
   );
 
   const result = await Category.findByIdAndUpdate(
     categoryId,
     { $push: { subCategory: { $each: processedSubCategory } } },
-    { new: true }
+    { new: true },
   );
 
   return result;
@@ -327,7 +327,7 @@ const updateCategory = async (req: Request, id: string, user: JwtPayload) => {
   if (thumbnailFile) {
     thumbnailUrl = await s3Services.uploadSingleFileToS3(
       thumbnailFile,
-      USER_UPLOADS_FOLDER
+      USER_UPLOADS_FOLDER,
     );
   }
 
@@ -339,13 +339,13 @@ const updateCategory = async (req: Request, id: string, user: JwtPayload) => {
     } catch {
       throw new AppError(
         StatusCodes.BAD_REQUEST,
-        'Invalid subCategory JSON format.'
+        'Invalid subCategory JSON format.',
       );
     }
   } else if (Array.isArray(req.body.subCategory)) {
     subCategoryPayload = req.body.subCategory;
   } else {
-    subCategoryPayload = isExistsCategory.subCategory;
+    subCategoryPayload = isExistsCategory.subCategory || [];
   }
 
   const subCategoryFiles = uploadedFiles?.files || [];
@@ -358,8 +358,8 @@ const updateCategory = async (req: Request, id: string, user: JwtPayload) => {
       const categoryPhoto = subFile
         ? await s3Services.uploadSingleFileToS3(subFile, USER_UPLOADS_FOLDER)
         : typeof item.categoryPhoto === 'string'
-        ? item.categoryPhoto
-        : '';
+          ? item.categoryPhoto
+          : '';
 
       // 🔴 IMPORTANT: KEEP _id IF EXISTS
       return {
@@ -367,7 +367,7 @@ const updateCategory = async (req: Request, id: string, user: JwtPayload) => {
         name: item.name,
         categoryPhoto,
       };
-    })
+    }),
   );
 
   // ---------- UPDATE ----------
@@ -379,7 +379,7 @@ const updateCategory = async (req: Request, id: string, user: JwtPayload) => {
       thumbnail: thumbnailUrl,
       subCategory: processedSubCategory,
     },
-    { new: true }
+    { new: true },
   );
 
   return result;
@@ -388,7 +388,7 @@ const updateCategory = async (req: Request, id: string, user: JwtPayload) => {
 const deleteCategory = async (
   categoryId: string,
   user: JwtPayload,
-  subCategoryIds?: string[]
+  subCategoryIds?: string[],
 ) => {
   const isExistsUser = await User.findOne({
     email: user?.email,
@@ -398,7 +398,7 @@ const deleteCategory = async (
   if (!isExistsUser) {
     throw new AppError(
       StatusCodes.NOT_FOUND,
-      'You cannot view this data because your account was not found.'
+      'You cannot view this data because your account was not found.',
     );
   }
 
@@ -418,14 +418,14 @@ const deleteCategory = async (
     if (existingIds.length === 0) {
       throw new AppError(
         StatusCodes.BAD_REQUEST,
-        'No matching subcategories found to delete.'
+        'No matching subcategories found to delete.',
       );
     }
 
     await Category.findByIdAndUpdate(
       categoryId,
       { $pull: { subCategory: { _id: { $in: existingIds } } } },
-      { new: true }
+      { new: true },
     );
 
     return { deletedCount: existingIds.length };

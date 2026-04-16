@@ -1,4 +1,4 @@
-import mongoose, { Types } from 'mongoose';
+import mongoose, { Types, Model } from 'mongoose';
 import AppError from '../../errors/AppErro';
 import { StatusCodes } from 'http-status-codes';
 import { Request, Response } from 'express';
@@ -45,15 +45,21 @@ const getAllBookingFromDB = async (user: JwtPayload, query: any) => {
   // ---- FIX: SEARCH PRODUCT TITLE ----
   if (search) {
     const productIds: string[] = [];
-    const models = [SkiPass, SkiHire, Transport, Restaurant, Massage];
+    const models: Model<any>[] = [
+      SkiPass,
+      SkiHire,
+      Transport,
+      Restaurant,
+      Massage,
+    ];
 
-    for (const Model of models) {
-      const matched = await Model.find({
+    for (const ModelItem of models) {
+      const matched = await ModelItem.find({
         title: { $regex: search, $options: 'i' },
       }).select('_id');
 
       if (matched.length > 0) {
-        productIds.push(...matched.map(p => p._id.toString()));
+        productIds.push(...matched.map((p: any) => p._id.toString()));
       }
     }
 
@@ -87,36 +93,36 @@ const getAllBookingFromDB = async (user: JwtPayload, query: any) => {
 
   const allBookings = await bookingQuery.clone();
 
-  const filtered = allBookings.filter(b => b.product !== null);
+  const filtered = allBookings.filter(b => b?.product !== null);
 
   const total = filtered.length;
 
-  const result = filtered.slice(skip, skip + limit).map(booking => {
+  const result = filtered.slice(skip, skip + limit).map((booking: any) => {
     // pick only required product fields
     const product = booking.product
       ? {
-          _id: booking.product._id,
-          thumbnail: booking?.product?.thumbnail,
-          title: booking?.product?.title,
-          skiPassType: booking?.product?.skiPassType || '',
-          serviceArea: booking?.product?.serviceArea || '',
-        }
+        _id: booking.product._id,
+        thumbnail: booking?.product?.thumbnail || '',
+        title: booking?.product?.title,
+        skiPassType: booking?.product?.skiPassType || '',
+        serviceArea: booking?.product?.serviceArea || '',
+      }
       : null;
 
     // slots mapping (same logic)
     const fullSlots = (booking.slots || [])
-      .map(slotId => {
+      .map((slotId: any) => {
         return booking.product?.slots?.find(
-          s => s._id.toString() === slotId.toString(),
+          (s: any) => s._id.toString() === slotId.toString(),
         );
       })
       .filter(Boolean);
 
     // bookingItems with full details
-    const fullBookingItems = booking.bookingItems.map(item => {
+    const fullBookingItems = booking?.bookingItems?.map((item: any) => {
       const fullItem =
         booking.product?.items?.find(
-          p => p._id.toString() === item.itemId.toString(),
+          (p: any) => p._id.toString() === item.itemId.toString(),
         ) || null;
 
       return {
@@ -288,13 +294,35 @@ const getSingleBookingFromDB = async (id: string, user: JwtPayload) => {
       { 'subCategory.$': 1, primaryCategoryName: 1 },
     );
 
-    if (categoryDoc) {
+    // Check if categoryDoc and subCategory array actually exist
+    if (
+      categoryDoc &&
+      categoryDoc.subCategory &&
+      categoryDoc.subCategory.length > 0
+    ) {
+      const subCat = categoryDoc.subCategory[0];
       product.category = {
-        ...(categoryDoc.subCategory[0].toObject?.() ||
-          categoryDoc.subCategory[0]),
+        // Use type assertion or check for toObject explicitly
+        ...(typeof (subCat as any).toObject === 'function'
+          ? (subCat as any).toObject()
+          : subCat),
       };
     }
   }
+
+  // if (product?.category) {
+  //   const categoryDoc = await Category.findOne(
+  //     { 'subCategory._id': product.category },
+  //     { 'subCategory.$': 1, primaryCategoryName: 1 },
+  //   );
+
+  //   if (categoryDoc) {
+  //     product.category = {
+  //       ...(categoryDoc.subCategory[0].toObject?.() ||
+  //         categoryDoc.subCategory[0]),
+  //     };
+  //   }
+  // }
 
   /* -------------------- Product Items -------------------- */
   const productItems = product?.items || [];
@@ -321,8 +349,8 @@ const getSingleBookingFromDB = async (id: string, user: JwtPayload) => {
     .filter(Boolean);
 
   /* -------------------- Time & Overtime -------------------- */
-  const startTime = new Date(booking?.startDateAndTime);
-  const endTime = new Date(booking?.endDateAndTime);
+  const startTime = new Date(booking?.startDateAndTime || '');
+  const endTime = new Date(booking?.endDateAndTime || '');
 
   let timeLabel: string | undefined;
   let overTimeAmount = 0;
@@ -461,12 +489,12 @@ const getMyBooking = async (user: JwtPayload, query: any) => {
   // Map and enrich bookings
   let bookingsWithTimeInfo = bookings.map(booking => {
     const product = booking.product
-      ? booking.product.toObject?.() || booking.product
+      ? (booking.product as any).toObject?.() || booking.product
       : null;
     const productItems = product?.items || [];
 
-    const startTime = new Date(booking?.startDateAndTime);
-    const endTime = new Date(booking?.endDateAndTime);
+    const startTime = new Date(booking?.startDateAndTime || '');
+    const endTime = new Date(booking?.endDateAndTime || '');
     let bookingSeatCount: number = 0;
     let label: string | undefined;
     let overTimeAmount: number = 0;
@@ -598,7 +626,7 @@ const getMyAllBookingIntoDB = async (user: JwtPayload, query: any) => {
   const bookingsWithCategory = await Promise.all(
     bookings.map(async b => {
       const bookingObj = typeof b.toObject === 'function' ? b.toObject() : b;
-      let product = bookingObj.product;
+      let product = bookingObj.product as any;
       if (product && typeof product.toObject === 'function')
         product = product.toObject();
 
@@ -606,7 +634,7 @@ const getMyAllBookingIntoDB = async (user: JwtPayload, query: any) => {
         const categoryDoc = await Category.findOne(
           {
             primaryCategoryName: 'Restaurant',
-            'subCategory._id': product.category,
+            'subCategory._id': product?.category,
           },
           { 'subCategory.$': 1 },
         );
@@ -669,8 +697,8 @@ const getMyAllBookingIntoDB = async (user: JwtPayload, query: any) => {
     return parts.slice(0, 2).join(' ');
   };
 
-  const enrichedBookings = bookingsWithCategory.map(b => {
-    const productItems = b.product?.items || [];
+  const enrichedBookings = bookingsWithCategory.map((b: any) => {
+    const productItems = b?.product?.items || [];
     let bookingSeatCount = 0;
     let timeLabel: string | undefined;
     let overTimeAmount = 0;
@@ -817,7 +845,7 @@ const getMyBookingForHome = async (user: JwtPayload, selectedDate: string) => {
   return simplified;
 };
 
-const addBookingIntoDB = async (user: JwtPayload, payload: IBooking) => {
+const addBookingIntoDB = async (user: JwtPayload, payload: any) => {
   const { userId, transactionId } = payload;
 
   if (!transactionId)
@@ -874,7 +902,9 @@ const addBookingIntoDB = async (user: JwtPayload, payload: IBooking) => {
 
   // Ski Pass, Restaurant, Massage need only 1 date
   if (
-    ['Ski_Pass', 'Restaurant', 'Massage'].includes(productOwner.providerType)
+    ['Ski_Pass', 'Restaurant', 'Massage'].includes(
+      productOwner.providerType as string,
+    )
   ) {
     if (isPastDate(payload.date)) {
       throw new AppError(
@@ -1012,9 +1042,12 @@ const addBookingIntoDB = async (user: JwtPayload, payload: IBooking) => {
 
       const dbSkiHire = await SkiHire.findById(matchedProduct._id);
 
-      const updatedItems = dbSkiHire.items.map(item => {
+      if (!dbSkiHire)
+        throw new AppError(StatusCodes.NOT_FOUND, 'Ski Hire not found.');
+
+      const updatedItems = dbSkiHire.items.map((item: any) => {
         const booked = payload.bookingItems.find(
-          b => b.itemId.toString() === item._id.toString(),
+          (b: any) => b.itemId.toString() === item._id.toString(),
         );
 
         if (booked) {
@@ -1095,14 +1128,18 @@ const addBookingIntoDB = async (user: JwtPayload, payload: IBooking) => {
     });
     await wallet.save();
   }
-  const paymentPayload: IPayment = {
-    booking: new Types.ObjectId(newBooking?._id),
+
+  // IPayment
+  const paymentPayload: any = {
+    // booking: new Types.ObjectId(newBooking?._id as string),
+    booking: newBooking._id,
     user: new Types.ObjectId(userId),
     transactionId,
     amount: totalPrice,
     status: TransactionStatus.PAID,
     gateway: PaymentGateway.STRIPE,
     paymentMethodType: 'Card',
+    currency: 'eur',
   };
   // create payment
   await Payment.create(paymentPayload);
@@ -1225,7 +1262,7 @@ const completeBookingIntoDB = async (user: JwtPayload, bookingId: string) => {
   if (!isExistsUser) {
     throw new AppError(StatusCodes.NOT_FOUND, 'User not found.');
   }
-  console.log('find current user ===========>', isExistsUser);
+  // console.log('find current user ===========>', isExistsUser);
   const existsBooking = await Booking.findById(bookingId).populate({
     path: 'product',
     select: 'owner title',
@@ -1257,7 +1294,7 @@ const completeBookingIntoDB = async (user: JwtPayload, bookingId: string) => {
     receiverId: result?.user?._id,
     senderId: isExistsUser._id,
     title: 'Booking Completed',
-    description: `${result?.product?.title} booking has been completed by ${isExistsUser?.fullName}. Product id:# ${result?.product?._id}`,
+    description: `${(result?.product as any)?.title || 'Your'} booking has been completed by ${isExistsUser?.fullName}. Product id:# ${(result?.product as any)?._id}`,
     type: 'booking',
   });
 
@@ -1389,11 +1426,13 @@ const refundBookingIntoDB = async (
       existsBooking.slots.forEach(slotIdStr => {
         const slotId = new mongoose.Types.ObjectId(slotIdStr);
 
-        const slot = product.slots.find(s => s._id && s._id.equals(slotId));
+        const slot = product.slots.find(
+          (s: any) => s._id && s._id.equals(slotId),
+        );
 
         if (slot) {
           const alreadyAvailable = product.availableSlots.some(
-            s => s._id && s._id.equals(slot._id),
+            (s: any) => s._id && s._id.equals(slot._id),
           );
 
           if (!alreadyAvailable) {
@@ -1413,7 +1452,7 @@ const refundBookingIntoDB = async (
         const itemId = new mongoose.Types.ObjectId(item.itemId);
 
         const foundItem = product.items.find(
-          i => i._id && i._id.equals(itemId),
+          (i: any) => i._id && i._id.equals(itemId),
         );
 
         if (foundItem) {
@@ -1436,7 +1475,7 @@ const refundBookingIntoDB = async (
         const itemId = new mongoose.Types.ObjectId(item.itemId);
 
         const foundItem = product.items.find(
-          i => i._id && i._id.equals(itemId),
+          (i: any) => i._id && i._id.equals(itemId),
         );
 
         if (foundItem) {

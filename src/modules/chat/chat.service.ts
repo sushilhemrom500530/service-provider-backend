@@ -306,17 +306,18 @@ export class ChatService {
     await message.populate('sender', 'fullName email profileUrl');
     await message.populate('receiver', 'fullName email profileUrl');
     if (replyToId) {
-      await message.populate({
-        path: 'replyTo',
-        populate: {
-          path: 'sender',
-          select: 'fullName email profileUrl',
-        },
-        populate: {
-          path: 'receiver',
-          select: 'fullName email profileUrl',
-        },
-      });
+      await message.populate('replyTo');
+      // {
+      //   path: 'replyTo',
+      //   populate: {
+      //     path: 'sender',
+      //     select: 'fullName email profileUrl',
+      //   },
+      //   populate: {
+      //     path: 'receiver',
+      //     select: 'fullName email profileUrl',
+      //   },
+      // }
     }
 
     return message;

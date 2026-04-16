@@ -1,24 +1,21 @@
 import { Document, Types } from 'mongoose';
-import { IReview,IRefund } from './../common/common.interface';
-
-
+import { IReview, IRefund } from './../common/common.interface';
 
 export interface ISlot {
-  _id?:Types.ObjectId;
+  _id?: Types.ObjectId;
   startTime: string;
   endTime: string;
 }
 
 export interface ICategoryItemDetail {
-  seat: "VIP" | "Normal";
+  _id?: Types.ObjectId;
+  seat: 'VIP' | 'Normal';
   photo: string;
   totalQty: number;
   availableQty: number;
   price: number;
   description?: string;
 }
-
-
 
 export interface IRestaurant extends Document {
   title: string;
@@ -30,7 +27,7 @@ export interface IRestaurant extends Document {
   serviceArea: string;
   serviceFee?: number;
   foodType: string;
-  status: "Open" | "Closed";
+  status: 'Open' | 'Closed';
   items: ICategoryItemDetail[];
   description: string;
   slots: ISlot[];

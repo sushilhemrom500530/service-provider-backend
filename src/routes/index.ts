@@ -18,7 +18,6 @@ import { WithdrawRoutes } from './../modules/withdraw/withdraw.routes';
 import { MetaRoutes } from './../modules/meta/meta.route';
 import { SupportRoutes } from './../modules/settings/customer-support/customer.support.routes';
 import { PaymentRoutes } from './../modules/payment/payment.routes';
-import { MessageRoutes } from './../modules/message/message.routes';
 import { NotificationRoutes } from './../modules/notification/notification.routes';
 
 const router = express.Router();

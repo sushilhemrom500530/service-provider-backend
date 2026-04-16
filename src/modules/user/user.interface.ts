@@ -1,4 +1,4 @@
-import { Model } from 'mongoose';
+import { Document, Model, Types } from 'mongoose';
 import {
   IPaginationOptions,
   IPaginationResult,
@@ -27,6 +27,7 @@ export enum UserRoles {
 
 // User interface
 export interface IUser extends Document {
+  _id: Types.ObjectId;
   fullName: string;
   email: string;
   password: string;

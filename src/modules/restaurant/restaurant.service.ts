@@ -929,8 +929,13 @@ export const updateRestaurantIntoDB = async (req: Request) => {
             item.description ?? (existing ? existing.description : ''),
         };
 
+        // if (existing && existing?._id) {
+        //   out?._id = existing?._id; // preserve
+        // }
         if (existing && existing._id) {
-          out._id = existing._id; // preserve
+          out._id = existing._id;
+        } else if (item._id) {
+          out._id = item._id;
         }
 
         return out;

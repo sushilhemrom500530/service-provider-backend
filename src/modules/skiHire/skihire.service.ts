@@ -34,7 +34,7 @@ const getAllSkiHireFromDB = async (user: JwtPayload, query: any) => {
         primaryCategoryName: 'Ski_Hire',
         'subCategory.name': { $regex: query.category, $options: 'i' },
       },
-      { 'subCategory.$': 1 }
+      { 'subCategory.$': 1 },
     );
 
     const categoryIds = categories.map(c => c.subCategory?.[0]?._id);
@@ -71,13 +71,13 @@ const getAllSkiHireFromDB = async (user: JwtPayload, query: any) => {
     skiHireList.map(async item => {
       const categoryDoc = await Category.findOne(
         { primaryCategoryName: 'Ski_Hire', 'subCategory._id': item.category },
-        { 'subCategory.$': 1 }
+        { 'subCategory.$': 1 },
       );
       return {
         ...item.toObject(),
         category: categoryDoc?.subCategory?.[0] || null,
       };
-    })
+    }),
   );
 
   return {
@@ -115,7 +115,7 @@ const getAllMySkiHireFromDB = async (user: JwtPayload, query: any) => {
         primaryCategoryName: 'Ski_Hire',
         'subCategory.name': { $regex: query.category, $options: 'i' },
       },
-      { 'subCategory.$': 1 }
+      { 'subCategory.$': 1 },
     );
 
     const categoryIds = categories.map(c => c.subCategory?.[0]?._id);
@@ -153,13 +153,13 @@ const getAllMySkiHireFromDB = async (user: JwtPayload, query: any) => {
     skiHireList.map(async item => {
       const categoryDoc = await Category.findOne(
         { primaryCategoryName: 'Ski_Hire', 'subCategory._id': item.category },
-        { 'subCategory.$': 1 }
+        { 'subCategory.$': 1 },
       );
       return {
         ...item.toObject(),
         category: categoryDoc?.subCategory?.[0] || null,
       };
-    })
+    }),
   );
 
   return {
@@ -178,7 +178,7 @@ const getSingleSkiHireFromDB = async (id: string, user: JwtPayload) => {
   if (!isExistsUser) {
     throw new AppError(
       StatusCodes.NOT_FOUND,
-      'You cannot view this data because your account was not found.'
+      'You cannot view this data because your account was not found.',
     );
   }
 
@@ -201,7 +201,7 @@ const getSingleSkiHireFromDB = async (id: string, user: JwtPayload) => {
   // manually populate subcategory
   const categoryDoc = await Category.findOne(
     { primaryCategoryName: 'Ski_Hire', 'subCategory._id': skiHire?.category },
-    { 'subCategory.$': 1 }
+    { 'subCategory.$': 1 },
   );
 
   const subCategoryData = categoryDoc?.subCategory?.[0] || null;
@@ -344,7 +344,7 @@ const addSkiHireIntoDB = async (req: Request) => {
   if (!isExistsUser) {
     throw new AppError(
       StatusCodes.NOT_FOUND,
-      'You cannot view this data because your account was not found.'
+      'You cannot view this data because your account was not found.',
     );
   }
 
@@ -352,14 +352,14 @@ const addSkiHireIntoDB = async (req: Request) => {
   if (isExistsUser?.role !== 'Provider') {
     throw new AppError(
       StatusCodes.FORBIDDEN,
-      'You are not authorized to create a ski hire service.'
+      'You are not authorized to create a ski hire service.',
     );
   }
 
   if (isExistsUser?.providerType !== 'Ski_Hire') {
     throw new AppError(
       StatusCodes.FORBIDDEN,
-      'Only providers with providerType : SkiHire can create a ski hire service.'
+      'Only providers with providerType : SkiHire can create a ski hire service.',
     );
   }
 
@@ -369,14 +369,16 @@ const addSkiHireIntoDB = async (req: Request) => {
     throw new AppError(StatusCodes.NOT_FOUND, 'Ski Hire category not found.');
   }
 
-  const exists = category.subCategory.some(
-    (item: any) => item?._id?.toString() === categoryId?.toString()
+  const subCategoryItems = category?.subCategory || [];
+
+  const exists = subCategoryItems.some(
+    (item: any) => item?._id?.toString() === categoryId?.toString(),
   );
 
   if (!exists) {
     throw new AppError(
       StatusCodes.BAD_REQUEST,
-      'Invalid sub-category ID for Ski Hire.'
+      'Invalid sub-category ID for Ski Hire.',
     );
   }
 
@@ -393,7 +395,7 @@ const addSkiHireIntoDB = async (req: Request) => {
 
   const thumbnailUrl = await s3Services.uploadSingleFileToS3(
     thumbnailFile,
-    USER_UPLOADS_FOLDER
+    USER_UPLOADS_FOLDER,
   );
 
   // Parse product items
@@ -406,7 +408,7 @@ const addSkiHireIntoDB = async (req: Request) => {
   } else {
     throw new AppError(
       StatusCodes.BAD_REQUEST,
-      'Product items data is missing or invalid.'
+      'Product items data is missing or invalid.',
     );
   }
 
@@ -439,13 +441,13 @@ const addSkiHireIntoDB = async (req: Request) => {
       if (!productFile) {
         throw new AppError(
           StatusCodes.BAD_REQUEST,
-          `Product image for item "${item?.productName}" is missing.`
+          `Product image for item "${item?.productName}" is missing.`,
         );
       }
 
       const productPhotoUrl = await s3Services.uploadSingleFileToS3(
         productFile,
-        USER_UPLOADS_FOLDER
+        USER_UPLOADS_FOLDER,
       );
 
       return {
@@ -455,12 +457,12 @@ const addSkiHireIntoDB = async (req: Request) => {
         totalQty: Number(item.quantity),
         availableQty: Number(item.quantity),
       };
-    })
+    }),
   );
 
   const totalPrice = processedProductItems.reduce(
     (sum: number, item: any) => sum + Number(item?.price),
-    0
+    0,
   );
 
   const skiHireData = {
@@ -481,14 +483,14 @@ const addSkiHireIntoDB = async (req: Request) => {
 const reviewSkiHire = async (
   id: string,
   user: JwtPayload,
-  payload: Partial<IReview>
+  payload: Partial<IReview>,
 ) => {
   // Verify user exists
   const isExistsUser = await User.findOne({ email: user?.email });
   if (!isExistsUser) {
     throw new AppError(
       StatusCodes.NOT_FOUND,
-      'You cannot view this data because your account was not found.'
+      'You cannot view this data because your account was not found.',
     );
   }
 
@@ -496,7 +498,7 @@ const reviewSkiHire = async (
   if (isExistsUser?.role !== 'User') {
     throw new AppError(
       StatusCodes.FORBIDDEN,
-      'You cannot add a review because your account is not a user.'
+      'You cannot add a review because your account is not a user.',
     );
   }
 
@@ -509,12 +511,12 @@ const reviewSkiHire = async (
   //  (Optional) Prevent duplicate reviews by the same user
   const alreadyReviewed =
     skiHire.reviews?.some(
-      review => review.userId.toString() === isExistsUser._id.toString()
+      review => review.userId.toString() === isExistsUser._id.toString(),
     ) || false;
   if (alreadyReviewed) {
     throw new AppError(
       StatusCodes.BAD_REQUEST,
-      'You have already reviewed this skiHire.'
+      'You have already reviewed this skiHire.',
     );
   }
 
@@ -535,7 +537,7 @@ const reviewSkiHire = async (
   // Recalculate average rating
   const total: number = skiHire.reviews.reduce(
     (sum: number, r: IReview) => sum + (r.rating || 0),
-    0
+    0,
   );
   skiHire.averageRating = skiHire.reviews.length
     ? parseFloat((total / skiHire.reviews.length).toFixed(1))
@@ -683,7 +685,7 @@ export const updateSkiHireIntoDB = async (req: Request) => {
   if (!isExistsUser) {
     throw new AppError(
       StatusCodes.NOT_FOUND,
-      'You cannot view this data because your account was not found.'
+      'You cannot view this data because your account was not found.',
     );
   }
 
@@ -694,7 +696,7 @@ export const updateSkiHireIntoDB = async (req: Request) => {
   ) {
     throw new AppError(
       StatusCodes.FORBIDDEN,
-      'You are not authorized to update this ski hire service.'
+      'You are not authorized to update this ski hire service.',
     );
   }
 
@@ -709,7 +711,7 @@ export const updateSkiHireIntoDB = async (req: Request) => {
     const thumbnailFile = uploadedFilesUpdate.thumbnail[0];
     const thumbnailUrl = await s3Services.uploadSingleFileToS3(
       thumbnailFile,
-      USER_UPLOADS_FOLDER
+      USER_UPLOADS_FOLDER,
     );
     req.body.thumbnail = thumbnailUrl;
   }
@@ -727,7 +729,7 @@ export const updateSkiHireIntoDB = async (req: Request) => {
     } else {
       throw new AppError(
         StatusCodes.BAD_REQUEST,
-        'Product items data is invalid.'
+        'Product items data is invalid.',
       );
     }
 
@@ -775,7 +777,7 @@ export const updateSkiHireIntoDB = async (req: Request) => {
         if (productFile) {
           productPhoto = await s3Services.uploadSingleFileToS3(
             productFile,
-            USER_UPLOADS_FOLDER
+            USER_UPLOADS_FOLDER,
           );
         }
 
@@ -787,14 +789,14 @@ export const updateSkiHireIntoDB = async (req: Request) => {
           totalQty: Number(item.quantity),
           availableQty: Number(item.quantity),
         };
-      })
+      }),
     );
 
     req.body.items = processedProductItems;
 
     req.body.totalPrice = processedProductItems.reduce(
       (sum: number, item: any) => sum + item.price,
-      0
+      0,
     );
   }
 
@@ -806,7 +808,7 @@ export const updateSkiHireIntoDB = async (req: Request) => {
     {
       ...req.body,
     },
-    { new: true }
+    { new: true },
   );
 
   return result;
@@ -817,7 +819,7 @@ const deleteSkiHireIntoDB = async (id: string, user: JwtPayload) => {
   if (!isExistsUser) {
     throw new AppError(
       StatusCodes.NOT_FOUND,
-      'You cannot view this data because your account was not found.'
+      'You cannot view this data because your account was not found.',
     );
   }
 
@@ -829,7 +831,7 @@ const deleteSkiHireIntoDB = async (id: string, user: JwtPayload) => {
   if (skiHire?.owner.toString() !== isExistsUser?._id.toString()) {
     throw new AppError(
       StatusCodes.FORBIDDEN,
-      'You are not authorized to delete this ski hire.'
+      'You are not authorized to delete this ski hire.',
     );
   }
 

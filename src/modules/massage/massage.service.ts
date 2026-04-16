@@ -34,7 +34,7 @@ const getAllMassageFromDB = async (user: JwtPayload, query: any) => {
         primaryCategoryName: 'Massage',
         'subCategory.name': { $regex: query.category, $options: 'i' },
       },
-      { 'subCategory.$': 1 }
+      { 'subCategory.$': 1 },
     );
 
     const categoryIds = categories.map(c => c.subCategory?.[0]?._id);
@@ -75,14 +75,14 @@ const getAllMassageFromDB = async (user: JwtPayload, query: any) => {
           primaryCategoryName: 'Massage',
           'subCategory._id': item.category,
         },
-        { 'subCategory.$': 1 }
+        { 'subCategory.$': 1 },
       );
 
       return {
         ...item.toObject(),
         category: categoryDoc?.subCategory?.[0] || null,
       };
-    })
+    }),
   );
 
   return {
@@ -120,7 +120,7 @@ const getAllMyMassageFromDB = async (user: JwtPayload, query: any) => {
         primaryCategoryName: 'Massage',
         'subCategory.name': { $regex: query.category, $options: 'i' },
       },
-      { 'subCategory.$': 1 }
+      { 'subCategory.$': 1 },
     );
 
     const categoryIds = categories.map(c => c.subCategory?.[0]?._id);
@@ -162,14 +162,14 @@ const getAllMyMassageFromDB = async (user: JwtPayload, query: any) => {
           primaryCategoryName: 'Massage',
           'subCategory._id': item.category,
         },
-        { 'subCategory.$': 1 }
+        { 'subCategory.$': 1 },
       );
 
       return {
         ...item.toObject(),
         category: categoryDoc?.subCategory?.[0] || null,
       };
-    })
+    }),
   );
 
   return {
@@ -188,7 +188,7 @@ const getSingleMassageFromDB = async (id: string, user: JwtPayload) => {
   if (!isExistsUser) {
     throw new AppError(
       StatusCodes.NOT_FOUND,
-      'You cannot view this data because your account was not found.'
+      'You cannot view this data because your account was not found.',
     );
   }
   const massage = await Massage.findById(id)
@@ -214,7 +214,7 @@ const getSingleMassageFromDB = async (id: string, user: JwtPayload) => {
       primaryCategoryName: 'Massage',
       'subCategory._id': massage?.category,
     },
-    { 'subCategory.$': 1 }
+    { 'subCategory.$': 1 },
   );
 
   const subCategoryData = categoryDoc?.subCategory?.[0] || null;
@@ -232,7 +232,7 @@ const addMassageIntoDB = async (req: Request) => {
   if (!isExistsUser) {
     throw new AppError(
       StatusCodes.NOT_FOUND,
-      'You cannot view this data because your account was not found.'
+      'You cannot view this data because your account was not found.',
     );
   }
 
@@ -240,7 +240,7 @@ const addMassageIntoDB = async (req: Request) => {
   if (isExistsUser?.role !== 'Provider') {
     throw new AppError(
       StatusCodes.FORBIDDEN,
-      'You are not authorized to create a massage service.'
+      'You are not authorized to create a massage service.',
     );
   }
 
@@ -248,7 +248,7 @@ const addMassageIntoDB = async (req: Request) => {
   if (isExistsUser?.providerType !== 'Massage') {
     throw new AppError(
       StatusCodes.FORBIDDEN,
-      'Only providers with providerType : Massage can create a massage service.'
+      'Only providers with providerType : Massage can create a massage service.',
     );
   }
 
@@ -263,20 +263,20 @@ const addMassageIntoDB = async (req: Request) => {
   // const exists = subCategoryItems.some(
   //   item => item?._id.toString() === req.body?.category.toString()
   const exists = subCategoryItems.some(item =>
-    item?._id ? item._id.toString() === req.body?.category?.toString() : false
+    item?._id ? item._id.toString() === req.body?.category?.toString() : false,
   );
 
   if (!exists) {
     throw new AppError(
       StatusCodes.BAD_REQUEST,
-      'Invalid sub-category ID for Massage.'
+      'Invalid sub-category ID for Massage.',
     );
   }
 
   if (req.file) {
     const fileUrl = await s3Services.uploadSingleFileToS3(
       req.file,
-      USER_UPLOADS_FOLDER
+      USER_UPLOADS_FOLDER,
     );
     req.body.thumbnail = fileUrl;
   } else {
@@ -296,14 +296,14 @@ const addMassageIntoDB = async (req: Request) => {
 export const reviewMassage = async (
   id: string,
   user: JwtPayload,
-  payload: Partial<IReview>
+  payload: Partial<IReview>,
 ) => {
   // Verify user exists
   const isExistsUser = await User.findOne({ email: user?.email });
   if (!isExistsUser) {
     throw new AppError(
       StatusCodes.NOT_FOUND,
-      'You cannot view this data because your account was not found.'
+      'You cannot view this data because your account was not found.',
     );
   }
 
@@ -311,7 +311,7 @@ export const reviewMassage = async (
   if (isExistsUser?.role !== 'User') {
     throw new AppError(
       StatusCodes.FORBIDDEN,
-      'You cannot add a review because your account is not a user.'
+      'You cannot add a review because your account is not a user.',
     );
   }
 
@@ -324,13 +324,13 @@ export const reviewMassage = async (
   //  (Optional) Prevent duplicate reviews by the same user
   const alreadyReviewed =
     massage.reviews?.some(
-      review => review.userId.toString() === isExistsUser._id.toString()
+      review => review.userId.toString() === isExistsUser._id.toString(),
     ) || false;
 
   if (alreadyReviewed) {
     throw new AppError(
       StatusCodes.BAD_REQUEST,
-      'You have already reviewed this massage.'
+      'You have already reviewed this massage.',
     );
   }
 
@@ -354,12 +354,12 @@ export const reviewMassage = async (
   // rating, 0);
   const total = massage.reviews.reduce(
     (sum: number, r: IReview) => sum + (r?.rating || 0),
-    0
+    0,
   );
 
   // Recalculate average rating
   massage.averageRating = parseFloat(
-    (total / (massage.reviews.length || 1)).toFixed(1)
+    (total / (massage.reviews.length || 1)).toFixed(1),
   );
 
   // Save updated massage
@@ -383,7 +383,7 @@ const updateMassageIntoDB = async (req: Request) => {
   if (!existsUser) {
     throw new AppError(
       StatusCodes.NOT_FOUND,
-      'You cannot view this data because your account was not found.'
+      'You cannot view this data because your account was not found.',
     );
   }
 
@@ -396,13 +396,13 @@ const updateMassageIntoDB = async (req: Request) => {
 
     const subCategoryItems = category.subCategory || [];
     const isValidSubCategory = subCategoryItems.some(
-      item => item?._id.toString() === req.body.category?.toString()
+      (item: any) => item?._id.toString() === req.body.category?.toString(),
     );
 
     if (!isValidSubCategory) {
       throw new AppError(
         StatusCodes.BAD_REQUEST,
-        'Invalid sub-category ID for Massage.'
+        'Invalid sub-category ID for Massage.',
       );
     }
   }
@@ -411,7 +411,7 @@ const updateMassageIntoDB = async (req: Request) => {
   if (req.file) {
     const fileUrl = await s3Services.uploadSingleFileToS3(
       req.file,
-      USER_UPLOADS_FOLDER
+      USER_UPLOADS_FOLDER,
     );
     req.body.thumbnail = fileUrl;
   }
@@ -420,8 +420,8 @@ const updateMassageIntoDB = async (req: Request) => {
 
   // Handle priceByDuration safely (preserve _id for existing items)
   if (req.body?.priceByDuration) {
-    const existingPrices = existingMassage.priceByDuration.map(p =>
-      p.toObject()
+    const existingPrices = existingMassage.priceByDuration.map((p: any) =>
+      p?._id ? p.toObject() : p.toObject(),
     ); // existing items
     const incomingPrices = req.body.priceByDuration;
 
@@ -431,7 +431,7 @@ const updateMassageIntoDB = async (req: Request) => {
       if (item._id) {
         // Existing item: update by _id
         const existingItem = existingPrices.find(
-          p => p._id.toString() === item._id
+          p => p._id.toString() === item._id,
         );
         if (existingItem) {
           mergedPrices.push({
@@ -463,7 +463,7 @@ const updateMassageIntoDB = async (req: Request) => {
       .map(p => p._id?.toString())
       .filter(Boolean);
     const untouchedOld = existingPrices.filter(
-      p => !incomingIds.includes(p._id?.toString())
+      p => !incomingIds.includes(p._id?.toString()),
     );
 
     req.body.priceByDuration = [...mergedPrices]; // untouchedOld (when want to add previous price duration)
@@ -474,7 +474,7 @@ const updateMassageIntoDB = async (req: Request) => {
   const result = await Massage.findByIdAndUpdate(
     id,
     { $set: updateData },
-    { new: true }
+    { new: true },
   );
 
   return result;
@@ -485,7 +485,7 @@ const deleteMassageIntoDB = async (id: string, user: JwtPayload) => {
   if (!isExistsUser) {
     throw new AppError(
       StatusCodes.NOT_FOUND,
-      'You cannot view this data because your account was not found.'
+      'You cannot view this data because your account was not found.',
     );
   }
 
@@ -497,7 +497,7 @@ const deleteMassageIntoDB = async (id: string, user: JwtPayload) => {
   if (massage?.owner?.toString() !== isExistsUser?._id.toString()) {
     throw new AppError(
       StatusCodes.FORBIDDEN,
-      'You are not authorized to delete this massage.'
+      'You are not authorized to delete this massage.',
     );
   }
 

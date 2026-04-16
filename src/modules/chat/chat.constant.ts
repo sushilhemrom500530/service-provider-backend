@@ -41,9 +41,7 @@ export const SOCKET_EVENTS = {
   ERROR: "error",
 } as const;
 
-// Config
-export const CHAT_UPLOADS_FOLDER = "chat-media";
-
+ 
 export const FILE_SIZE_LIMITS = {
   IMAGE: 10 * 1024 * 1024,
   VIDEO: 100 * 1024 * 1024,

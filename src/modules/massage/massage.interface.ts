@@ -1,13 +1,13 @@
-import { Document, Types } from 'mongoose'; 
-import { IReview,IRefund } from './../common/common.interface';
- 
+import { Document, Types } from 'mongoose';
+import { IReview, IRefund } from './../common/common.interface';
+
 export interface IPriceByDuration {
+  _id?: Types.ObjectId;
   duration: string;
   amount: number;
 }
 
-
-export interface IMassage extends Document { 
+export interface IMassage extends Document {
   category: Types.ObjectId;
   owner: Types.ObjectId;
   thumbnail: string;
@@ -15,8 +15,8 @@ export interface IMassage extends Document {
   openTime: string;
   closeTime: string;
   priceByDuration: IPriceByDuration[];
-  serviceArea: string; 
-  amount: number; 
+  serviceArea: string;
+  amount: number;
   benefits: string;
   ourRecommendations: string;
   averageRating?: number;
