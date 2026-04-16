@@ -732,7 +732,7 @@ const getMyAllBookingIntoDB = async (user: JwtPayload, query: any) => {
       limit,
       totalPages: Math.ceil(filtered.length / limit),
     },
-    result: filtered.slice(startIndex, startIndex + limit),
+    result: filtered.slice(startIndex, startIndex + limit) || [],
   };
 };
 
