@@ -8,8 +8,8 @@ import helmet from 'helmet';
 import hpp from 'hpp';
 import path from 'path';
 const xss = require('xss-clean');
- 
-import { config } from './config'; 
+
+import { config } from './config';
 import globalErrorHandler from './middlewares/globalErrorHandler';
 import notFound from './middlewares/notFound';
 import router from './routes';
@@ -37,32 +37,36 @@ const getAllowedOrigins = (): string[] => {
 /**
  * Get CORS configuration options
  */
-const getCorsOptions = (allowedOrigins: string[]) => {
+const getCorsOptions = () => {
+  //  origin: (
+  //     origin: string | undefined,
+  //     callback: (error: Error | null, allow?: boolean) => void
+  //   ) => {
+  //     // Allow requests with no origin (mobile apps, curl, Postman)
+  //     if (!origin) {
+  //       return callback(null, true);
+  //     }
+
+  //     // Check if origin is in allowed list
+  //     if (allowedOrigins.includes(origin)) {
+  //       return callback(null, true);
+  //     }
+
+  //     // Allow any localhost origin in development
+  //     if (
+  //       process.env.NODE_ENV === 'development' &&
+  //       (origin.includes('localhost') || origin.includes('127.0.0.1'))
+  //     ) {
+  //       return callback(null, true);
+  //     }
+
+  //     console.log('CORS blocked origin:', origin);
+  //     callback(new Error('Not allowed by CORS'));
+  //   },
   return {
-    origin: (
-      origin: string | undefined,
-      callback: (error: Error | null, allow?: boolean) => void
-    ) => {
-      // Allow requests with no origin (mobile apps, curl, Postman)
-      if (!origin) {
-        return callback(null, true);
-      }
-
-      // Check if origin is in allowed list
-      if (allowedOrigins.includes(origin)) {
-        return callback(null, true);
-      }
-
-      // Allow any localhost origin in development
-      if (
-        process.env.NODE_ENV === 'development' &&
-        (origin.includes('localhost') || origin.includes('127.0.0.1'))
-      ) {
-        return callback(null, true);
-      }
-
-      console.log('CORS blocked origin:', origin);
-      callback(new Error('Not allowed by CORS'));
+    origin: (origin: any, callback: any) => {
+      // Allow all origins
+      callback(null, true);
     },
     credentials: true,
     methods: ['GET', 'POST', 'PUT', 'DELETE', 'PATCH', 'OPTIONS'],
@@ -76,10 +80,12 @@ const getCorsOptions = (allowedOrigins: string[]) => {
       'Connection',
       'User-Agent',
       'X-CSRF-Token',
+      'Origin',
+      'Access-Control-Allow-Origin',
     ],
     exposedHeaders: ['Content-Length', 'X-Foo', 'X-Bar'],
     preflightContinue: false,
-    optionsSuccessStatus: 204,
+    optionsSuccessStatus: 200, // Some legacy browsers choke on 204
     maxAge: 86400, // Cache preflight response for 24 hours
   };
 };
@@ -106,7 +112,7 @@ const getRateLimiter = () => {
 /**
  * Configure Helmet security headers
  */
-const getHelmetConfig = (allowedOrigins: string[]) => {
+const getHelmetConfig = () => {
   return helmet({
     hsts: {
       includeSubDomains: true,
@@ -138,7 +144,7 @@ const getHelmetConfig = (allowedOrigins: string[]) => {
         childSrc: ["'self'", 'blob:'],
         styleSrcAttr: ["'self'", "'unsafe-inline'", 'http:'],
         frameSrc: ["'self'"],
-        connectSrc: ["'self'", ...allowedOrigins],
+        connectSrc: ["'self'", '*'],
       },
     },
     dnsPrefetchControl: { allow: false },
@@ -149,9 +155,9 @@ const getHelmetConfig = (allowedOrigins: string[]) => {
     permittedCrossDomainPolicies: { permittedPolicies: 'none' },
     referrerPolicy: { policy: 'no-referrer' },
     xssFilter: true,
-    crossOriginEmbedderPolicy: process.env.NODE_ENV === 'production',
-    crossOriginOpenerPolicy: { policy: 'same-origin-allow-popups' },
-    crossOriginResourcePolicy: { policy: 'same-site' },
+    crossOriginEmbedderPolicy: false,
+    crossOriginOpenerPolicy: { policy: 'unsafe-none' },
+    crossOriginResourcePolicy: { policy: 'cross-origin' },
     originAgentCluster: true,
   });
 };
@@ -226,8 +232,7 @@ const getSecurityLoggingMiddleware = () => {
 
     // Log security-relevant information
     console.log(
-      `${timestamp} - ${req.method} ${
-        req.url
+      `${timestamp} - ${req.method} ${req.url
       } - IP: ${ip} - Origin: ${origin} - UA: ${userAgent?.substring(0, 100)}`
     );
 
@@ -257,18 +262,22 @@ const getSecurityErrorHandler = () => {
       return;
     }
 
-    if (error.message === 'Not allowed by CORS') {
-      console.warn(
-        `🛡️ CORS violation from origin: ${req.get('Origin')} - IP: ${req.ip}`
-      );
-      res.status(403).json({ error: 'CORS policy violation' });
-      return;
-    }
+
 
     // Use existing global error handler
     globalErrorHandler(error, req, res, next);
   };
 };
+
+// =====================
+// CORS Configuration
+// =====================
+
+const corsOptions = getCorsOptions();
+
+app.use(cors(corsOptions));
+app.options('*', cors(corsOptions));
+
 
 // =====================
 // Basic Express Setup
@@ -289,16 +298,6 @@ app.use(express.urlencoded({ extended: true, limit: '50mb' }));
 
 // Cookie parser
 app.use(cookieParser());
-
-// =====================
-// CORS Configuration
-// =====================
-
-const allowedOrigins = getAllowedOrigins();
-const corsOptions = getCorsOptions(allowedOrigins);
-
-app.use(cors(corsOptions));
-app.options('*', cors(corsOptions));
 
 // =====================
 // Static File Serving
@@ -330,7 +329,7 @@ app.use(passport.initialize());
 // Activity logging middleware
 app.use(activityLogger);
 
- 
+
 // =====================
 // Security Middlewares
 // =====================
@@ -340,7 +339,7 @@ app.use(getRateLimiter());
 
 
 // Helmet security headers
-app.use(getHelmetConfig(allowedOrigins));
+app.use(getHelmetConfig());
 
 // Additional security headers
 app.use(getAdditionalSecurityHeaders());
@@ -362,7 +361,7 @@ app.use(getSecurityLoggingMiddleware());
 // =====================
 // Routes
 // =====================
- 
+
 // Setup Swagger documentation
 if (process.env.NODE_ENV !== 'production') {
   setupSwagger(app);
