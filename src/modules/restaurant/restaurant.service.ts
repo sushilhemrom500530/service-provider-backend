@@ -1184,6 +1184,12 @@ const updateServiceFee = async (payload: any) => {
   return result;
 };
 
+const getServiceFee = async () => {
+  console.log('get service fee from db');
+  const restaurant = await Restaurant.findOne().select('serviceFee');
+  return restaurant?.serviceFee || 0;
+};
+
 export const RestaurantService = {
   getAllRestaurantFromDB,
   getAllMyRestaurantFromDB,
@@ -1193,4 +1199,5 @@ export const RestaurantService = {
   updateRestaurantIntoDB,
   deleteRestaurantIntoDB,
   updateServiceFee,
+  getServiceFee,
 };

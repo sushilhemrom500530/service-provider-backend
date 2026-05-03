@@ -97,6 +97,18 @@ const updateRestaurantServiceFee = catchAsync(
   },
 );
 
+const getRestaurantServiceFee = catchAsync(
+  async (req: Request, res: Response) => {
+    console.log('get service fee controller');
+    const result = await RestaurantService.getServiceFee();
+    sendResponse(res, {
+      code: StatusCodes.OK,
+      message: 'Restaurant Service fee fetched successfully',
+      data: result,
+    });
+  },
+);
+
 const deleteRestaurantIntoDB = catchAsync(
   async (req: Request, res: Response) => {
     const id = req.params.id;
@@ -119,4 +131,5 @@ export const RestaurantController = {
   updateRestaurantIntoDB,
   deleteRestaurantIntoDB,
   updateRestaurantServiceFee,
+  getRestaurantServiceFee,  
 };

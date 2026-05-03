@@ -93,6 +93,12 @@ router.patch(
   validateRequest(RestaurantValidations.updateServiceFee),
   RestaurantController.updateRestaurantServiceFee,
 );
+// update service fee
+router.get(
+  '/view/service-fee',
+  auth('Admin'),
+  RestaurantController.getRestaurantServiceFee,
+);
 
 // delete
 router.delete(
