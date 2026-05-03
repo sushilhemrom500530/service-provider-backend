@@ -414,7 +414,8 @@ const getMyBooking = async (user: JwtPayload, query: any) => {
     .populate(
       'user',
       '_id fullName email profileUrl address phoneNumber status',
-    );
+    )
+    .sort({ createdAt: -1 });
 
   // Pagination
   const page = Number(query?.page) || 1;
