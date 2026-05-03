@@ -101,12 +101,12 @@ const getAllBookingFromDB = async (user: JwtPayload, query: any) => {
     // pick only required product fields
     const product = booking.product
       ? {
-        _id: booking.product._id,
-        thumbnail: booking?.product?.thumbnail || '',
-        title: booking?.product?.title,
-        skiPassType: booking?.product?.skiPassType || '',
-        serviceArea: booking?.product?.serviceArea || '',
-      }
+          _id: booking.product._id,
+          thumbnail: booking?.product?.thumbnail || '',
+          title: booking?.product?.title,
+          skiPassType: booking?.product?.skiPassType || '',
+          serviceArea: booking?.product?.serviceArea || '',
+        }
       : null;
 
     // slots mapping (same logic)
@@ -999,10 +999,11 @@ const addBookingIntoDB = async (user: JwtPayload, payload: any) => {
         return item;
       });
       // collect again total price with service fee
-      const newTotalPrice = validatedItems.reduce((a, b) => a + b.total, 0);
-      totalPrice = newTotalPrice + matchedProduct?.serviceFee || 0;
-
+      // const newTotalPrice = validatedItems.reduce((a, b) => a + b.total, 0);
+      // totalPrice = newTotalPrice + matchedProduct?.serviceFee || 0;
       // totalPrice = validatedItems.reduce((a, b) => a + b.total, 0);
+
+      totalPrice = payload.totalPrice || 0;
 
       const validSlotIds = matchedProduct.availableSlots.map((s: any) =>
         s._id.toString(),
@@ -1057,7 +1058,7 @@ const addBookingIntoDB = async (user: JwtPayload, payload: any) => {
               `Insufficient quantity for ${item.productName}. Only ${item.availableQty} units are available. `,
             );
 
-          totalPrice += item.price * booked.quantity;
+          // totalPrice += item.price * booked.quantity;
 
           return {
             ...item.toObject(),
@@ -1066,6 +1067,8 @@ const addBookingIntoDB = async (user: JwtPayload, payload: any) => {
         }
         return item;
       });
+
+      totalPrice = payload.totalPrice || 0;
 
       await SkiHire.updateOne(
         { _id: matchedProduct._id },
@@ -1082,12 +1085,14 @@ const addBookingIntoDB = async (user: JwtPayload, payload: any) => {
           'Start & End date/time required.',
         );
 
-      totalPrice = matchedProduct.amount || 0;
+      // totalPrice = matchedProduct.amount || 0;
+      totalPrice = payload.totalPrice || 0;
       break;
     }
     // ski pass
     case 'Ski_Pass': {
-      totalPrice = matchedProduct.amount || 0;
+      // totalPrice = matchedProduct.amount || 0;
+      totalPrice = payload.totalPrice || 0;
       payload.ticketNumber = `TKT-${generateTicketNumber()}`;
       // ticketNumber = `TKT-${Date.now().toString().slice(-4)}-${generateTicketNumber()}`;
       break;

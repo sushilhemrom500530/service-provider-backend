@@ -28,8 +28,8 @@ const seedUsers = async () => {
   try {
     const usersData = [
       {
-        email: 'sushil500530@gmail.com',
-        password: '12345678',
+        email: process.env.ADMIN_EMAIL || 'sushil500530@gmail.com',
+        password: process.env.ADMIN_PASSWORD || '12345678',
         role: 'Admin',
         status: 'Active',
       },
@@ -57,7 +57,6 @@ const seedUsers = async () => {
   }
 };
 
- 
 // Connect to MongoDB
 const connectToDatabase = async () => {
   try {
