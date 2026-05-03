@@ -618,11 +618,13 @@ const getMyAllBookingIntoDB = async (user: JwtPayload, query: any) => {
   if (!isExistsUser)
     throw new AppError(StatusCodes.NOT_FOUND, 'User not found.');
 
-  const bookings = await Booking.find({ user: isExistsUser._id }).populate({
-    path: 'product',
-    select:
-      'title thumbnail serviceFee serviceArea description category items extraChargePerHour extraChargePerHours',
-  });
+  const bookings = await Booking.find({ user: isExistsUser._id })
+    .populate({
+      path: 'product',
+      select:
+        'title thumbnail serviceFee serviceArea description category items extraChargePerHour extraChargePerHours',
+    })
+    .sort({ createdAt: -1 });
 
   const bookingsWithCategory = await Promise.all(
     bookings.map(async b => {
