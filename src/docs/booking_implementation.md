@@ -34,6 +34,8 @@ Validates the booking and returns what the frontend needs to open the Stripe pay
 
 **Price:** for **Ski Pass** the server calculates the price itself: pass `amount` × `personCount` (default 1). Any `totalPrice` sent by the app is ignored. For the other categories, send `totalPrice` (in euros, not cents); it is required.
 
+> **Update:** every category is now priced by the server and `totalPrice` from the app is ignored. See [Server pricing for every category](#server-pricing-for-every-category).
+
 | Category | Required fields | Optional |
 | --- | --- | --- |
 | Ski Pass | `date` | `personCount` (guests, default 1), `time` |
@@ -187,9 +189,11 @@ The backend talks to Stripe twice: once to create the payment, once to verify it
 | Paid, but stock or slot is gone by step 10 | Booking is rejected and the payment is refunded in full automatically |
 | Same `paymentIntentId` sent twice | Second call gets 409; one payment = one booking |
 | Payment made for another user, product or amount | Rejected (403 or 400) |
-| User closes the app after paying, before step 7 | Money is taken but no booking exists. Not handled yet: needs a Stripe webhook (`STRIPE_WEBHOOK_SECRET` is already in config) |
+| User closes the app after paying, before step 7 | Money is taken but no booking exists. Not handled yet: needs a Stripe webhook (`STRIPE_WEBHOOK_SECRET` is already in config). **Update: handled now** by the Stripe webhook, see [Stripe webhook](#stripe-webhook-paid-but-app-closed) |
 
 Still open: for Ski Hire, Transport, Restaurant and Massage, `totalPrice` is still chosen by the app in step 1. The backend guarantees the charged amount equals the saved price, but does not yet compute those prices from the product's own rates.
+
+> **Update:** done. All five categories are priced by the server; see [Server pricing for every category](#server-pricing-for-every-category).
 
 ## Automatic completion (Completed status)
 
@@ -343,3 +347,76 @@ Overtime (`timeLabel` "Over Time…" and `overTimeAmount` in `GET /booking/:id`)
 - [ ] Send the same dates and `bookingItems` to `/booking/intent` and `/booking/create`.
 - [ ] Show the "not available for these dates" message from the API when a rental overlaps.
 - [ ] Send phone numbers with country code; send nothing (not "N/A") when there is none.
+
+## Server pricing for every category
+
+`/booking/intent` now calculates the price for all five categories; `totalPrice` sent by the app is ignored. A modified app can no longer pay less.
+
+| Category | Price | Needed in the body |
+| --- | --- | --- |
+| Ski Pass | pass `amount` × `personCount` (default 1) | `personCount` |
+| Ski Hire | Σ item `price` × `quantity` × rental units (`priceUnit`) | `startDateAndTime`, `endDateAndTime`, `bookingItems` |
+| Restaurant | Σ seat `price` × `quantity` + restaurant `serviceFee` | `bookingItems`, `slots` |
+| Massage | `amount` of the chosen entry in `priceByDuration` (or the listing `amount` if it has none) | `duration`, exactly as listed (e.g. `"60 min"`; spaces and case don't matter) |
+| Transport | listing `amount`, once per booking | `startDateAndTime`, `endDateAndTime` |
+
+- A Massage `duration` that is not in the listing is rejected with the list of valid durations. This also stops wrong durations ("23 hr 19 min") and €0 massage bookings.
+- A listing without a valid price (0 or missing) can't be booked.
+- **To confirm with the business:** Transport is charged `amount` once; `insuranceFee` and `maintainCharge` are **not** added, and the length of the rental doesn't change the price. Restaurant `serviceFee` is added once as a flat amount. If either rule is different, it is a one-line change in `calculateServerPrice` (`booking.service.ts`).
+
+## Stripe webhook (paid but app closed)
+
+If the customer pays and the app closes before `/booking/create`, Stripe's `payment_intent.succeeded` webhook now creates the booking. If the booking is rejected at that point (for example, stock sold out), the payment is refunded.
+
+How it works:
+
+1. `/booking/intent` also saves the booking request (a "booking draft") with the PaymentIntent id.
+2. Whoever comes first, the app (`/booking/create`) or the webhook, creates the booking. The draft is claimed atomically, so one payment can never create two bookings.
+3. If the webhook was first, `/booking/create` returns the booking it created, with 200 (it waits up to 5 s if it is still being created). If that booking failed and was refunded, `/booking/create` returns 400 with the reason.
+
+Setup, once per environment:
+
+1. Stripe Dashboard → Developers → Webhooks → **Add endpoint**.
+2. URL: `https://<your-backend>/api/v1/booking/webhook`. Event: `payment_intent.succeeded`.
+3. Copy the signing secret (`whsec_...`) into `.env` as `STRIPE_WEBHOOK_SECRET`, then restart.
+4. For local testing: `stripe listen --forward-to localhost:5000/api/v1/booking/webhook` and use the `whsec_...` it prints.
+
+The webhook endpoint needs no login; every call is verified with the Stripe signature, and calls without a valid signature get 400.
+
+## Error status codes
+
+Errors thrown by the API now return their real HTTP status (400, 401, 403, 404, 409, ...) instead of 500. The body is unchanged in shape:
+
+```json
+{ "success": false, "message": "End date must be later than start date.", "error": { "name": "AppError", "code": 400, "message": "End date must be later than start date." } }
+```
+
+## Dates must include a timezone
+
+`date`, `startDateAndTime` and `endDateAndTime` that contain a time must end with `Z` or an offset, e.g. `"2026-05-30T20:00:00+02:00"` or `"2026-05-30T18:00:00Z"`. A time without a timezone (`"2026-05-30T20:00"`) is rejected with 400: the server would read it as UTC and the booking could move to another day (restaurant on 30 May showing as 31 May). A date without a time (`"2026-05-30"`) is still accepted.
+
+## Restaurant slots
+
+New and edited restaurant slots are checked: the times must be readable (`"7:00 PM"` or `"19:00"`), the end must be after the start, and a slot can be at most 6 hours. A slot may cross midnight (`"10:30 PM"` – `"12:30 AM"`), but `"10:30 PM"` – `"12:30 PM"` (14 hours, a typo) is rejected. Existing broken slots must be corrected by the restaurant owner.
+
+## Transport `personCount`
+
+`personCount` (seats) on Transport listings is now a number in the database, so it is returned as `4`, not `"4"`. Old listings are read as numbers when loaded through the model; endpoints that use raw (lean) queries may still return the old string until the listing is saved again.
+
+## Overtime in booking lists
+
+The overtime rule (only for `Active`/`Pending` rentals that have not been handed over) now applies to every endpoint: `GET /booking/:id`, `GET /booking/my-booking` and `GET /booking/itinerary`. Completed bookings show no overtime.
+
+## Data and account actions (not code)
+
+| Item | Action | Who |
+| --- | --- | --- |
+| Owner phone "N/A" on existing providers | Run `npm run fix:phone-numbers` (dry run), then with `--apply` | Backend, on the production database |
+| Test listings | `npm run report:suspicious-listings` lists them; delete from the admin panel | Admin |
+| Stripe test secret key in the app's git history | Roll the key in Stripe Dashboard → Developers → API keys; put the new key only in the backend `.env` | Account owner |
+
+## Reviews on listings with incomplete old data
+
+Posting a review (`POST /ski-hire/review/:id`, and the same for Ski Pass, Transport, Restaurant and Massage) used to save and re-validate the **whole** listing. A listing with an old invalid field (for example a Ski Hire item without `productPhoto`) then made every review fail with 400 "Path `productPhoto` is required.", even though the review itself was valid.
+
+Reviews now validate only what they change (the new review and `averageRating`). The same applies when stock is returned on hand-over, cancel and the Ski Hire job, so those no longer fail on such listings. New listings are still fully validated when they are created or edited.

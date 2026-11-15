@@ -6,7 +6,7 @@ export interface ITransport extends Document {
   owner: Types.ObjectId;
   thumbnail: string;
   title: string;
-  personCount: string;
+  personCount: number;
   milage: string;
   power: string;
   extraChargePerHours: number;

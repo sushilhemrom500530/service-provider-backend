@@ -545,7 +545,7 @@ const reviewSkiHire = async (
     : 0;
 
   // Save updated skiHire
-  await skiHire.save();
+  await skiHire.save({ validateModifiedOnly: true });
 
   return skiHire;
 };

@@ -363,7 +363,7 @@ export const reviewMassage = async (
   );
 
   // Save updated massage
-  await massage.save();
+  await massage.save({ validateModifiedOnly: true });
 
   return massage;
 };

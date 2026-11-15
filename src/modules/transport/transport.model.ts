@@ -24,8 +24,9 @@ const transportSchema = new Schema<ITransport>(
       required: true,
       trim: true,
     },
+    // seats in the vehicle (was String, so "4" was returned next to numbers)
     personCount: {
-      type: String,
+      type: Number,
     },
     milage: {
       type: String,

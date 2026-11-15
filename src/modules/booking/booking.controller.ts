@@ -25,7 +25,7 @@ const getSingleBookingFromDB = catchAsync(
     const id = req.params.id;
     const user = req.user as JwtPayload;
 
-    const result = await BookingService.getSingleBookingFromDB(id, user);
+    const result = await BookingService.getSingleBookingFromDB(id as string, user);
     sendResponse(res, {
       code: StatusCodes.OK,
       message: 'Booking fetched successfully',
@@ -100,6 +100,15 @@ const createPaymentIntent = catchAsync(async (req: Request, res: Response) => {
     message: 'Payment intent created successfully',
     data: result,
   });
+});
+
+// Stripe webhook (raw body, no auth; verified by Stripe signature)
+const stripeWebhook = catchAsync(async (req: Request, res: Response) => {
+  const result = await BookingService.handleStripeWebhook(
+    req.body as Buffer,
+    req.headers['stripe-signature'] as string | undefined,
+  );
+  res.status(StatusCodes.OK).json(result);
 });
 
 const addBookingIntoDB = catchAsync(async (req: Request, res: Response) => {
@@ -193,6 +202,7 @@ export const BookingController = {
   getSingleBookingFromDB,
   addBookingIntoDB,
   createPaymentIntent,
+  stripeWebhook,
   getMyAllBookingIntoDB,
   updateBookingStatus,
   updatePermitBookingStatus,

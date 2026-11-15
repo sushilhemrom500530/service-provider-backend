@@ -17,6 +17,7 @@ import Stripe from 'stripe';
 import crypto from 'crypto';
 import stripe from './../../utils/stripe';
 import { config } from './../../config';
+import { BookingDraft } from './bookingDraft.model';
 import { Wallet } from './../wallet/wallet.model';
 import { WalletTransactionType } from './../wallet/wallet.interface';
 import { format } from 'date-fns';
@@ -36,6 +37,10 @@ import {
 // `owner._id` is the provider's user id, used to start a chat.
 const PROVIDER_CONTACT_FIELDS =
   '_id fullName phoneNumber profileUrl providerType';
+
+// A rental is "open" (time left / overtime is shown) only in these states
+const isOpenRentalStatus = (status: unknown) =>
+  ['Active', 'Pending'].includes(String(status));
 
 const getAllBookingFromDB = async (user: JwtPayload, query: any) => {
   const isExistsUser = await User.findOne({ email: user?.email });
@@ -523,7 +528,12 @@ const getMyBooking = async (user: JwtPayload, query: any) => {
     let label: string | undefined;
     let overTimeAmount: number = 0;
 
-    if (['Ski_Hire', 'Transport'].includes(booking?.category)) {
+    // overtime only while the rental is still open (same rule as GET /booking/:id)
+    if (
+      ['Ski_Hire', 'Transport'].includes(booking?.category) &&
+      isOpenRentalStatus(booking?.bookingStatus) &&
+      !isNaN(endTime.getTime())
+    ) {
       if (!booking?.isHandOver) {
         const now = new Date();
 
@@ -730,7 +740,12 @@ const getMyAllBookingIntoDB = async (user: JwtPayload, query: any) => {
     let timeLabel: string | undefined;
     let overTimeAmount = 0;
 
-    if (['Ski_Hire', 'Transport'].includes(b.category) && b.endDateAndTime) {
+    if (
+      ['Ski_Hire', 'Transport'].includes(b.category) &&
+      b.endDateAndTime &&
+      isOpenRentalStatus(b.bookingStatus) &&
+      !b.isHandOver
+    ) {
       const now = new Date(),
         endTime = new Date(b.endDateAndTime);
       const diffMs = now.getTime() - endTime.getTime();
@@ -940,8 +955,72 @@ const calculateServerPrice = (
     return Math.round(total * 100) / 100;
   }
 
+  // Restaurant: Σ seat price x seats booked + the restaurant's service fee
+  if (providerType === 'Restaurant') {
+    let total = 0;
+    for (const booked of payload.bookingItems || []) {
+      const item = product?.items?.find(
+        (i: any) => i._id.toString() === booked.itemId?.toString(),
+      );
+      if (!item)
+        throw new AppError(
+          StatusCodes.BAD_REQUEST,
+          `Invalid booking item: ${booked.itemId}`,
+        );
+      total += Number(item.price) * Number(booked.quantity);
+    }
+    total += Number(product?.serviceFee || 0);
+    return Math.round(total * 100) / 100;
+  }
+
+  // Massage: the price of the chosen duration (priceByDuration),
+  // or the listing amount when it has no duration prices
+  if (providerType === 'Massage') {
+    const options: any[] = product?.priceByDuration || [];
+    if (!options.length) {
+      const amount = Number(product?.amount);
+      if (!amount || amount <= 0)
+        throw new AppError(
+          StatusCodes.BAD_REQUEST,
+          'This massage has no valid price.',
+        );
+      return Math.round(amount * 100) / 100;
+    }
+
+    const wanted = normalizeDuration(payload.duration);
+    const option = options.find(o => normalizeDuration(o.duration) === wanted);
+    if (!wanted || !option)
+      throw new AppError(
+        StatusCodes.BAD_REQUEST,
+        `Choose one of the available durations: ${options.map(o => o.duration).join(', ')}.`,
+      );
+    if (!(Number(option.amount) > 0))
+      throw new AppError(
+        StatusCodes.BAD_REQUEST,
+        'This massage duration has no valid price.',
+      );
+    return Math.round(Number(option.amount) * 100) / 100;
+  }
+
+  // Transport: the listing amount for the booking
+  if (providerType === 'Transport') {
+    const amount = Number(product?.amount);
+    if (!amount || amount <= 0)
+      throw new AppError(
+        StatusCodes.BAD_REQUEST,
+        'This transport has no valid price.',
+      );
+    return Math.round(amount * 100) / 100;
+  }
+
   return null;
 };
+
+// "60 min", "60min", " 60 MIN " -> "60min"
+const normalizeDuration = (value: unknown) =>
+  String(value ?? '')
+    .toLowerCase()
+    .replace(/\s+/g, '');
 
 const MS_PER_HOUR = 60 * 60 * 1000;
 const MS_PER_DAY = 24 * MS_PER_HOUR;
@@ -1074,6 +1153,22 @@ const validateBookingRequest = async (user: JwtPayload, payload: any) => {
     throw new AppError(StatusCodes.NOT_FOUND, 'Product owner not found.');
 
   const providerType = productOwner.providerType as string;
+
+  // ----- timezone rule -----
+  // A date with a time but no timezone ("2026-05-30T20:00") is read by the
+  // server as UTC, which shifts the booking by the user's offset (even a day).
+  for (const field of ['date', 'startDateAndTime', 'endDateAndTime']) {
+    const v = payload[field];
+    if (
+      typeof v === 'string' &&
+      /T\d{2}:\d{2}/.test(v) &&
+      !/(Z|[+-]\d{2}:?\d{2})$/i.test(v.trim())
+    )
+      throw new AppError(
+        StatusCodes.BAD_REQUEST,
+        `${field} must include a timezone, e.g. "2026-05-30T20:00:00+02:00" or "2026-05-30T18:00:00Z".`,
+      );
+  }
 
   // ----- date rules -----
   if (['Ski_Pass', 'Restaurant', 'Massage'].includes(providerType)) {
@@ -1260,6 +1355,8 @@ const createPaymentIntentIntoDB = async (user: JwtPayload, payload: any) => {
     );
   }
 
+  await saveBookingDraft(paymentIntent.id, dbUser, payload);
+
   return {
     paymentIntentId: paymentIntent.id,
     clientSecret: paymentIntent.client_secret,
@@ -1271,6 +1368,22 @@ const createPaymentIntentIntoDB = async (user: JwtPayload, payload: any) => {
     // Ski Hire only: how the price was calculated
     ...(rental && { priceUnit: rental.unit, rentalUnits: rental.units }),
   };
+};
+
+// Keep a copy of the booking request so the Stripe webhook can create the
+// booking if the app never calls /booking/create (closed after paying)
+const saveBookingDraft = async (
+  paymentIntentId: string,
+  dbUser: any,
+  payload: any,
+) => {
+  const { paymentIntentId: _p, transactionId: _t, ...body } = payload || {};
+  await BookingDraft.create({
+    paymentIntentId,
+    user: dbUser._id,
+    userEmail: dbUser.email,
+    payload: JSON.parse(JSON.stringify(body)),
+  });
 };
 
 /**
@@ -1370,11 +1483,178 @@ const addBookingIntoDB = async (user: JwtPayload, payload: any) => {
   const paymentIntentId: string =
     payload.paymentIntentId || payload.transactionId;
 
+  // Already booked by the Stripe webhook (or a retry)? Return that booking.
+  const existing = await findBookingForPayment(user, paymentIntentId);
+  if (existing) return existing;
+
   const paymentIntent = await verifyBookingPayment(
     user,
     payload,
     paymentIntentId,
   );
+
+  return finalizePaidBooking(user, payload, paymentIntent);
+};
+
+/**
+ * If a booking was already created for this payment (by the webhook or an
+ * earlier call), return it. Waits up to ~5 s while it is being created.
+ */
+const findBookingForPayment = async (
+  user: JwtPayload,
+  paymentIntentId: string,
+) => {
+  if (!paymentIntentId) return null;
+
+  for (let attempt = 0; attempt < 10; attempt++) {
+    const draft = await BookingDraft.findOne({ paymentIntentId });
+    if (!draft || draft.userEmail !== user?.email) return null;
+
+    if (draft.status === 'completed' && draft.booking)
+      return Booking.findById(draft.booking);
+    if (draft.status === 'failed')
+      throw new AppError(
+        StatusCodes.BAD_REQUEST,
+        draft.error || 'This booking could not be created.',
+      );
+    if (draft.status !== 'processing') return null;
+
+    await new Promise(resolve => setTimeout(resolve, 500));
+  }
+
+  throw new AppError(
+    StatusCodes.CONFLICT,
+    'This booking is still being created. Please refresh in a moment.',
+  );
+};
+
+/**
+ * Creates the booking for a verified, succeeded payment. Used by
+ * POST /booking/create and by the Stripe webhook. The draft is "claimed"
+ * atomically so the same payment can never create two bookings.
+ */
+const finalizePaidBooking = async (
+  user: JwtPayload,
+  payload: any,
+  paymentIntent: Stripe.PaymentIntent,
+) => {
+  const draftExists = await BookingDraft.exists({
+    paymentIntentId: paymentIntent.id,
+  });
+  if (draftExists) {
+    const claimed = await BookingDraft.findOneAndUpdate(
+      { paymentIntentId: paymentIntent.id, status: 'pending' },
+      { $set: { status: 'processing' } },
+      { new: true },
+    );
+    if (!claimed) {
+      const existing = await findBookingForPayment(user, paymentIntent.id);
+      if (existing) return existing;
+      throw new AppError(
+        StatusCodes.CONFLICT,
+        'This payment has already been used for a booking.',
+      );
+    }
+  }
+
+  try {
+    const booking = await createBookingFromPayment(
+      user,
+      payload,
+      paymentIntent,
+    );
+    if (draftExists)
+      await BookingDraft.updateOne(
+        { paymentIntentId: paymentIntent.id },
+        { $set: { status: 'completed', booking: (booking as any)?._id } },
+      );
+    return booking;
+  } catch (error: any) {
+    if (draftExists)
+      await BookingDraft.updateOne(
+        { paymentIntentId: paymentIntent.id },
+        { $set: { status: 'failed', error: error?.message } },
+      );
+    throw error;
+  }
+};
+
+/**
+ * POST /booking/webhook (Stripe). On `payment_intent.succeeded` it creates
+ * the booking from the saved draft if the app has not done it yet; if the
+ * booking is rejected the payment is refunded (same rules as /booking/create).
+ */
+const handleStripeWebhook = async (rawBody: Buffer, signature?: string) => {
+  if (!config.stripe.webhookSecret)
+    throw new AppError(
+      StatusCodes.INTERNAL_SERVER_ERROR,
+      'Stripe webhook secret is not configured.',
+    );
+
+  let event: Stripe.Event;
+  try {
+    event = stripe.webhooks.constructEvent(
+      rawBody,
+      signature || '',
+      config.stripe.webhookSecret,
+    );
+  } catch (error: any) {
+    throw new AppError(
+      StatusCodes.BAD_REQUEST,
+      `Webhook signature verification failed: ${error?.message}`,
+    );
+  }
+
+  if (event.type !== 'payment_intent.succeeded')
+    return { received: true, handled: false };
+
+  const paymentIntent = event.data.object as Stripe.PaymentIntent;
+  const draft = await BookingDraft.findOne({
+    paymentIntentId: paymentIntent.id,
+  });
+
+  // no draft (paid outside /booking/intent) or already handled by the app
+  if (!draft || draft.status !== 'pending')
+    return { received: true, handled: false };
+
+  const user = { email: draft.userEmail } as JwtPayload;
+  const payload = { ...draft.payload, paymentIntentId: paymentIntent.id };
+
+  try {
+    const fresh = await verifyBookingPayment(user, payload, paymentIntent.id);
+    await finalizePaidBooking(user, payload, fresh);
+  } catch (error: any) {
+    // finalizePaidBooking already refunds rejected bookings; a payment that
+    // fails verification here is refunded too, unless it was already used
+    const usedAlready = error instanceof AppError && error.code === StatusCodes.CONFLICT;
+    const stillPending = await BookingDraft.exists({
+      paymentIntentId: paymentIntent.id,
+      status: 'pending',
+    });
+    if (!usedAlready && stillPending) {
+      await stripe.refunds
+        .create({ payment_intent: paymentIntent.id })
+        .catch(() => null);
+      await BookingDraft.updateOne(
+        { paymentIntentId: paymentIntent.id },
+        { $set: { status: 'failed', error: error?.message } },
+      );
+    }
+    console.error(
+      `Stripe webhook: booking for ${paymentIntent.id} not created: ${error?.message}`,
+    );
+  }
+
+  return { received: true, handled: true };
+};
+
+// Original addBookingIntoDB body: refund-on-failure around the booking logic
+const createBookingFromPayment = async (
+  user: JwtPayload,
+  payload: any,
+  paymentIntent: Stripe.PaymentIntent,
+) => {
+  payload = { ...payload };
 
   // the existing logic stores this as Payment.transactionId
   payload.transactionId = paymentIntent.id;
@@ -1889,7 +2169,7 @@ const completeBookingIntoDB = async (user: JwtPayload, bookingId: string) => {
           );
         }
       });
-      await skiHire.save();
+      await skiHire.save({ validateModifiedOnly: true });
     }
   }
 
@@ -2117,7 +2397,7 @@ const refundBookingIntoDB = async (
 
   product.refunds.push(newRefund);
 
-  await product.save();
+  await product.save({ validateModifiedOnly: true });
 
   return result;
 };
@@ -2168,6 +2448,7 @@ export const BookingService = {
   getSingleBookingFromDB,
   addBookingIntoDB,
   createPaymentIntentIntoDB,
+  handleStripeWebhook,
   getMyAllBookingIntoDB,
   updateBookingIntoDB,
   updatePermitBookingIntoDB,

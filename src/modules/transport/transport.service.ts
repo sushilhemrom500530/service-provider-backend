@@ -351,7 +351,7 @@ export const reviewTransport = async (
     : 0;
 
   // Save updated transport
-  await transport.save();
+  await transport.save({ validateModifiedOnly: true });
 
   return transport;
 };

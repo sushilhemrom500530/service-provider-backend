@@ -16,6 +16,7 @@ import router from './routes';
 import { setupSwagger } from './docs/swagger';
 import passport from './config/passport';
 import activityLogger from './middlewares/activityLogger';
+import { BookingController } from './modules/booking/booking.controller';
 
 // Create Express application
 const app = express();
@@ -291,6 +292,14 @@ app.disable('x-powered-by');
 
 // Compression middleware
 app.use(compression());
+
+// Stripe webhook: needs the RAW body to verify the Stripe signature,
+// so it is mounted before the JSON body parser
+app.post(
+  '/api/v1/booking/webhook',
+  express.raw({ type: 'application/json' }),
+  BookingController.stripeWebhook,
+);
 
 // Body parser with security limits
 app.use(express.json({ limit: '50mb' }));

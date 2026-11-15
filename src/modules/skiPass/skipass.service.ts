@@ -232,7 +232,7 @@ export const reviewSkiPass = async (
     : 0;
 
   // Save updated SkiPass
-  await skiPass.save();
+  await skiPass.save({ validateModifiedOnly: true });
 
   return skiPass;
 };

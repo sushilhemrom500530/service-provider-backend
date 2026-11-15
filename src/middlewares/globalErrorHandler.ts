@@ -2,6 +2,7 @@ import { NextFunction, Request, Response } from 'express';
 import status from 'http-status';
 import mongoose from 'mongoose';
 import { ZodError } from 'zod';
+import AppError from '../errors/AppErro';
 
 const globalErrorHandler = (
   err: any,
@@ -15,9 +16,25 @@ const globalErrorHandler = (
   let error: any = err;
 
   // ===============================
+  //   APP ERROR (thrown on purpose)
+  // ===============================
+  // AppError carries its HTTP status in `code` (400, 401, 404, 409...).
+  // Without this branch every AppError was sent as 500.
+  if (
+    err instanceof AppError &&
+    Number.isInteger(err.code) &&
+    err.code >= 400 &&
+    err.code <= 599
+  ) {
+    statusCode = err.code;
+    message = err.message;
+    error = { name: err.name, code: err.code, message: err.message };
+  }
+
+  // ===============================
   //      ZOD VALIDATION ERROR
   // ===============================
-  if (err instanceof ZodError) {
+  else if (err instanceof ZodError) {
     statusCode = status.BAD_REQUEST;
     message = 'Validation Error';
     error = {

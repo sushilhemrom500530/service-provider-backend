@@ -231,7 +231,7 @@ const startSkiHireRestoreJob = () => {
           }
         });
 
-        await skiHire.save();
+        await skiHire.save({ validateModifiedOnly: true });
 
         // Set booking status to completed
         booking.bookingStatus = 'Completed';
