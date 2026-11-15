@@ -207,6 +207,66 @@ A scheduled job (`src/jobs/automaticUpdateJobService.ts`) moves past bookings to
 
 For Ski Pass, the full date **and** time live in `date` (ISO string). `time` and `startDateAndTime` are only filled if the app sends them; the server does not derive `time` from `date`, because `date` is stored in UTC and could show the wrong hour. Read the time from `date` and convert it to local time in the app.
 
+The app now also sends `time` as `"HH:mm"` (the arrival time in local time). It is saved exactly as sent and returned in every booking response. There is no `startTime` field; `startDateAndTime` is used by Transport only, so it stays `null` for Ski Pass.
+
+## Ski Pass approval and provider notification
+
+- **Ski Pass bookings are approved automatically.** A paid Ski Pass is a ready-to-use ticket, so `/booking/create` saves it with `isPermitted: true`. Other categories still start as `isPermitted: false` and are approved by the provider with `PATCH /api/v1/booking/update-permit/:id` (body `{ "isPermitted": true }`).
+- **The provider is notified of every new booking** (all categories), with `type: "booking"` and title `New Booking`. For categories that need approval, the message says the booking is waiting for approval. The customer still gets the `Payment Successful` notification as before.
+
+## Provider contact in booking responses
+
+Customer-facing booking endpoints now include the provider under `product.owner`, so the user can call or chat with the provider from the booking:
+
+| Endpoint | Where |
+| --- | --- |
+| `GET /api/v1/booking/:id` | `data.product.owner` |
+| `GET /api/v1/booking/my-booking` | `product.owner` on each booking |
+| `GET /api/v1/booking/itinerary` | `product.owner` on each booking |
+| `GET /api/v1/booking/my-booking-home` | `product.owner` on each booking |
+
+```json
+"owner": {
+  "_id": "6650ab...",
+  "fullName": "Alpine Pass Co.",
+  "phoneNumber": "+33 6 12 34 56 78",
+  "profileUrl": "https://...",
+  "providerType": "Ski_Pass"
+}
+```
+
+`owner._id` is the provider's user id; use it as the other participant to open a chat. Email, wallet and other private fields are not returned.
+
+## Fixing old Ski Pass totals
+
+Bookings created before the price fix were saved with the price of one pass, or 0. Known cases:
+
+| Ticket | Guests × price | Saved | Should be |
+| --- | --- | --- | --- |
+| TKT-851897 | 3 × €220 | €0 | €660 |
+| TKT-499858 | 5 × €2 | €2 | €10 |
+| TKT-313001 | 3 × €5 | €5 | €15 |
+| TKT-478856 | 2 × €5 | €5 | €10 |
+
+`src/scripts/fixSkiPassTotals.ts` corrects them. For each wrong Ski Pass booking it sets `Booking.totalPrice` and `Payment.amount` to pass amount × `personCount`, and credits the difference to the provider's wallet (with an `Earn` transaction). Cancelled and deleted bookings are skipped.
+
+1. Dry run (changes nothing, prints each wrong booking and its Stripe `transactionId`):
+   `npm run fix:skipass-totals`
+2. Compare each "should be" with the amount charged in the Stripe Dashboard. The script uses today's pass price; if a pass price changed since the booking, fix that one by hand.
+3. Apply, for all or only for chosen tickets:
+   `npm run fix:skipass-totals -- --apply`
+   `npm run fix:skipass-totals -- --apply --tickets=TKT-851897,TKT-499858`
+
+Run it once only; a second run finds nothing to fix because the totals are already correct.
+
+## App checklist
+
+- [ ] Use `POST /booking/intent` → Stripe payment box → `POST /booking/create` with `paymentIntentId`. Payments created any other way are rejected.
+- [ ] Send the same `personCount` to both calls. For Ski Pass the server sets the price; `totalPrice` from the app is ignored.
+- [ ] Send `time` as `"HH:mm"`.
+- [ ] Show provider contact from `product.owner`; open chat with `product.owner._id`.
+- [ ] After the backend is deployed: do one Ski Pass purchase with 2+ guests and check the saved `totalPrice` is price × guests and `time` is the arrival time.
+
 ## Testing
 
 Use test keys only. A PaymentIntent can't be paid from Postman alone, so confirm it with Stripe's test payment method.

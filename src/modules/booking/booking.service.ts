@@ -31,6 +31,11 @@ import {
   IPayment,
 } from './../payment/payment.interface';
 
+// Provider details shown to the customer on a booking.
+// `owner._id` is the provider's user id, used to start a chat.
+const PROVIDER_CONTACT_FIELDS =
+  '_id fullName phoneNumber profileUrl providerType';
+
 const getAllBookingFromDB = async (user: JwtPayload, query: any) => {
   const isExistsUser = await User.findOne({ email: user?.email });
   if (!isExistsUser) {
@@ -218,10 +223,13 @@ const getSingleBookingFromDB = async (id: string, user: JwtPayload) => {
   }
 
   const booking = await Booking.findById(id)
-    .populate(
-      'product',
-      '-owner -totalPrice -__v -reviews -refunds -averageRating -createdAt -updatedAt',
-    )
+    .populate({
+      path: 'product',
+      select:
+        '-totalPrice -__v -reviews -refunds -averageRating -createdAt -updatedAt',
+      // provider contact, so the customer can call or chat with the provider
+      populate: { path: 'owner', select: PROVIDER_CONTACT_FIELDS },
+    })
     .populate(
       'user',
       '_id fullName email profileUrl address phoneNumber status',
@@ -412,7 +420,8 @@ const getMyBooking = async (user: JwtPayload, query: any) => {
     .populate({
       path: 'product',
       select:
-        '-owner -totalPrice -__v -reviews -refunds -averageRating -createdAt -updatedAt -slots -availableSlots',
+        '-totalPrice -__v -reviews -refunds -averageRating -createdAt -updatedAt -slots -availableSlots',
+      populate: { path: 'owner', select: PROVIDER_CONTACT_FIELDS },
     })
     .populate(
       'user',
@@ -625,7 +634,8 @@ const getMyAllBookingIntoDB = async (user: JwtPayload, query: any) => {
     .populate({
       path: 'product',
       select:
-        'title thumbnail serviceFee serviceArea description category items extraChargePerHour extraChargePerHours',
+        'title thumbnail serviceFee serviceArea description category items extraChargePerHour extraChargePerHours owner',
+      populate: { path: 'owner', select: PROVIDER_CONTACT_FIELDS },
     })
     .sort({ createdAt: -1 });
 
@@ -777,10 +787,12 @@ const getMyBookingForHome = async (user: JwtPayload, selectedDate: string) => {
 
   const bookings = await Booking.find({ user: isExistsUser._id })
     .populate('user', 'fullName email address phoneNumber')
-    .populate(
-      'product',
-      'title category serviceArea amount startDateAndTime endDateAndTime time',
-    )
+    .populate({
+      path: 'product',
+      select:
+        'title category serviceArea amount startDateAndTime endDateAndTime time owner',
+      populate: { path: 'owner', select: PROVIDER_CONTACT_FIELDS },
+    })
     .sort({ createdAt: -1 });
   // console.log('booking data :', bookings);
   // Format time into "hh:mm am - hh:mm pm"
@@ -1475,6 +1487,8 @@ const createBookingAfterPayment = async (user: JwtPayload, payload: any) => {
       totalPrice = payload.totalPrice || 0;
       payload.ticketNumber = `TKT-${generateTicketNumber()}`;
       // ticketNumber = `TKT-${Date.now().toString().slice(-4)}-${generateTicketNumber()}`;
+      // a paid ski pass is a ready-to-use ticket: approve it automatically
+      payload.isPermitted = true;
       break;
     }
     // massage
@@ -1536,6 +1550,17 @@ const createBookingAfterPayment = async (user: JwtPayload, payload: any) => {
     title: 'Payment Successful',
     description: `Your payment of ${totalPrice} has been successfully made.`,
     type: 'payment',
+  });
+
+  // notify the provider so they can see (and, if needed, approve) the booking
+  await Notification.create({
+    receiverId: productOwner?._id,
+    senderId: dbUser?._id,
+    title: 'New Booking',
+    description: newBooking.isPermitted
+      ? `New ${productOwner.providerType} booking from ${dbUser?.fullName || 'a customer'}${newBooking.ticketNumber ? ` (${newBooking.ticketNumber})` : ''}. Total: ${totalPrice}.`
+      : `New ${productOwner.providerType} booking from ${dbUser?.fullName || 'a customer'} is waiting for your approval. Total: ${totalPrice}.`,
+    type: 'booking',
   });
 
   return newBooking;
