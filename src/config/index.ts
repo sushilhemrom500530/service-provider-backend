@@ -80,6 +80,9 @@ export const config = {
   stripe: {
     secretKey: process.env.STRIPE_SECRET_KEY || '',
     webhookSecret: process.env.STRIPE_WEBHOOK_SECRET || '',
+    // safe to expose to the frontend (pk_...)
+    publishableKey: process.env.STRIPE_PUBLISHABLE_KEY || '',
+    currency: (process.env.STRIPE_CURRENCY || 'eur').toLowerCase(),
   },
   cors: {
     allowedOrigins: process.env.ALLOWED_ORIGINS

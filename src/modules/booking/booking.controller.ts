@@ -88,6 +88,20 @@ const getMyBookingForHome = catchAsync(async (req: Request, res: Response) => {
   });
 });
 
+// create Stripe payment intent (step 1 of booking)
+const createPaymentIntent = catchAsync(async (req: Request, res: Response) => {
+  const user = req.user as JwtPayload;
+  const result = await BookingService.createPaymentIntentIntoDB(
+    user,
+    req.body,
+  );
+  sendResponse(res, {
+    code: StatusCodes.OK,
+    message: 'Payment intent created successfully',
+    data: result,
+  });
+});
+
 const addBookingIntoDB = catchAsync(async (req: Request, res: Response) => {
   const user = req.user as JwtPayload;
   const formData = req.body;
@@ -178,6 +192,7 @@ export const BookingController = {
   getAllBookingFromDB,
   getSingleBookingFromDB,
   addBookingIntoDB,
+  createPaymentIntent,
   getMyAllBookingIntoDB,
   updateBookingStatus,
   updatePermitBookingStatus,

@@ -76,6 +76,30 @@ const createBookingSchema = z.object({
     bookingAgentText: z.string().optional(),
 
     bookingStatus: bookingStatusEnum.optional().default('Pending'),
+
+    // Stripe PaymentIntent id returned by POST /booking/intent (pi_...)
+    paymentIntentId: z.string().optional(),
+    // legacy name, accepted as an alias of paymentIntentId
+    transactionId: z.string().optional(),
+    totalPrice: z.coerce.number().optional(),
+  }),
+});
+
+// POST /booking/intent — same booking body, but product and price are required
+const createPaymentIntentSchema = z.object({
+  body: createBookingSchema.shape.body.extend({
+    productId: z
+      .string({
+        required_error: 'Product ID is required',
+        invalid_type_error: 'Product ID must be a string',
+      })
+      .min(1),
+    totalPrice: z.coerce
+      .number({
+        required_error: 'Total price is required',
+        invalid_type_error: 'Total price must be a number',
+      })
+      .positive('Total price must be greater than 0'),
   }),
 });
 
@@ -97,6 +121,7 @@ export const updatePermitBookingSchema = z.object({
 
 export const BookingRoutesValidations = {
   createBookingSchema,
+  createPaymentIntentSchema,
   updateBookingSchema,
   updatePermitBookingSchema,
 };

@@ -44,7 +44,15 @@ router.get(
   BookingController.getSingleBookingFromDB,
 );
 
-// create
+// step 1: create Stripe payment intent (returns clientSecret + publishable key)
+router.post(
+  '/intent',
+  auth('User'),
+  validateRequest(BookingRoutesValidations.createPaymentIntentSchema),
+  BookingController.createPaymentIntent,
+);
+
+// step 2: create booking after Stripe payment succeeded (requires paymentIntentId)
 router.post(
   '/create',
   auth('User'),

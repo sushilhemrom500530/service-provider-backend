@@ -13,6 +13,9 @@ import { Transport } from './../transport/transport.model';
 import { Restaurant } from './../restaurant/restaurant.model';
 import { Massage } from './../massage/massage.model';
 import { processToPayment } from './../common/common.payment';
+import Stripe from 'stripe';
+import stripe from './../../utils/stripe';
+import { config } from './../../config';
 import { Wallet } from './../wallet/wallet.model';
 import { WalletTransactionType } from './../wallet/wallet.interface';
 import { format } from 'date-fns';
@@ -101,12 +104,12 @@ const getAllBookingFromDB = async (user: JwtPayload, query: any) => {
     // pick only required product fields
     const product = booking.product
       ? {
-          _id: booking.product._id,
-          thumbnail: booking?.product?.thumbnail || '',
-          title: booking?.product?.title,
-          skiPassType: booking?.product?.skiPassType || '',
-          serviceArea: booking?.product?.serviceArea || '',
-        }
+        _id: booking.product._id,
+        thumbnail: booking?.product?.thumbnail || '',
+        title: booking?.product?.title,
+        skiPassType: booking?.product?.skiPassType || '',
+        serviceArea: booking?.product?.serviceArea || '',
+      }
       : null;
 
     // slots mapping (same logic)
@@ -848,7 +851,326 @@ const getMyBookingForHome = async (user: JwtPayload, selectedDate: string) => {
   return simplified;
 };
 
+// ---------------------------------------------------------------------------
+// Stripe payment helpers (POST /booking/intent  ->  POST /booking/create)
+// ---------------------------------------------------------------------------
+
+const BOOKING_PRODUCT_MODELS: Record<string, any> = {
+  SkiPass,
+  SkiHire,
+  Transport,
+  Restaurant,
+  Massage,
+};
+
+// Stripe works in the smallest currency unit (cents)
+const toMinorUnit = (amount: number) => Math.round(Number(amount) * 100);
+
+/**
+ * Read-only pre-check of a booking request.
+ * Runs the same rules as addBookingIntoDB (user, product, dates, stock, slots)
+ * WITHOUT changing anything in the database, so the user is never charged
+ * for a booking that would be rejected afterwards.
+ */
+const validateBookingRequest = async (user: JwtPayload, payload: any) => {
+  const dbUser = await User.findOne({ email: user?.email });
+  if (!dbUser) throw new AppError(StatusCodes.NOT_FOUND, 'User not found.');
+
+  if (!dbUser._id.equals(payload.userId))
+    throw new AppError(StatusCodes.UNAUTHORIZED, 'User ID mismatch.');
+
+  if (
+    ['Delete', 'Blocked', 'Banned', 'Inactive', 'Unverified'].includes(
+      dbUser.status,
+    )
+  )
+    throw new AppError(
+      StatusCodes.UNAUTHORIZED,
+      'This user status is not active.',
+    );
+
+  if (!payload.productId || !Types.ObjectId.isValid(payload.productId))
+    throw new AppError(StatusCodes.BAD_REQUEST, 'Valid product ID is required.');
+
+  let matchedProduct: any = null;
+  let productModelName: string | null = null;
+
+  for (const [modelName, Model] of Object.entries(BOOKING_PRODUCT_MODELS)) {
+    const found = await Model.findById(payload.productId);
+    if (found) {
+      matchedProduct = found;
+      productModelName = modelName;
+      break;
+    }
+  }
+
+  if (!matchedProduct)
+    throw new AppError(StatusCodes.NOT_FOUND, 'Product not found.');
+
+  const productOwner = await User.findById(matchedProduct.owner);
+  if (!productOwner)
+    throw new AppError(StatusCodes.NOT_FOUND, 'Product owner not found.');
+
+  const providerType = productOwner.providerType as string;
+
+  // ----- date rules -----
+  if (['Ski_Pass', 'Restaurant', 'Massage'].includes(providerType)) {
+    if (!payload.date)
+      throw new AppError(StatusCodes.BAD_REQUEST, 'Booking date is required.');
+    if (isPastDate(payload.date))
+      throw new AppError(
+        StatusCodes.BAD_REQUEST,
+        'Booking date cannot be in the past.',
+      );
+  }
+
+  if (providerType === 'Transport') {
+    if (!payload.startDateAndTime || !payload.endDateAndTime)
+      throw new AppError(
+        StatusCodes.BAD_REQUEST,
+        'Start and end date/time required.',
+      );
+    const start = new Date(payload.startDateAndTime);
+    const end = new Date(payload.endDateAndTime);
+    if (isPastDate(start))
+      throw new AppError(
+        StatusCodes.BAD_REQUEST,
+        'Start date/time cannot be in the past.',
+      );
+    if (end <= start)
+      throw new AppError(
+        StatusCodes.BAD_REQUEST,
+        'End date must be later than start date.',
+      );
+  }
+
+  if (providerType === 'Ski_Hire' && payload.date && isPastDate(payload.date))
+    throw new AppError(
+      StatusCodes.BAD_REQUEST,
+      'Booking date cannot be in the past.',
+    );
+
+  // ----- stock / slot rules -----
+  const checkItemsStock = (nameField: string) => {
+    if (!payload.bookingItems?.length)
+      throw new AppError(StatusCodes.BAD_REQUEST, 'Booking items required.');
+
+    for (const booked of payload.bookingItems) {
+      const item = matchedProduct.items?.find(
+        (i: any) => i._id.toString() === booked.itemId?.toString(),
+      );
+      if (!item)
+        throw new AppError(
+          StatusCodes.BAD_REQUEST,
+          `Invalid booking item: ${booked.itemId}`,
+        );
+      if (item.availableQty < booked.quantity)
+        throw new AppError(
+          StatusCodes.BAD_REQUEST,
+          `Insufficient quantity for ${item[nameField]}. Only ${item.availableQty} available.`,
+        );
+    }
+  };
+
+  switch (providerType) {
+    case 'Restaurant': {
+      if (!payload.slots?.length)
+        throw new AppError(StatusCodes.BAD_REQUEST, 'Slots are required.');
+      checkItemsStock('seat');
+
+      const validSlotIds = (matchedProduct.availableSlots || []).map((s: any) =>
+        s._id.toString(),
+      );
+      const invalid = payload.slots.filter(
+        (s: string) => !validSlotIds.includes(s.toString()),
+      );
+      if (invalid.length)
+        throw new AppError(
+          StatusCodes.BAD_REQUEST,
+          `Invalid slot(s): ${invalid.join(', ')}`,
+        );
+      break;
+    }
+    case 'Ski_Hire':
+      checkItemsStock('productName');
+      break;
+    case 'Transport':
+    case 'Ski_Pass':
+    case 'Massage':
+      break;
+    default:
+      throw new AppError(StatusCodes.BAD_REQUEST, 'Invalid provider type.');
+  }
+
+  return { dbUser, matchedProduct, productModelName, productOwner };
+};
+
+/**
+ * POST /booking/intent
+ * Validates the booking and creates a Stripe PaymentIntent for it.
+ * Returns the clientSecret + publishable key the frontend needs to open
+ * the Stripe payment sheet. Nothing is saved in our database here.
+ */
+const createPaymentIntentIntoDB = async (user: JwtPayload, payload: any) => {
+  if (!config.stripe.secretKey)
+    throw new AppError(
+      StatusCodes.INTERNAL_SERVER_ERROR,
+      'Stripe is not configured on the server.',
+    );
+
+  const { dbUser, productModelName, productOwner } =
+    await validateBookingRequest(user, payload);
+
+  const totalPrice = Number(payload.totalPrice);
+  if (!totalPrice || totalPrice <= 0)
+    throw new AppError(
+      StatusCodes.BAD_REQUEST,
+      'Total price must be greater than 0.',
+    );
+
+  const amount = toMinorUnit(totalPrice);
+  const currency = config.stripe.currency;
+
+  let paymentIntent: Stripe.PaymentIntent;
+  try {
+    paymentIntent = await stripe.paymentIntents.create({
+      amount,
+      currency,
+      automatic_payment_methods: { enabled: true },
+      description: `${productOwner.providerType} booking`,
+      // used by POST /booking/create to prove this payment belongs to this booking
+      metadata: {
+        userId: dbUser._id.toString(),
+        productId: payload.productId.toString(),
+        productModel: productModelName as string,
+        category: productOwner.providerType as string,
+        totalPrice: totalPrice.toString(),
+      },
+    });
+  } catch (error: any) {
+    throw new AppError(
+      StatusCodes.BAD_GATEWAY,
+      error?.message || 'Unable to create payment intent.',
+    );
+  }
+
+  return {
+    paymentIntentId: paymentIntent.id,
+    clientSecret: paymentIntent.client_secret,
+    publishableKey: config.stripe.publishableKey,
+    amount: totalPrice,
+    amountInCents: amount,
+    currency,
+    category: productOwner.providerType,
+  };
+};
+
+/**
+ * Confirms with Stripe (server to server) that the PaymentIntent is paid
+ * and was created for exactly this user, product and amount.
+ */
+const verifyBookingPayment = async (
+  user: JwtPayload,
+  payload: any,
+  paymentIntentId: string,
+) => {
+  if (!paymentIntentId || !paymentIntentId.startsWith('pi_'))
+    throw new AppError(
+      StatusCodes.BAD_REQUEST,
+      'A valid Stripe paymentIntentId is required.',
+    );
+
+  // one payment can be used for one booking only
+  const alreadyUsed = await Payment.findOne({ transactionId: paymentIntentId });
+  if (alreadyUsed)
+    throw new AppError(
+      StatusCodes.CONFLICT,
+      'This payment has already been used for a booking.',
+    );
+
+  let paymentIntent: Stripe.PaymentIntent;
+  try {
+    paymentIntent = await stripe.paymentIntents.retrieve(paymentIntentId);
+  } catch {
+    throw new AppError(StatusCodes.BAD_REQUEST, 'Payment intent not found.');
+  }
+
+  if (paymentIntent.status !== 'succeeded')
+    throw new AppError(
+      StatusCodes.PAYMENT_REQUIRED,
+      `Payment not completed (status: ${paymentIntent.status}).`,
+    );
+
+  const meta = paymentIntent.metadata || {};
+  const dbUser = await User.findOne({ email: user?.email });
+
+  if (!dbUser || meta.userId !== dbUser._id.toString())
+    throw new AppError(
+      StatusCodes.FORBIDDEN,
+      'This payment does not belong to the current user.',
+    );
+
+  if (meta.productId !== payload.productId?.toString())
+    throw new AppError(
+      StatusCodes.BAD_REQUEST,
+      'This payment was made for a different product.',
+    );
+
+  if (paymentIntent.amount_received !== toMinorUnit(payload.totalPrice))
+    throw new AppError(
+      StatusCodes.BAD_REQUEST,
+      'Paid amount does not match the booking total price.',
+    );
+
+  return paymentIntent;
+};
+
+/**
+ * POST /booking/create
+ * 1. verify the Stripe payment
+ * 2. run the existing booking logic (unchanged)
+ * 3. if the booking is rejected (e.g. stock sold out meanwhile) refund the payment
+ */
 const addBookingIntoDB = async (user: JwtPayload, payload: any) => {
+  const paymentIntentId: string =
+    payload.paymentIntentId || payload.transactionId;
+
+  const paymentIntent = await verifyBookingPayment(
+    user,
+    payload,
+    paymentIntentId,
+  );
+
+  // the existing logic stores this as Payment.transactionId
+  payload.transactionId = paymentIntent.id;
+  // never trust a client-supplied price that differs from what was charged
+  payload.totalPrice = paymentIntent.amount_received / 100;
+  delete payload.paymentIntentId;
+
+  try {
+    return await createBookingAfterPayment(user, payload);
+  } catch (error) {
+    // Validation errors are thrown before the booking is saved -> refund user
+    if (error instanceof AppError && error.code < 500) {
+      try {
+        await stripe.refunds.create({ payment_intent: paymentIntent.id });
+      } catch (refundError: any) {
+        throw new AppError(
+          StatusCodes.INTERNAL_SERVER_ERROR,
+          `Booking failed (${error.message}) and the automatic refund failed. Please contact support. Payment: ${paymentIntent.id}`,
+        );
+      }
+      throw new AppError(
+        error.code,
+        `${error.message} Your payment has been refunded.`,
+      );
+    }
+    throw error;
+  }
+};
+
+// Original booking logic — runs only after the payment is verified
+const createBookingAfterPayment = async (user: JwtPayload, payload: any) => {
   const { userId, transactionId } = payload;
 
   if (!transactionId)
@@ -1563,6 +1885,7 @@ export const BookingService = {
   getAllBookingFromDB,
   getSingleBookingFromDB,
   addBookingIntoDB,
+  createPaymentIntentIntoDB,
   getMyAllBookingIntoDB,
   updateBookingIntoDB,
   updatePermitBookingIntoDB,
