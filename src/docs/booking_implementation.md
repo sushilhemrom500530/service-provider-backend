@@ -30,11 +30,13 @@ Validates the booking and returns what the frontend needs to open the Stripe pay
 
 **Auth:** `Authorization: Bearer <access token>` (role `User`).
 
-**Body:** the same fields as `/booking/create`. `userId`, `productId` and `totalPrice` (in euros, not cents) are required; the rest depends on the category.
+**Body:** the same fields as `/booking/create`. `userId` and `productId` are required; the rest depends on the category.
+
+**Price:** for **Ski Pass** the server calculates the price itself: pass `amount` × `personCount` (default 1). Any `totalPrice` sent by the app is ignored. For the other categories, send `totalPrice` (in euros, not cents); it is required.
 
 | Category | Required fields | Optional |
 | --- | --- | --- |
-| Ski Pass | `date` | `personCount`, `time` |
+| Ski Pass | `date` | `personCount` (guests, default 1), `time` |
 | Ski Hire | `bookingItems[]` (`itemId`, `quantity`) | `date`, `duration` |
 | Transport | `startDateAndTime`, `endDateAndTime` | `personCount`, `phoneNumber`, `address`, `destination` |
 | Restaurant | `date`, `slots[]`, `bookingItems[]` | `time`, `personCount` |
@@ -134,7 +136,8 @@ Creates the booking only after Stripe confirms the payment. **Breaking change:**
 1. The id starts with `pi_` and has not been used for another booking.
 2. Stripe (server to server) reports the PaymentIntent as `succeeded`.
 3. The PaymentIntent was created for this user and this `productId`.
-4. The amount Stripe received equals `totalPrice`. The saved price is always the amount actually charged.
+4. The amount Stripe received equals the price fixed by the server in step 1. The saved `totalPrice` is always the amount actually charged; the app's `totalPrice` is not used here.
+5. `personCount` is the same as in step 1, so guests can't be added after paying.
 
 Then the existing booking logic runs unchanged: stock and slots are reduced, the booking is saved, the provider wallet is credited, a `Payment` record (`transactionId` = PaymentIntent id, status `Paid`) is stored, and the user gets a notification.
 
@@ -144,7 +147,7 @@ Then the existing booking logic runs unchanged: stock and slots are reduced, the
 
 | Status | When | Refunded? |
 | --- | --- | --- |
-| 400 | Missing or invalid `paymentIntentId`, wrong product, amount mismatch | No charge to refund |
+| 400 | Missing or invalid `paymentIntentId`, wrong product, amount mismatch, `personCount` changed | No charge to refund |
 | 400 / 404 | Booking rejected after payment (e.g. stock sold out meanwhile, invalid slot) | Yes, automatically; message ends with "Your payment has been refunded." |
 | 402 | Payment not completed (status shown in message) | Nothing charged |
 | 403 | Payment belongs to another user | No |
@@ -186,7 +189,23 @@ The backend talks to Stripe twice: once to create the payment, once to verify it
 | Payment made for another user, product or amount | Rejected (403 or 400) |
 | User closes the app after paying, before step 7 | Money is taken but no booking exists. Not handled yet: needs a Stripe webhook (`STRIPE_WEBHOOK_SECRET` is already in config) |
 
-Still open: `totalPrice` is chosen by the frontend in step 1. The backend now guarantees the charged amount equals the saved price, but it does not yet compute the price from the product's own rates.
+Still open: for Ski Hire, Transport, Restaurant and Massage, `totalPrice` is still chosen by the app in step 1. The backend guarantees the charged amount equals the saved price, but does not yet compute those prices from the product's own rates.
+
+## Automatic completion (Completed status)
+
+A scheduled job (`src/jobs/automaticUpdateJobService.ts`) moves past bookings to `Completed`, which enables "Rate & review" in the app. Bookings that are `Cancelled`, `Deleted` or already `Completed` are never changed.
+
+| Category | Becomes Completed | Job, frequency |
+| --- | --- | --- |
+| Transport | When `endDateAndTime` has passed | Booking status job, every 5 min |
+| Ski Pass | 24 hours after `date` | Booking status job, every 5 min |
+| Massage | 24 hours after `date` | Booking status job, every 5 min |
+| Ski Hire | When `endDateAndTime` has passed, or 24 hours after `date` if it has no end date. Rented items are returned to stock first | Ski Hire job, every 5 min |
+| Restaurant | When `date` has passed. Slots and seats are returned first | Restaurant job, every 1 min |
+
+## Ski Pass date and time
+
+For Ski Pass, the full date **and** time live in `date` (ISO string). `time` and `startDateAndTime` are only filled if the app sends them; the server does not derive `time` from `date`, because `date` is stored in UTC and could show the wrong hour. Read the time from `date` and convert it to local time in the app.
 
 ## Testing
 

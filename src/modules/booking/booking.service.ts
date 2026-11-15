@@ -867,6 +867,41 @@ const BOOKING_PRODUCT_MODELS: Record<string, any> = {
 const toMinorUnit = (amount: number) => Math.round(Number(amount) * 100);
 
 /**
+ * Server-side price for categories whose pricing rule is known.
+ * Returns null when the category still uses the price sent by the app.
+ *  - Ski Pass: pass amount x number of guests (personCount, default 1)
+ */
+const calculateServerPrice = (
+  providerType: string,
+  product: any,
+  payload: any,
+): number | null => {
+  if (providerType === 'Ski_Pass') {
+    const guests =
+      payload.personCount === undefined || payload.personCount === null
+        ? 1
+        : Number(payload.personCount);
+
+    if (!Number.isInteger(guests) || guests < 1)
+      throw new AppError(
+        StatusCodes.BAD_REQUEST,
+        'Person count must be a whole number of at least 1.',
+      );
+
+    const unitPrice = Number(product?.amount);
+    if (!unitPrice || unitPrice <= 0)
+      throw new AppError(
+        StatusCodes.BAD_REQUEST,
+        'This ski pass has no valid price.',
+      );
+
+    return Math.round(unitPrice * guests * 100) / 100;
+  }
+
+  return null;
+};
+
+/**
  * Read-only pre-check of a booking request.
  * Runs the same rules as addBookingIntoDB (user, product, dates, stock, slots)
  * WITHOUT changing anything in the database, so the user is never charged
@@ -1018,10 +1053,17 @@ const createPaymentIntentIntoDB = async (user: JwtPayload, payload: any) => {
       'Stripe is not configured on the server.',
     );
 
-  const { dbUser, productModelName, productOwner } =
+  const { dbUser, matchedProduct, productModelName, productOwner } =
     await validateBookingRequest(user, payload);
 
-  const totalPrice = Number(payload.totalPrice);
+  // server price wins where a rule exists (e.g. Ski Pass = amount x guests)
+  const serverPrice = calculateServerPrice(
+    productOwner.providerType as string,
+    matchedProduct,
+    payload,
+  );
+  const totalPrice =
+    serverPrice !== null ? serverPrice : Number(payload.totalPrice);
   if (!totalPrice || totalPrice <= 0)
     throw new AppError(
       StatusCodes.BAD_REQUEST,
@@ -1045,6 +1087,7 @@ const createPaymentIntentIntoDB = async (user: JwtPayload, payload: any) => {
         productModel: productModelName as string,
         category: productOwner.providerType as string,
         totalPrice: totalPrice.toString(),
+        personCount: String(payload.personCount ?? ''),
       },
     });
   } catch (error: any) {
@@ -1116,10 +1159,22 @@ const verifyBookingPayment = async (
       'This payment was made for a different product.',
     );
 
-  if (paymentIntent.amount_received !== toMinorUnit(payload.totalPrice))
+  // compare with the price the server fixed in /booking/intent (metadata),
+  // not with the totalPrice sent by the app
+  if (paymentIntent.amount_received !== toMinorUnit(Number(meta.totalPrice)))
     throw new AppError(
       StatusCodes.BAD_REQUEST,
       'Paid amount does not match the booking total price.',
+    );
+
+  // guests must be the same as when the price was calculated
+  if (
+    meta.personCount !== undefined &&
+    meta.personCount !== String(payload.personCount ?? '')
+  )
+    throw new AppError(
+      StatusCodes.BAD_REQUEST,
+      'Person count differs from the one that was paid for.',
     );
 
   return paymentIntent;

@@ -6,16 +6,48 @@ import { isRestaurantOpen } from './../utils/restaurentTimeConvert';
 import mongoose from 'mongoose';
 import { IBookingItem } from './../modules/booking/booking.interface';
 import { SkiHire } from '../modules/skiHire/skihire.model';
+
+// bookings in these states must never be auto-completed
+const FINAL_BOOKING_STATUSES = ['Completed', 'Cancelled', 'Deleted'];
+
+// date-only bookings (Ski Pass, Massage, Ski Hire without end date)
+// are completed this long after their booking date/time
+const DATE_ONLY_COMPLETE_AFTER_MS = 24 * 60 * 60 * 1000;
+
 // all common booking status
 const startBookingStatusJob = () => {
   // runs every 5 minutes
   cron.schedule('*/5 * * * *', async () => {
-    const now = new Date();
-    await Booking.updateMany(
-      { endDateAndTime: { $lt: now }, bookingStatus: { $ne: 'Completed' } },
-      { $set: { bookingStatus: 'Completed' } },
-    );
-    console.log('Auto booking status updated.');
+    try {
+      const now = new Date();
+
+      // bookings with an end date/time (Transport, ...)
+      // Ski Hire is skipped here: its own job restores stock first
+      await Booking.updateMany(
+        {
+          endDateAndTime: { $lt: now },
+          bookingStatus: { $nin: FINAL_BOOKING_STATUSES },
+          productModel: { $ne: 'SkiHire' },
+        },
+        { $set: { bookingStatus: 'Completed' } },
+      );
+
+      // bookings with only a date (Ski Pass, Massage)
+      await Booking.updateMany(
+        {
+          category: { $in: ['Ski_Pass', 'Massage'] },
+          date: {
+            $lt: new Date(now.getTime() - DATE_ONLY_COMPLETE_AFTER_MS),
+          },
+          bookingStatus: { $nin: FINAL_BOOKING_STATUSES },
+        },
+        { $set: { bookingStatus: 'Completed' } },
+      );
+
+      console.log('Auto booking status updated.');
+    } catch (error) {
+      console.error('Error in auto booking status cron:', error);
+    }
   });
 
   // console.log('=====> Booking auto-update cron job started.');
@@ -135,9 +167,18 @@ const startSkiHireRestoreJob = () => {
 
       // Find all expired bookings that are not completed yet
       const expiredBookings = await Booking.find({
-        endDateAndTime: { $lt: now },
-        bookingStatus: { $ne: 'Completed' },
         productModel: 'SkiHire',
+        bookingStatus: { $nin: FINAL_BOOKING_STATUSES },
+        $or: [
+          { endDateAndTime: { $lt: now } },
+          // Ski Hire booked with a date only
+          {
+            endDateAndTime: null,
+            date: {
+              $lt: new Date(now.getTime() - DATE_ONLY_COMPLETE_AFTER_MS),
+            },
+          },
+        ],
       });
 
       // for (const booking of expiredBookings) {
@@ -178,6 +219,14 @@ const startSkiHireRestoreJob = () => {
           // 3. Added check for item and item.availableQty
           if (item && typeof item.availableQty === 'number') {
             item.availableQty += bItem.quantity;
+
+            // never restore more than the total stock
+            if (
+              typeof item.totalQty === 'number' &&
+              item.availableQty > item.totalQty
+            ) {
+              item.availableQty = item.totalQty;
+            }
           }
         });
 
@@ -200,4 +249,5 @@ const startSkiHireRestoreJob = () => {
 export const startAllCronJobs = () => {
   startBookingStatusJob();
   startRestaurantStatusJob();
+  startSkiHireRestoreJob();
 };

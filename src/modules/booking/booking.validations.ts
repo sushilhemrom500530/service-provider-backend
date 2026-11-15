@@ -94,12 +94,13 @@ const createPaymentIntentSchema = z.object({
         invalid_type_error: 'Product ID must be a string',
       })
       .min(1),
+    // Ski Pass price is calculated by the server; other categories send it
     totalPrice: z.coerce
       .number({
-        required_error: 'Total price is required',
         invalid_type_error: 'Total price must be a number',
       })
-      .positive('Total price must be greater than 0'),
+      .positive('Total price must be greater than 0')
+      .optional(),
   }),
 });
 
