@@ -283,3 +283,63 @@ Use test keys only. A PaymentIntent can't be paid from Postman alone, so confirm
 | `4000 0000 0000 9995` | Declined (insufficient funds) |
 
 After a successful booking, check the Stripe Dashboard (Payments, test mode): the payment shows `userId`, `productId` and `category` in its metadata.
+
+## Ski Hire pricing
+
+Each Ski Hire listing now says what an item `price` pays for, in the new field `priceUnit`:
+
+| `priceUnit` | Meaning | 21 days of a €25 item |
+| --- | --- | --- |
+| `per_day` (default) | Price per started day | 21 × €25 = €525 |
+| `per_hour` | Price per started hour | 504 h × €25 |
+| `per_rental` | One price for the whole rental | €25 |
+
+- Existing listings have no value stored, so they are treated as `per_day`. Providers can change it with `PATCH` on their Ski Hire listing (`"priceUnit": "per_rental"`), and set it when creating one. It is returned with the listing.
+- The server calculates the Ski Hire price in `/booking/intent`: Σ (item `price` × `quantity`) × rental units. The app's `totalPrice` is ignored for Ski Hire, as for Ski Pass.
+- Started units round up: 1 day and 2 hours is 2 days with `per_day`.
+- `startDateAndTime` and `endDateAndTime` are now **required** for Ski Hire. The start can't be in the past, and the end must be after the start.
+- The `/booking/intent` response also returns `priceUnit` and `rentalUnits` for Ski Hire, so the app can show "21 days × €25".
+- `/booking/create` rejects the booking if the rental dates or the items/quantities differ from those that were paid for.
+
+## Ski Hire stock and overlapping rentals
+
+| Check | When | Result |
+| --- | --- | --- |
+| Item exists and current stock (`availableQty`) | `/booking/intent` and `/booking/create` | 400 "Insufficient quantity…" |
+| Overlapping rentals: for each item, quantity already booked by other `Active`/`Pending` rentals whose dates overlap + requested quantity ≤ `totalQty` | `/booking/intent`, and again in `/booking/create` | 400 "… is not available for these dates. Only N left." At create, the payment is refunded automatically |
+
+Stock is given back:
+
+| Event | Stock returned |
+| --- | --- |
+| Provider completes the rental (`PATCH /booking/complete/:id`, hand-over) | Yes (new). Only once, never above `totalQty` |
+| Rental end passes (Ski Hire job, every 5 min) | Yes, then the booking is marked Completed |
+| Customer cancels (`PATCH /booking/refund/:id`) | Yes |
+
+The cancel endpoint used to save the status `Cancel`, which is not a valid value; it now saves `Cancelled`. Bookings already stored as `Cancel` are treated as cancelled by the jobs and are never auto-completed.
+
+## Overtime
+
+Overtime (`timeLabel` "Over Time…" and `overTimeAmount` in `GET /booking/:id`) is only calculated while a Ski Hire or Transport booking is still open: status `Active` or `Pending`, not handed over, and with a valid `endDateAndTime`. Completed, cancelled and deleted bookings show no overtime. This stops the ever-growing amounts on old bookings (one showed €13,118,245.80); those now show none.
+
+## Phone numbers
+
+- Every phone number saved on a user is cleaned automatically: `"N/A"`, `"-"`, `"null"` and similar become empty (`""`, meaning not set); spaces, dashes and brackets are removed; a `00` prefix becomes `+`.
+- The app should send numbers with a country code (`+33612345678`). The server does not guess a missing country code.
+- Old records: `npm run fix:phone-numbers` cleans placeholders and, with `--country=+33`, adds the country code to numbers that have none (a leading `0` is dropped: `0612345678` → `+33612345678`). It is a dry run unless `--apply` is added, and it lists numbers that still have no valid code so they can be fixed by hand:
+  - `npm run fix:phone-numbers`
+  - `npm run fix:phone-numbers -- --country=+33`
+  - `npm run fix:phone-numbers -- --country=+33 --apply`
+
+## Test data in production listings
+
+- `npm run report:suspicious-listings` lists listings that look like test data, without changing anything: prices above `--max-price` (default 5000), names with no letters or shorter than 2 characters (an item named "4"), Ski Hire listings that look like vehicles (car, van, SUV…), and listings whose owner is a different provider type. Review the list and delete test listings from the admin panel.
+- To stop new ones: Ski Hire item names must now be at least 2 characters and contain letters.
+
+## App checklist — Ski Hire
+
+- [ ] Always send `startDateAndTime` and `endDateAndTime` for Ski Hire.
+- [ ] Show the price from `/booking/intent` (`amount`, `priceUnit`, `rentalUnits`); don't calculate it in the app.
+- [ ] Send the same dates and `bookingItems` to `/booking/intent` and `/booking/create`.
+- [ ] Show the "not available for these dates" message from the API when a rental overlaps.
+- [ ] Send phone numbers with country code; send nothing (not "N/A") when there is none.

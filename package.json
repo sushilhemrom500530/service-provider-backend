@@ -9,6 +9,8 @@
     "seeder": "ts-node src/utils/seeder.ts",
     "seed:flights": "ts-node src/scripts/seedFlightData.ts",
     "fix:skipass-totals": "ts-node src/scripts/fixSkiPassTotals.ts",
+    "fix:phone-numbers": "ts-node src/scripts/fixPhoneNumbers.ts",
+    "report:suspicious-listings": "ts-node src/scripts/reportSuspiciousListings.ts",
     "dev": "ts-node-dev --respawn --transpile-only src/server.ts",
     "lint:check": "eslint --ignore-path .eslintignore --ext .js,.ts",
     "lint:fix": "lint . --fix",

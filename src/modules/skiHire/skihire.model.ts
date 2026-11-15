@@ -57,6 +57,12 @@ const skiHireSchema = new Schema<ISkiHire>(
       required: false,
       default: 0,
     },
+    // what one item `price` pays for: the whole rental, one day or one hour
+    priceUnit: {
+      type: String,
+      enum: ['per_rental', 'per_day', 'per_hour'],
+      default: 'per_day',
+    },
     totalPrice: {
       type: Number,
       required: true,

@@ -14,6 +14,7 @@ import { Restaurant } from './../restaurant/restaurant.model';
 import { Massage } from './../massage/massage.model';
 import { processToPayment } from './../common/common.payment';
 import Stripe from 'stripe';
+import crypto from 'crypto';
 import stripe from './../../utils/stripe';
 import { config } from './../../config';
 import { Wallet } from './../wallet/wallet.model';
@@ -366,7 +367,17 @@ const getSingleBookingFromDB = async (id: string, user: JwtPayload) => {
   let timeLabel: string | undefined;
   let overTimeAmount = 0;
 
-  if (['Ski_Hire', 'Transport'].includes(booking?.category)) {
+  // overtime only runs while the rental is still open: a Completed,
+  // Cancelled or Deleted booking (or one without a valid end) has none
+  const isOpenRental = ['Active', 'Pending'].includes(
+    booking?.bookingStatus as string,
+  );
+
+  if (
+    ['Ski_Hire', 'Transport'].includes(booking?.category) &&
+    isOpenRental &&
+    !isNaN(endTime.getTime())
+  ) {
     if (!booking?.isHandOver) {
       const now = new Date();
 
@@ -910,7 +921,111 @@ const calculateServerPrice = (
     return Math.round(unitPrice * guests * 100) / 100;
   }
 
+  if (providerType === 'Ski_Hire') {
+    const { units } = getSkiHireRentalUnits(product, payload);
+
+    let total = 0;
+    for (const booked of payload.bookingItems || []) {
+      const item = product?.items?.find(
+        (i: any) => i._id.toString() === booked.itemId?.toString(),
+      );
+      if (!item)
+        throw new AppError(
+          StatusCodes.BAD_REQUEST,
+          `Invalid booking item: ${booked.itemId}`,
+        );
+      total += Number(item.price) * Number(booked.quantity) * units;
+    }
+
+    return Math.round(total * 100) / 100;
+  }
+
   return null;
+};
+
+const MS_PER_HOUR = 60 * 60 * 1000;
+const MS_PER_DAY = 24 * MS_PER_HOUR;
+
+/**
+ * Ski Hire rental length in the listing's price unit.
+ *  per_day    -> started days   (21 days = 21, 1 day 2 h = 2)
+ *  per_hour   -> started hours
+ *  per_rental -> 1, whatever the length
+ */
+const getSkiHireRentalUnits = (product: any, payload: any) => {
+  const unit: string = product?.priceUnit || 'per_day';
+
+  const start = new Date(payload.startDateAndTime);
+  const end = new Date(payload.endDateAndTime);
+  if (isNaN(start.getTime()) || isNaN(end.getTime()) || end <= start)
+    throw new AppError(
+      StatusCodes.BAD_REQUEST,
+      'Valid start and end date/time are required for Ski Hire.',
+    );
+
+  const ms = end.getTime() - start.getTime();
+  let units = 1;
+  if (unit === 'per_day') units = Math.max(1, Math.ceil(ms / MS_PER_DAY));
+  if (unit === 'per_hour') units = Math.max(1, Math.ceil(ms / MS_PER_HOUR));
+
+  return { unit, units };
+};
+
+// "itemId:qty" list in a fixed order, to compare intent and create
+const bookingItemsSignature = (items: any[] = []) =>
+  items
+    .map(i => `${i.itemId}:${Number(i.quantity)}`)
+    .sort()
+    .join(',');
+
+// ISO string of a date input, or '' when missing/invalid (never throws)
+const toIsoOrEmpty = (value: any) => {
+  if (!value) return '';
+  const d = new Date(value);
+  return isNaN(d.getTime()) ? '' : d.toISOString();
+};
+
+// short hash so the value fits in Stripe metadata (max 500 chars)
+const hashSignature = (value: string) =>
+  crypto.createHash('sha256').update(value).digest('hex').slice(0, 32);
+
+/**
+ * Date-aware stock check for Ski Hire: for each item, the quantity already
+ * booked by OTHER active rentals that overlap the requested period, plus
+ * the requested quantity, must not exceed the item's total stock.
+ */
+const checkSkiHireAvailability = async (product: any, payload: any) => {
+  const start = new Date(payload.startDateAndTime);
+  const end = new Date(payload.endDateAndTime);
+
+  const overlapping = await Booking.find({
+    product: product._id,
+    category: 'Ski_Hire',
+    bookingStatus: { $in: ['Active', 'Pending'] },
+    startDateAndTime: { $lt: end },
+    endDateAndTime: { $gt: start },
+  }).select('bookingItems');
+
+  for (const booked of payload.bookingItems || []) {
+    const item = product.items?.find(
+      (i: any) => i._id.toString() === booked.itemId?.toString(),
+    );
+    if (!item) continue; // reported by the item check
+
+    const alreadyBooked = overlapping.reduce((sum: number, b: any) => {
+      const same = (b.bookingItems || []).find(
+        (bi: any) => bi.itemId?.toString() === booked.itemId?.toString(),
+      );
+      return sum + (same ? Number(same.quantity) : 0);
+    }, 0);
+
+    const free = Number(item.totalQty) - alreadyBooked;
+    if (Number(booked.quantity) > free)
+      throw new AppError(
+        StatusCodes.BAD_REQUEST,
+        `${item.productName} is not available for these dates. Only ${Math.max(free, 0)} left.`,
+      );
+  }
 };
 
 /**
@@ -997,6 +1112,27 @@ const validateBookingRequest = async (user: JwtPayload, payload: any) => {
       'Booking date cannot be in the past.',
     );
 
+  // Ski Hire is priced and stock-checked by rental period
+  if (providerType === 'Ski_Hire') {
+    if (!payload.startDateAndTime || !payload.endDateAndTime)
+      throw new AppError(
+        StatusCodes.BAD_REQUEST,
+        'Start and end date/time required for Ski Hire.',
+      );
+    const start = new Date(payload.startDateAndTime);
+    const end = new Date(payload.endDateAndTime);
+    if (isPastDate(start))
+      throw new AppError(
+        StatusCodes.BAD_REQUEST,
+        'Start date/time cannot be in the past.',
+      );
+    if (end <= start)
+      throw new AppError(
+        StatusCodes.BAD_REQUEST,
+        'End date must be later than start date.',
+      );
+  }
+
   // ----- stock / slot rules -----
   const checkItemsStock = (nameField: string) => {
     if (!payload.bookingItems?.length)
@@ -1040,6 +1176,7 @@ const validateBookingRequest = async (user: JwtPayload, payload: any) => {
     }
     case 'Ski_Hire':
       checkItemsStock('productName');
+      await checkSkiHireAvailability(matchedProduct, payload);
       break;
     case 'Transport':
     case 'Ski_Pass':
@@ -1085,6 +1222,19 @@ const createPaymentIntentIntoDB = async (user: JwtPayload, payload: any) => {
   const amount = toMinorUnit(totalPrice);
   const currency = config.stripe.currency;
 
+  // Ski Hire: lock the rental period and items that were priced
+  const isSkiHire = productOwner.providerType === 'Ski_Hire';
+  const rental = isSkiHire
+    ? getSkiHireRentalUnits(matchedProduct, payload)
+    : null;
+  const rentalMetadata: Record<string, string> = isSkiHire
+    ? {
+        rentalStart: toIsoOrEmpty(payload.startDateAndTime),
+        rentalEnd: toIsoOrEmpty(payload.endDateAndTime),
+        itemsHash: hashSignature(bookingItemsSignature(payload.bookingItems)),
+      }
+    : {};
+
   let paymentIntent: Stripe.PaymentIntent;
   try {
     paymentIntent = await stripe.paymentIntents.create({
@@ -1100,6 +1250,7 @@ const createPaymentIntentIntoDB = async (user: JwtPayload, payload: any) => {
         category: productOwner.providerType as string,
         totalPrice: totalPrice.toString(),
         personCount: String(payload.personCount ?? ''),
+        ...rentalMetadata,
       },
     });
   } catch (error: any) {
@@ -1117,6 +1268,8 @@ const createPaymentIntentIntoDB = async (user: JwtPayload, payload: any) => {
     amountInCents: amount,
     currency,
     category: productOwner.providerType,
+    // Ski Hire only: how the price was calculated
+    ...(rental && { priceUnit: rental.unit, rentalUnits: rental.units }),
   };
 };
 
@@ -1189,6 +1342,21 @@ const verifyBookingPayment = async (
       'Person count differs from the one that was paid for.',
     );
 
+  // Ski Hire: rental period and items must be the ones that were paid for
+  if (meta.rentalStart || meta.rentalEnd || meta.itemsHash) {
+    const sameStart = meta.rentalStart === toIsoOrEmpty(payload.startDateAndTime);
+    const sameEnd = meta.rentalEnd === toIsoOrEmpty(payload.endDateAndTime);
+    const sameItems =
+      meta.itemsHash ===
+      hashSignature(bookingItemsSignature(payload.bookingItems));
+
+    if (!sameStart || !sameEnd || !sameItems)
+      throw new AppError(
+        StatusCodes.BAD_REQUEST,
+        'Rental dates or items differ from the ones that were paid for.',
+      );
+  }
+
   return paymentIntent;
 };
 
@@ -1215,6 +1383,15 @@ const addBookingIntoDB = async (user: JwtPayload, payload: any) => {
   delete payload.paymentIntentId;
 
   try {
+    // Ski Hire: re-check date availability (another rental may have been
+    // booked between /booking/intent and now) -> refunded below if taken
+    if (paymentIntent.metadata?.productModel === 'SkiHire') {
+      const skiHire = await SkiHire.findById(payload.productId);
+      if (!skiHire)
+        throw new AppError(StatusCodes.NOT_FOUND, 'Ski Hire not found.');
+      await checkSkiHireAvailability(skiHire, payload);
+    }
+
     return await createBookingAfterPayment(user, payload);
   } catch (error) {
     // Validation errors are thrown before the booking is saved -> refund user
@@ -1692,6 +1869,30 @@ const completeBookingIntoDB = async (user: JwtPayload, bookingId: string) => {
     );
   }
 
+  // Ski Hire hand-over: items are back, return them to stock.
+  // Skipped if the booking was already completed (stock already restored).
+  if (
+    existsBooking.productModel === 'SkiHire' &&
+    ['Active', 'Pending'].includes(existsBooking.bookingStatus) &&
+    existsBooking.bookingItems?.length
+  ) {
+    const skiHire = await SkiHire.findById(productDoc?._id);
+    if (skiHire) {
+      existsBooking.bookingItems.forEach(bItem => {
+        const item = skiHire.items.find(
+          it => it._id?.toString() === bItem.itemId?.toString(),
+        );
+        if (item && typeof item.availableQty === 'number') {
+          item.availableQty = Math.min(
+            item.availableQty + Number(bItem.quantity),
+            Number(item.totalQty),
+          );
+        }
+      });
+      await skiHire.save();
+    }
+  }
+
   const result = await Booking.findByIdAndUpdate(
     bookingId,
     { $set: { bookingStatus: 'Completed', isHandOver: true } },
@@ -1781,7 +1982,8 @@ const refundBookingIntoDB = async (
 
   const result = await Booking.findByIdAndUpdate(
     bookingId,
-    { $set: { bookingStatus: 'Cancel' } },
+    // 'Cancelled' is the value the Booking model allows ('Cancel' was invalid)
+    { $set: { bookingStatus: 'Cancelled' } },
     { new: true },
   )
     .populate('user', 'fullName email')

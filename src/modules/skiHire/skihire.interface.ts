@@ -19,6 +19,7 @@ export interface ISkiHire extends Document {
   title: string;
   thumbnail: string;
   extraChargePerHour?: number;
+  priceUnit?: 'per_rental' | 'per_day' | 'per_hour';
   totalPrice: number;
   serviceArea: string;
   items: IProductItems[];

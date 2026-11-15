@@ -4,6 +4,7 @@ import bcrypt from 'bcrypt';
 import { config } from '../../config';
 import { IService, IUser, UserStatus, UserModel } from './user.interface';
 import paginationPlugin from './../../common/plugins/pagination.plugin';
+import { normalizePhoneNumber } from './../../utils/phoneNumber';
 
 // Service schema
 const serviceSchema = new Schema<IService>(
@@ -39,7 +40,9 @@ const userSchema = new Schema<IUser>(
       trim: true
     },
     phoneNumber: {
-      type: String
+      type: String,
+      // "N/A", "-", "null" -> '' ; "+33 6 12-34-56-78" -> "+33612345678"
+      set: normalizePhoneNumber,
     },
     profileUrl: {
       type: String,

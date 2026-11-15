@@ -8,7 +8,8 @@ import { IBookingItem } from './../modules/booking/booking.interface';
 import { SkiHire } from '../modules/skiHire/skihire.model';
 
 // bookings in these states must never be auto-completed
-const FINAL_BOOKING_STATUSES = ['Completed', 'Cancelled', 'Deleted'];
+// ('Cancel' = legacy value saved by the old cancel/refund code)
+const FINAL_BOOKING_STATUSES = ['Completed', 'Cancelled', 'Cancel', 'Deleted'];
 
 // date-only bookings (Ski Pass, Massage, Ski Hire without end date)
 // are completed this long after their booking date/time

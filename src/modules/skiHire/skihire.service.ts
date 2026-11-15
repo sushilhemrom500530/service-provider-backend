@@ -471,6 +471,7 @@ const addSkiHireIntoDB = async (req: Request) => {
     thumbnail: thumbnailUrl,
     owner: isExistsUser?._id,
     extraChargePerHour: Number(req.body.extraChargePerHour || 0) || 0,
+    priceUnit: req.body.priceUnit || 'per_day',
     totalPrice,
     serviceArea: req.body.serviceArea,
     items: processedProductItems,
