@@ -514,3 +514,12 @@ The fee percentage is the admin wallet's `profitCharge` (set from the admin pane
 **Withdrawals no longer take the fee again**: the admin pays out the full requested amount. Code: `src/utils/platformFee.ts` (`PLATFORM_FEE_ON_EARNING = true`). Setting it to `false` goes back to the old rule (fee only at withdrawal).
 
 > Money already in provider wallets from before this change was credited without the fee, and is now withdrawn without it.
+
+## Why the app still showed the old problems
+
+| Item | Cause | Fix |
+| --- | --- | --- |
+| Secret key in the app | `.env` on the server has the `sk_test_` key in `STRIPE_PUBLISHABLE_KEY` | **Update:** `POST /booking/intent` now refuses (500 "Stripe publishable key is not configured…") instead of sending a key that doesn't start with `pk_`. Payment works again once the real `pk_test_` is set |
+| Listing create 500 | The AWS access key in `.env` no longer exists (`InvalidAccessKeyId`) | **Update:** uploads now answer **503** "Image upload is unavailable: the server storage (AWS) credentials are invalid" instead of a generic 500. Uploads work again once a valid AWS key is set |
+| Edit still resets stock | The app doesn't send item `_id` on edit | **Update:** an item without `_id` is matched to the old item by the same `productName` (or by position when the item count is unchanged). It keeps the old `_id`, booked stock and photo |
+| Reject / fee / expiry not seen | The server runs a branch without these changes (`main` is behind `dev-15-11-26`) | Deploy `dev-15-11-26` (or merge it into `main`) and restart the server |

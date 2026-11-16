@@ -15,6 +15,20 @@ import ffmpeg from 'fluent-ffmpeg';
 import { config } from '../config';
 import { errorLogger, logger } from '../shared/logger';
 import { s3Client } from './awsConfig';
+import AppError from '../errors/AppErro';
+import { StatusCodes } from 'http-status-codes';
+
+// AWS errors that mean the server's keys are wrong (not the user's file)
+const AWS_CREDENTIAL_ERRORS = [
+  'InvalidAccessKeyId',
+  'SignatureDoesNotMatch',
+  'ExpiredToken',
+  'InvalidToken',
+  'AccessDenied',
+  'CredentialsProviderError',
+];
+const isAwsCredentialError = (error: unknown) =>
+  AWS_CREDENTIAL_ERRORS.includes(String((error as any)?.name ?? (error as any)?.Code ?? ''));
 
 // Supported file types and their max sizes
 const FILE_LIMITS = {
@@ -838,6 +852,13 @@ const uploadSingleFileToS3 = async (
       fileName: file.originalname,
       fileSize: file.size,
     });
+
+    // bad AWS keys on the server: a clear 503 instead of a generic 500
+    if (isAwsCredentialError(error))
+      throw new AppError(
+        StatusCodes.SERVICE_UNAVAILABLE,
+        'Image upload is unavailable: the server storage (AWS) credentials are invalid. Please try again later.',
+      );
 
     throw new Error(
       `File upload failed for ${file.originalname}: ${

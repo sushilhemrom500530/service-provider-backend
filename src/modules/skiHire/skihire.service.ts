@@ -785,11 +785,18 @@ export const updateSkiHireIntoDB = async (req: Request) => {
         // ---- QUANTITY: keep units that are already booked ----
         // existing item: available = old available + (new total - old total)
         // e.g. total 10, 3 booked (available 7), edited to 12 -> available 9
+        // match by _id; if the app didn't send _id, match by the same
+        // product name, then by position when the item count is unchanged
+        const oldItems: any[] = (isExistsSkiHire.items as any[]) || [];
+        const sameName = (a: any, b: any) =>
+          String(a ?? '').trim().toLowerCase() ===
+          String(b ?? '').trim().toLowerCase();
         const existing: any = item?._id
-          ? isExistsSkiHire.items?.find(
-              (i: any) => i._id?.toString() === item._id?.toString(),
-            )
-          : null;
+          ? oldItems.find((i: any) => i._id?.toString() === item._id?.toString())
+          : oldItems.find((i: any) => sameName(i.productName, item.productName)) ||
+            (oldItems.length === productItems.length ? oldItems[index] : null);
+        // keep the same item _id so existing bookings still point to it
+        if (!item?._id && existing?._id) item._id = existing._id;
 
         const newTotalQty =
           item.quantity !== undefined && item.quantity !== null && item.quantity !== ''
@@ -808,7 +815,8 @@ export const updateSkiHireIntoDB = async (req: Request) => {
         return {
           _id: item._id,
           productName: item.productName,
-          productPhoto,
+          // keep the old photo when no new one was sent
+          productPhoto: productPhoto || existing?.productPhoto || '',
           price: Number(item.price),
           totalQty: newTotalQty,
           availableQty: newAvailableQty,

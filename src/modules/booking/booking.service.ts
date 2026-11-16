@@ -1298,6 +1298,13 @@ const createPaymentIntentIntoDB = async (user: JwtPayload, payload: any) => {
       'Stripe is not configured on the server.',
     );
 
+  // never send a secret key to the app: STRIPE_PUBLISHABLE_KEY must be pk_...
+  if (!String(config.stripe.publishableKey || '').startsWith('pk_'))
+    throw new AppError(
+      StatusCodes.INTERNAL_SERVER_ERROR,
+      'Stripe publishable key is not configured on the server (STRIPE_PUBLISHABLE_KEY must start with pk_).',
+    );
+
   const { dbUser, matchedProduct, productModelName, productOwner } =
     await validateBookingRequest(user, payload);
 
