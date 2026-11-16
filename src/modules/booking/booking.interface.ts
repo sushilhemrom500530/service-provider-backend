@@ -61,6 +61,16 @@ export interface IBooking extends Document {
   isPermitted: boolean | false;
   isHandOver: boolean | false;
 
+  approvalDeadline?: Date;
+  approvedAt?: Date;
+  handedOverAt?: Date;
+  returnedAt?: Date;
+  overTimeHours?: number;
+  overTimeCharge?: number;
+  cancelledBy?: 'user' | 'provider' | 'admin' | 'system';
+  cancelReason?: string;
+  providerPayout?: 'held' | 'paid' | 'reversed';
+
   createdAt?: Date;
   updatedAt?: Date;
 }

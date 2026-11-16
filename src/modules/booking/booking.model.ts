@@ -96,6 +96,30 @@ const bookingSchema = new Schema<IBooking>(
       type: Boolean,
       default: false,
     },
+
+    // ---------- booking lifecycle (approval / hand-over / payout) ----------
+    // provider must approve before this time, otherwise the booking expires
+    // and is refunded (only set on bookings that need approval)
+    approvalDeadline: { type: Date },
+    approvedAt: { type: Date },
+    // equipment / vehicle given to the customer, and returned
+    handedOverAt: { type: Date },
+    returnedAt: { type: Date },
+    // late return, recorded when the provider completes the booking
+    overTimeHours: { type: Number },
+    overTimeCharge: { type: Number },
+    // who cancelled and why (reject, expiry, customer)
+    cancelledBy: {
+      type: String,
+      enum: ['user', 'provider', 'admin', 'system'],
+    },
+    cancelReason: { type: String },
+    // provider money: held until the booking is completed
+    // (empty on old bookings = paid to the provider at payment time)
+    providerPayout: {
+      type: String,
+      enum: ['held', 'paid', 'reversed'],
+    },
   },
   {
     timestamps: true,

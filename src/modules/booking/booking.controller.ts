@@ -159,6 +159,35 @@ const updatePermitBookingStatus = catchAsync(
   },
 );
 
+// provider declines a booking: full refund + stock back
+const rejectBooking = catchAsync(async (req: Request, res: Response) => {
+  const user = req.user as JwtPayload;
+  const result = await BookingService.rejectBookingIntoDB(
+    user,
+    req.params.id as string,
+    req.body?.reason,
+  );
+  sendResponse(res, {
+    code: StatusCodes.OK,
+    message: 'Booking rejected and refunded successfully',
+    data: result,
+  });
+});
+
+// provider hands the equipment / vehicle to the customer
+const handOverBooking = catchAsync(async (req: Request, res: Response) => {
+  const user = req.user as JwtPayload;
+  const result = await BookingService.handOverBookingIntoDB(
+    user,
+    req.params.id as string,
+  );
+  sendResponse(res, {
+    code: StatusCodes.OK,
+    message: 'Booking handed over successfully',
+    data: result,
+  });
+});
+
 const completeBooking = catchAsync(async (req: Request, res: Response) => {
   const id = req.params.id;
   const user = req.user as JwtPayload;
@@ -203,6 +232,8 @@ export const BookingController = {
   addBookingIntoDB,
   createPaymentIntent,
   stripeWebhook,
+  rejectBooking,
+  handOverBooking,
   getMyAllBookingIntoDB,
   updateBookingStatus,
   updatePermitBookingStatus,

@@ -32,6 +32,47 @@ export const isValidSlot = (start: string, end: string) => {
   return len !== null && len > 0 && len < 24 * 60 && len <= MAX_SLOT_HOURS * 60;
 };
 
+/**
+ * True when the slot lies inside the opening hours (both may cross midnight).
+ *  open 10:00 AM - 4:30 PM: "12:00 PM - 2:00 PM" ok, "8:00 AM - 10:30 PM" not
+ */
+export const isSlotWithinOpeningHours = (
+  start: string,
+  end: string,
+  openTime: string,
+  closeTime: string,
+) => {
+  const o = toMinutes(openTime);
+  let c = toMinutes(closeTime);
+  let s = toMinutes(start);
+  let e = toMinutes(end);
+  if (o === null || c === null || s === null || e === null) return true; // unknown hours: don't block
+
+  if (c <= o) c += 24 * 60; // open past midnight
+  if (e <= s) e += 24 * 60; // slot past midnight
+  if (s < o) {
+    s += 24 * 60;
+    e += 24 * 60;
+  }
+  return s >= o && e <= c;
+};
+
+// Throws a 400 for the first slot outside the opening hours
+export const assertSlotsWithinOpeningHours = (
+  slots: { startTime: string; endTime: string }[] = [],
+  openTime?: string,
+  closeTime?: string,
+) => {
+  if (!openTime || !closeTime) return;
+  for (const slot of slots) {
+    if (!isSlotWithinOpeningHours(slot?.startTime, slot?.endTime, openTime, closeTime))
+      throw new AppError(
+        StatusCodes.BAD_REQUEST,
+        `Slot "${slot?.startTime} - ${slot?.endTime}" is outside the opening hours (${openTime} - ${closeTime}).`,
+      );
+  }
+};
+
 // Throws a 400 for the first invalid slot in the list
 export const assertValidSlots = (slots: { startTime: string; endTime: string }[] = []) => {
   for (const slot of slots) {

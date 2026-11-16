@@ -10,7 +10,10 @@ import { USER_UPLOADS_FOLDER } from './restaurant.constant';
 import { IRestaurant, ISlot } from './restaurant.interface';
 import { Category } from './../category/category.model';
 import { isRestaurantOpen } from './../../utils/restaurentTimeConvert';
-import { assertValidSlots } from './../../utils/slotTime';
+import {
+  assertValidSlots,
+  assertSlotsWithinOpeningHours,
+} from './../../utils/slotTime';
 import { IReview } from './../common/common.interface';
 
 const getAllRestaurantFromDB = async (user: JwtPayload, query: any) => {
@@ -483,6 +486,8 @@ const addRestaurantIntoDB = async (req: Request) => {
 
   // reject slots that end before they start ("10:30 PM - 12:30 PM")
   assertValidSlots(slots as any);
+  // and slots outside the opening hours
+  assertSlotsWithinOpeningHours(slots as any, req.body.openTime, req.body.closeTime);
 
   let availableSlots = slots; // copy available slots
 
@@ -1073,6 +1078,12 @@ export const updateRestaurantIntoDB = async (req: Request) => {
 
     // reject slots that end before they start ("10:30 PM - 12:30 PM")
     assertValidSlots(incomingSlots);
+    // and slots outside the (new or current) opening hours
+    assertSlotsWithinOpeningHours(
+      incomingSlots,
+      req.body.openTime || restaurant.openTime,
+      req.body.closeTime || restaurant.closeTime,
+    );
 
     const existingSlots = restaurant.slots || [];
 

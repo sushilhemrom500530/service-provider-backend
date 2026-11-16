@@ -6,6 +6,7 @@ import { isRestaurantOpen } from './../utils/restaurentTimeConvert';
 import mongoose from 'mongoose';
 import { IBookingItem } from './../modules/booking/booking.interface';
 import { SkiHire } from '../modules/skiHire/skihire.model';
+import { BookingService } from '../modules/booking/booking.service';
 
 // bookings in these states must never be auto-completed
 // ('Cancel' = legacy value saved by the old cancel/refund code)
@@ -14,6 +15,17 @@ const FINAL_BOOKING_STATUSES = ['Completed', 'Cancelled', 'Cancel', 'Deleted'];
 // date-only bookings (Ski Pass, Massage, Ski Hire without end date)
 // are completed this long after their booking date/time
 const DATE_ONLY_COMPLETE_AFTER_MS = 24 * 60 * 60 * 1000;
+
+// New bookings that were never approved are NOT completed: they expire and
+// are refunded (startApprovalExpiryJob). Old bookings (no approvalDeadline)
+// keep the old behaviour.
+const APPROVED_OR_LEGACY = {
+  $or: [{ approvalDeadline: { $exists: false } }, { isPermitted: true }],
+};
+
+// A rental handed over with PATCH /booking/hand-over stays Active after its
+// end time (overtime runs) until the provider completes it (items returned).
+const NOT_HANDED_OVER = { handedOverAt: { $exists: false } };
 
 // all common booking status
 const startBookingStatusJob = () => {
@@ -29,6 +41,8 @@ const startBookingStatusJob = () => {
           endDateAndTime: { $lt: now },
           bookingStatus: { $nin: FINAL_BOOKING_STATUSES },
           productModel: { $ne: 'SkiHire' },
+          ...NOT_HANDED_OVER,
+          ...APPROVED_OR_LEGACY,
         },
         { $set: { bookingStatus: 'Completed' } },
       );
@@ -41,6 +55,7 @@ const startBookingStatusJob = () => {
             $lt: new Date(now.getTime() - DATE_ONLY_COMPLETE_AFTER_MS),
           },
           bookingStatus: { $nin: FINAL_BOOKING_STATUSES },
+          ...APPROVED_OR_LEGACY,
         },
         { $set: { bookingStatus: 'Completed' } },
       );
@@ -78,6 +93,7 @@ const startRestaurantStatusJob = () => {
             product: restaurant._id,
             date: { $lt: new Date() }, // past bookings
             bookingStatus: 'Active',
+            ...APPROVED_OR_LEGACY,
           })) || [];
 
         // console.log("Current booking data ===>",expiredBookings);
@@ -170,14 +186,20 @@ const startSkiHireRestoreJob = () => {
       const expiredBookings = await Booking.find({
         productModel: 'SkiHire',
         bookingStatus: { $nin: FINAL_BOOKING_STATUSES },
-        $or: [
-          { endDateAndTime: { $lt: now } },
-          // Ski Hire booked with a date only
+        ...NOT_HANDED_OVER,
+        $and: [
+          APPROVED_OR_LEGACY,
           {
-            endDateAndTime: null,
-            date: {
-              $lt: new Date(now.getTime() - DATE_ONLY_COMPLETE_AFTER_MS),
-            },
+            $or: [
+              { endDateAndTime: { $lt: now } },
+              // Ski Hire booked with a date only
+              {
+                endDateAndTime: null,
+                date: {
+                  $lt: new Date(now.getTime() - DATE_ONLY_COMPLETE_AFTER_MS),
+                },
+              },
+            ],
           },
         ],
       });
@@ -247,8 +269,61 @@ const startSkiHireRestoreJob = () => {
   // console.log('===> Ski Hire restore cron job started...');
 };
 
+// New bookings not approved by their approvalDeadline: cancel + full refund
+const startApprovalExpiryJob = () => {
+  cron.schedule('*/5 * * * *', async () => {
+    try {
+      const expired = await Booking.find({
+        approvalDeadline: { $lt: new Date() },
+        isPermitted: { $ne: true },
+        bookingStatus: { $in: ['Active', 'Pending'] },
+      }).select('_id');
+
+      for (const b of expired) {
+        try {
+          await BookingService.cancelBookingWithFullRefund(
+            b._id.toString(),
+            'system',
+            'Not approved by the provider in time',
+          );
+        } catch (error: any) {
+          console.error(`Approval expiry failed for ${b._id}:`, error?.message);
+        }
+      }
+      if (expired.length)
+        console.log(`===> ${expired.length} unapproved booking(s) expired & refunded`);
+    } catch (error) {
+      console.error('Error in approval expiry cron:', error);
+    }
+  });
+};
+
+// Completed bookings whose provider payout is still held: credit the wallet
+const startProviderPayoutJob = () => {
+  cron.schedule('*/5 * * * *', async () => {
+    try {
+      const toPay = await Booking.find({
+        bookingStatus: 'Completed',
+        providerPayout: 'held',
+      }).select('_id');
+
+      for (const b of toPay) {
+        try {
+          await BookingService.releaseProviderPayout(b._id);
+        } catch (error: any) {
+          console.error(`Payout failed for ${b._id}:`, error?.message);
+        }
+      }
+    } catch (error) {
+      console.error('Error in provider payout cron:', error);
+    }
+  });
+};
+
 export const startAllCronJobs = () => {
   startBookingStatusJob();
   startRestaurantStatusJob();
   startSkiHireRestoreJob();
+  startApprovalExpiryJob();
+  startProviderPayoutJob();
 };

@@ -420,3 +420,66 @@ The overtime rule (only for `Active`/`Pending` rentals that have not been handed
 Posting a review (`POST /ski-hire/review/:id`, and the same for Ski Pass, Transport, Restaurant and Massage) used to save and re-validate the **whole** listing. A listing with an old invalid field (for example a Ski Hire item without `productPhoto`) then made every review fail with 400 "Path `productPhoto` is required.", even though the review itself was valid.
 
 Reviews now validate only what they change (the new review and `averageRating`). The same applies when stock is returned on hand-over, cancel and the Ski Hire job, so those no longer fail on such listings. New listings are still fully validated when they are created or edited.
+
+## Booking lifecycle: approve, reject, hand-over, complete
+
+### States
+
+| State | `bookingStatus` | `isPermitted` | `isHandOver` | User label | Provider action |
+| --- | --- | --- | --- | --- | --- |
+| Paid, waiting for approval | `Active` | `false` | `false` | Awaiting approval | Approve / Reject |
+| Approved | `Active` | `true` | `false` | Upcoming | Hand over / Reject |
+| Handed over (rental running) | `Active` | `true` | `true` | In progress | Complete (items returned) |
+| Completed | `Completed` | `true` | `true` | Completed, Give Review | — |
+| Rejected by provider | `Cancelled` (`cancelledBy: provider`) | `false` or `true` | `false` | Cancelled, refunded | — |
+| Not approved in time | `Cancelled` (`cancelledBy: system`) | `false` | `false` | Cancelled, refunded | — |
+| Cancelled by customer | `Cancelled` (`cancelledBy: user`) | any | `false` | Cancelled | — |
+
+Ski Pass is approved automatically at payment (`isPermitted: true`), so it starts as "Upcoming" and needs no Approve.
+
+### Endpoints
+
+All return `{ "code": 200, "message": "...", "data": <booking> }`. Errors return their real status (400, 403, 404, 409, 502).
+
+| Action | Method + path | Auth | Body | Result |
+| --- | --- | --- | --- | --- |
+| Approve | `PATCH /api/v1/booking/update-permit/:id` | Provider (owner) | `{ "isPermitted": true }` | `isPermitted: true`, `approvedAt`; **customer notified "Booking Approved"**. 409 if the booking is Cancelled/Completed |
+| **Reject** (new) | `PATCH /api/v1/booking/reject/:id` | Provider (owner) / Admin | `{ "reason": "Fully booked" }` (optional) | `Cancelled`, `cancelledBy: provider`; **100% refund to the card** (Stripe), stock/slots back, provider payout reversed; customer notified. 409 if already handed over, completed or cancelled. 502 if the Stripe refund fails (booking stays as it was) |
+| Reject (same, old endpoint) | `PATCH /api/v1/booking/update-status/:id` | Provider (owner) / Admin | `{ "bookingStatus": "Cancelled", "reason": "..." }` | Same as Reject |
+| **Hand over** (new) | `PATCH /api/v1/booking/hand-over/:id` | Provider (owner) / Admin | none | `isHandOver: true`, `handedOverAt`; customer notified "Rental Started". 409 if not approved yet, already handed over, or not open |
+| Complete (items returned) | `PATCH /api/v1/booking/complete/:id` | Provider (owner) / Admin | none | `Completed`, `isHandOver: true`, `returnedAt`; stock back (Ski Hire, Restaurant); late return recorded in `overTimeHours` / `overTimeCharge`; provider wallet credited; customer notified. 409 if Cancelled/Completed |
+| Customer cancel | `PATCH /api/v1/booking/refund/:id` | User | `{ "userId": "<own id>", "reason": "..." }` | `Cancelled`; 90% to the customer's in-app wallet; stock/slots back. Both wallets must exist (404 otherwise). Unchanged behaviour |
+
+### Automatic rules (server jobs, every 5 minutes)
+
+| Rule | What happens |
+| --- | --- |
+| **Approval deadline** | Every new booking that needs approval gets `approvalDeadline` = 24 h after booking, or the start time if sooner. Not approved by then → `Cancelled` (`cancelledBy: system`), 100% refund, stock back, customer and provider notified |
+| **Unapproved bookings never complete** | The completion jobs skip new bookings with `isPermitted: false`; they expire instead (rule above). Old bookings (before this change) keep the old behaviour |
+| **Handed-over rentals stay open** | A Ski Hire / Transport booking that was handed over stays `Active` after its end time, with "Over Time" and `overTimeAmount` growing, until the provider presses Complete. Then the overtime is recorded on the booking (`overTimeHours`, `overTimeCharge`) and the customer is notified of the amount due |
+| Approved but never handed over | Completed at the end time, as before (no-show) |
+| **Provider payout** | The provider's wallet is credited when the booking becomes `Completed` (by Complete or by a job), not at payment. New bookings have `providerPayout: held` → `paid`; rejected/expired ones → `reversed` (nothing to take back). Old bookings were paid at payment and are not paid again |
+
+> Overtime is **recorded and notified, not charged automatically**: the card can't be charged again without the customer, so the provider collects it (or a later "pay overtime" step can be added).
+>
+> To go back to paying providers at payment time, set `HOLD_PROVIDER_PAYOUT_UNTIL_COMPLETION = false` in `booking.service.ts`.
+
+### Customer cancel with held payout
+
+If the provider was not paid yet (`providerPayout: held`), a customer cancel no longer takes 90% back from the provider. The customer still gets 90% in the in-app wallet and the provider gets the remaining 10%, which is the same result as before for both sides.
+
+## Restaurant slots and opening hours
+
+New and edited slots must also lie inside the restaurant's opening hours (`openTime` – `closeTime`, both may cross midnight). With hours 10:00 AM – 4:30 PM, `"12:00 PM – 2:00 PM"` is accepted and `"8:00 AM – 10:30 PM"` is rejected (400). Existing slots are listed by `npm run report:suspicious-listings` ("ends before it starts" or "outside opening hours"); the owner must correct them.
+
+## Provider name "N/A"
+
+Some user records have `fullName: "N/A"` and the real name in a field called `" fullName"` (leading space). They were written outside this API. `npm run fix:owner-names` (dry run) shows them; `npm run fix:owner-names -- --apply` moves the real name into `fullName` and removes `" fullName"`. Booking responses then show the real name.
+
+## Still to do outside the code
+
+| Item | Who |
+| --- | --- |
+| Roll the leaked Stripe secret key; put the new `sk_test_` only in the server `.env`, and `pk_test_` in `STRIPE_PUBLISHABLE_KEY` | Stripe account owner |
+| Run `npm run fix:owner-names -- --apply` and `npm run fix:phone-numbers -- --apply` on the database | Backend, after a dry run |
+| Correct existing restaurant slots (e.g. Durbin) | Restaurant owner / admin |

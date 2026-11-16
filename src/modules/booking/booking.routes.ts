@@ -68,6 +68,21 @@ router.patch(
   BookingController.updateBookingStatus,
 );
 
+// reject (provider declines): full refund to the customer + stock back
+router.patch(
+  '/reject/:id',
+  auth('Admin', 'Provider'),
+  validateRequest(BookingRoutesValidations.rejectBookingSchema),
+  BookingController.rejectBooking,
+);
+
+// hand-over: equipment / vehicle given to the customer (rental starts)
+router.patch(
+  '/hand-over/:id',
+  auth('Admin', 'Provider'),
+  BookingController.handOverBooking,
+);
+
 // complete
 router.patch(
   '/complete/:id',

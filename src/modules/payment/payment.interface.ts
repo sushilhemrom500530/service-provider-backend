@@ -4,6 +4,7 @@ export enum TransactionStatus {
   PENDING = 'Pending',
   PAID = 'Paid',
   UNPAID = 'Unpaid',
+  REFUNDED = 'Refunded',
 }
 
 export enum PaymentGateway {

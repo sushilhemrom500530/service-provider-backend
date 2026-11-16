@@ -7,6 +7,7 @@
  *  - item / listing names without letters or shorter than 2 characters ("4")
  *  - Ski Hire listings that look like vehicles ("car", "van", "SUV"...)
  *  - listings whose owner is not a provider of that type
+ *  - restaurant slots that end before they start / are outside opening hours
  *
  * Usage:
  *   npm run report:suspicious-listings
@@ -20,6 +21,7 @@ import { SkiHire } from '../modules/skiHire/skihire.model';
 import { Transport } from '../modules/transport/transport.model';
 import { Restaurant } from '../modules/restaurant/restaurant.model';
 import { Massage } from '../modules/massage/massage.model';
+import { isValidSlot, isSlotWithinOpeningHours } from '../utils/slotTime';
 
 const maxArg = process.argv.find(a => a.startsWith('--max-price='));
 const MAX_PRICE = maxArg ? Number(maxArg.replace('--max-price=', '')) : 5000;
@@ -70,6 +72,15 @@ const run = async () => {
         const names = [l.title, ...(l.items || []).map((i: any) => i.productName)];
         const vehicle = names.find(n => VEHICLE_WORDS.test(String(n ?? '')));
         if (vehicle) reasons.push(`looks like a vehicle: "${vehicle}"`);
+      }
+
+      if (src.type === 'Restaurant') {
+        for (const slot of l.slots || []) {
+          if (!isValidSlot(slot.startTime, slot.endTime))
+            reasons.push(`slot "${slot.startTime} - ${slot.endTime}" ends before it starts or is too long`);
+          else if (!isSlotWithinOpeningHours(slot.startTime, slot.endTime, l.openTime, l.closeTime))
+            reasons.push(`slot "${slot.startTime} - ${slot.endTime}" is outside opening hours ${l.openTime} - ${l.closeTime}`);
+        }
       }
 
       const owner: any = l.owner

@@ -383,7 +383,7 @@ const getSingleBookingFromDB = async (id: string, user: JwtPayload) => {
     isOpenRental &&
     !isNaN(endTime.getTime())
   ) {
-    if (!booking?.isHandOver) {
+    if (!booking?.returnedAt) { // overtime runs until the items are returned
       const now = new Date();
 
       if (now < endTime) {
@@ -534,7 +534,7 @@ const getMyBooking = async (user: JwtPayload, query: any) => {
       isOpenRentalStatus(booking?.bookingStatus) &&
       !isNaN(endTime.getTime())
     ) {
-      if (!booking?.isHandOver) {
+      if (!booking?.returnedAt) { // overtime runs until the items are returned
         const now = new Date();
 
         if (now < endTime) {
@@ -744,7 +744,7 @@ const getMyAllBookingIntoDB = async (user: JwtPayload, query: any) => {
       ['Ski_Hire', 'Transport'].includes(b.category) &&
       b.endDateAndTime &&
       isOpenRentalStatus(b.bookingStatus) &&
-      !b.isHandOver
+      !b.returnedAt
     ) {
       const now = new Date(),
         endTime = new Date(b.endDateAndTime);
@@ -1965,6 +1965,16 @@ const createBookingAfterPayment = async (user: JwtPayload, payload: any) => {
     productModel: productModelName,
     category: productOwner.providerType,
     totalPrice,
+    // provider is paid when the booking is completed, not at payment
+    ...(HOLD_PROVIDER_PAYOUT_UNTIL_COMPLETION && {
+      providerPayout: 'held' as const,
+    }),
+    // bookings that need approval expire (and are refunded) if the
+    // provider doesn't approve in time
+    ...(!payload.isPermitted && {
+      approvalDeadline: computeApprovalDeadline(payload),
+    }),
+    ...(payload.isPermitted && { approvedAt: new Date() }),
   };
 
   // create booking
@@ -1973,8 +1983,11 @@ const createBookingAfterPayment = async (user: JwtPayload, payload: any) => {
   if (!newBooking)
     throw new AppError(StatusCodes.BAD_REQUEST, 'Booking not created.');
 
-  // WALLET UPDATE
-  const wallet = await Wallet.findOne({ user: productOwner?._id });
+  // WALLET UPDATE (skipped while payouts are held until completion;
+  // releaseProviderPayout credits the wallet when the booking completes)
+  const wallet = HOLD_PROVIDER_PAYOUT_UNTIL_COMPLETION
+    ? null
+    : await Wallet.findOne({ user: productOwner?._id });
   if (wallet) {
     wallet.balance += totalPrice;
     wallet.transactions.push({
@@ -2023,11 +2036,362 @@ const createBookingAfterPayment = async (user: JwtPayload, payload: any) => {
   return newBooking;
 };
 
+// ===========================================================================
+// Booking lifecycle: approval deadline, reject / expire, hand-over, payout
+// ===========================================================================
+
+// Provider money is credited when the booking is completed (not at payment).
+// Set to false to go back to crediting the wallet at payment time.
+const HOLD_PROVIDER_PAYOUT_UNTIL_COMPLETION = true;
+
+// How long a provider has to approve a new booking
+const APPROVAL_TIMEOUT_HOURS = 24;
+
+/**
+ * Approval deadline = 24 h after booking, or the start of the service if
+ * that is sooner (never in the past).
+ */
+const computeApprovalDeadline = (payload: any) => {
+  const now = Date.now();
+  let deadline = now + APPROVAL_TIMEOUT_HOURS * MS_PER_HOUR;
+
+  const start = new Date(payload.startDateAndTime || payload.date || '');
+  if (!isNaN(start.getTime()) && start.getTime() < deadline)
+    deadline = Math.max(start.getTime(), now);
+
+  return new Date(deadline);
+};
+
+// Who is allowed to act on a booking as its provider
+const assertOwnerOrAdmin = async (user: JwtPayload, booking: any) => {
+  const actor = await User.findOne({ email: user?.email });
+  if (!actor) throw new AppError(StatusCodes.NOT_FOUND, 'User not found.');
+
+  const productDoc: any = booking.product;
+  const ownerId =
+    productDoc?.owner?._id?.toString?.() || productDoc?.owner?.toString?.();
+
+  if (user.role !== 'Admin' && ownerId !== actor._id.toString())
+    throw new AppError(
+      StatusCodes.FORBIDDEN,
+      'You are not the owner of this product.',
+    );
+
+  return { actor, ownerId };
+};
+
+/**
+ * Give back what the booking took: Ski Hire items, Restaurant seats and
+ * slots. Never above the total stock.
+ */
+const restoreBookingStock = async (booking: any) => {
+  const productId = booking.product?._id || booking.product;
+
+  if (booking.productModel === 'SkiHire') {
+    const skiHire = await SkiHire.findById(productId);
+    if (!skiHire) return;
+    (booking.bookingItems || []).forEach((bItem: any) => {
+      const item = skiHire.items.find(
+        it => it._id?.toString() === bItem.itemId?.toString(),
+      );
+      if (item && typeof item.availableQty === 'number')
+        item.availableQty = Math.min(
+          item.availableQty + Number(bItem.quantity),
+          Number(item.totalQty),
+        );
+    });
+    await skiHire.save({ validateModifiedOnly: true });
+  }
+
+  if (booking.productModel === 'Restaurant') {
+    const restaurant: any = await Restaurant.findById(productId);
+    if (!restaurant) return;
+
+    (booking.slots || []).forEach((slotIdStr: any) => {
+      const slot = restaurant.slots?.find(
+        (s: any) => s._id?.toString() === slotIdStr?.toString(),
+      );
+      const alreadyAvailable = restaurant.availableSlots?.some(
+        (s: any) => s._id?.toString() === slotIdStr?.toString(),
+      );
+      if (slot && !alreadyAvailable)
+        restaurant.availableSlots.push({
+          _id: slot._id,
+          startTime: slot.startTime,
+          endTime: slot.endTime,
+        });
+    });
+
+    (booking.bookingItems || []).forEach((bItem: any) => {
+      const item = restaurant.items?.find(
+        (i: any) => i._id?.toString() === bItem.itemId?.toString(),
+      );
+      if (item)
+        item.availableQty = Math.min(
+          Number(item.availableQty) + Number(bItem.quantity),
+          Number(item.totalQty),
+        );
+    });
+
+    await restaurant.save({ validateModifiedOnly: true });
+  }
+};
+
+/**
+ * Refund the customer in full. Stripe payments (pi_...) go back to the
+ * card; older non-Stripe bookings go to the customer's in-app wallet.
+ */
+const refundBookingPaymentInFull = async (booking: any) => {
+  const payment = await Payment.findOne({ booking: booking._id });
+  const amount = Number(booking.totalPrice) || 0;
+
+  if (payment?.transactionId?.startsWith('pi_')) {
+    await stripe.refunds.create({ payment_intent: payment.transactionId });
+    await Payment.updateOne(
+      { _id: payment._id },
+      { $set: { status: TransactionStatus.REFUNDED } },
+    );
+    return 'card';
+  }
+
+  const userWallet = await Wallet.findOne({ user: booking.user });
+  if (userWallet && amount > 0) {
+    userWallet.balance += amount;
+    userWallet.transactions.push({
+      user: booking.user,
+      balance: amount,
+      type: WalletTransactionType.RECEIVE,
+    });
+    await userWallet.save();
+  }
+  if (payment)
+    await Payment.updateOne(
+      { _id: payment._id },
+      { $set: { status: TransactionStatus.REFUNDED } },
+    );
+  return 'wallet';
+};
+
+/**
+ * Take the booking money back from the provider. Held payouts were never
+ * credited, so only already-paid ones (and old bookings, credited at
+ * payment) are deducted from the provider's wallet.
+ */
+const reverseProviderPayout = async (booking: any, ownerId?: string) => {
+  if (booking.providerPayout === 'reversed') return;
+
+  if (booking.providerPayout !== 'held' && ownerId) {
+    const ownerWallet = await Wallet.findOne({ user: ownerId });
+    const amount = Number(booking.totalPrice) || 0;
+    if (ownerWallet && amount > 0) {
+      ownerWallet.balance -= amount;
+      ownerWallet.transactions.push({
+        user: booking.user,
+        balance: amount,
+        type: WalletTransactionType.SEND,
+      });
+      await ownerWallet.save();
+    }
+  }
+
+  await Booking.updateOne(
+    { _id: booking._id },
+    { $set: { providerPayout: 'reversed' } },
+  );
+};
+
+/**
+ * Cancel a booking that the provider rejected (or that expired without
+ * approval): full refund, stock back, provider payout reversed, notify.
+ * Only for bookings that are still open and not handed over.
+ */
+const cancelBookingWithFullRefund = async (
+  bookingId: string,
+  cancelledBy: 'provider' | 'admin' | 'system',
+  reason: string,
+  ownerId?: string,
+) => {
+  const previous: any = await Booking.findOneAndUpdate(
+    {
+      _id: bookingId,
+      bookingStatus: { $in: ['Active', 'Pending'] },
+      isHandOver: { $ne: true },
+    },
+    { $set: { bookingStatus: 'Cancelled', cancelledBy, cancelReason: reason } },
+    { new: false },
+  ).populate({ path: 'product', select: 'owner title' });
+
+  if (!previous)
+    throw new AppError(
+      StatusCodes.CONFLICT,
+      'Only open bookings that have not been handed over can be rejected.',
+    );
+
+  const owner = ownerId || previous.product?.owner?.toString();
+
+  let refundedTo: string;
+  try {
+    refundedTo = await refundBookingPaymentInFull(previous);
+  } catch (error: any) {
+    // refund failed: put the booking back so it can be retried
+    await Booking.updateOne(
+      { _id: bookingId },
+      {
+        $set: { bookingStatus: previous.bookingStatus },
+        $unset: { cancelledBy: '', cancelReason: '' },
+      },
+    );
+    throw new AppError(
+      StatusCodes.BAD_GATEWAY,
+      `Refund failed, booking not cancelled: ${error?.message}`,
+    );
+  }
+
+  await reverseProviderPayout(previous, owner);
+  await restoreBookingStock(previous);
+
+  const title = previous.product?.title || 'Your booking';
+  await Notification.create({
+    receiverId: previous.user,
+    senderId: owner || previous.user,
+    title:
+      cancelledBy === 'system' ? 'Booking Not Confirmed' : 'Booking Rejected',
+    description: `${title} was ${cancelledBy === 'system' ? 'not confirmed by the provider in time' : 'declined by the provider'}${reason ? `: ${reason}` : ''}. Your payment of ${previous.totalPrice} has been refunded${refundedTo === 'card' ? ' to your card' : ' to your wallet'}.`,
+    type: 'booking',
+  });
+
+  if (cancelledBy === 'system' && owner)
+    await Notification.create({
+      receiverId: owner,
+      senderId: previous.user,
+      title: 'Booking Expired',
+      description: `A booking for ${title} expired because it was not approved in time. The customer was refunded.`,
+      type: 'booking',
+    });
+
+  return Booking.findById(bookingId)
+    .populate('user', 'fullName email')
+    .populate('product');
+};
+
+/**
+ * Credit the provider's wallet for a completed booking whose payout was
+ * held. Safe to call many times: it pays only once.
+ */
+const releaseProviderPayout = async (bookingId: any) => {
+  const booking: any = await Booking.findOneAndUpdate(
+    { _id: bookingId, bookingStatus: 'Completed', providerPayout: 'held' },
+    { $set: { providerPayout: 'paid' } },
+    { new: true },
+  ).populate({ path: 'product', select: 'owner' });
+  if (!booking) return;
+
+  const ownerId = booking.product?.owner;
+  const amount = Number(booking.totalPrice) || 0;
+  const wallet = ownerId ? await Wallet.findOne({ user: ownerId }) : null;
+
+  if (!wallet || amount <= 0) {
+    // no wallet yet: keep it held so a later run can pay it
+    await Booking.updateOne(
+      { _id: booking._id },
+      { $set: { providerPayout: 'held' } },
+    );
+    return;
+  }
+
+  wallet.balance += amount;
+  wallet.transactions.push({
+    user: ownerId,
+    balance: amount,
+    type: WalletTransactionType.EARN,
+  });
+  await wallet.save();
+};
+
+// PATCH /booking/reject/:id — provider declines a booking
+const rejectBookingIntoDB = async (
+  user: JwtPayload,
+  bookingId: string,
+  reason?: string,
+) => {
+  const booking = await Booking.findById(bookingId).populate({
+    path: 'product',
+    select: 'owner',
+  });
+  if (!booking) throw new AppError(StatusCodes.NOT_FOUND, 'Booking not found.');
+
+  const { ownerId } = await assertOwnerOrAdmin(user, booking);
+
+  return cancelBookingWithFullRefund(
+    bookingId,
+    user.role === 'Admin' ? 'admin' : 'provider',
+    reason || '',
+    ownerId,
+  );
+};
+
+// PATCH /booking/hand-over/:id — equipment / vehicle given to the customer
+const handOverBookingIntoDB = async (user: JwtPayload, bookingId: string) => {
+  const booking: any = await Booking.findById(bookingId).populate({
+    path: 'product',
+    select: 'owner title',
+  });
+  if (!booking) throw new AppError(StatusCodes.NOT_FOUND, 'Booking not found.');
+
+  const { actor } = await assertOwnerOrAdmin(user, booking);
+
+  if (!['Active', 'Pending'].includes(booking.bookingStatus))
+    throw new AppError(
+      StatusCodes.CONFLICT,
+      `A ${booking.bookingStatus} booking can't be handed over.`,
+    );
+  if (!booking.isPermitted)
+    throw new AppError(
+      StatusCodes.CONFLICT,
+      'Approve the booking before handing it over.',
+    );
+  if (booking.isHandOver)
+    throw new AppError(StatusCodes.CONFLICT, 'Already handed over.');
+
+  const result = await Booking.findByIdAndUpdate(
+    bookingId,
+    {
+      $set: {
+        isHandOver: true,
+        handedOverAt: new Date(),
+        bookingStatus: 'Active',
+      },
+    },
+    { new: true },
+  )
+    .populate('user', 'fullName email')
+    .populate('product');
+
+  await Notification.create({
+    receiverId: booking.user,
+    senderId: actor._id,
+    title: 'Rental Started',
+    description: `${booking.product?.title || 'Your booking'} has been handed over to you. Enjoy!`,
+    type: 'booking',
+  });
+
+  return result;
+};
+
 const updateBookingIntoDB = async (
   user: JwtPayload,
   payload: { bookingStatus?: BookingStatus; isPermitted?: boolean },
   bookingId: string,
 ) => {
+  // Provider/Admin setting "Cancelled" = reject: refund + stock back
+  if (payload.bookingStatus === 'Cancelled') {
+    return rejectBookingIntoDB(
+      user,
+      bookingId,
+      (payload as any).reason || (payload as any).cancelReason,
+    );
+  }
+
   // Verify logged-in user
   const isExistsUser = await User.findOne({ email: user?.email });
   if (!isExistsUser) {
@@ -2113,13 +2477,38 @@ const updatePermitBookingIntoDB = async (
     );
   }
 
+  // only open bookings can be approved (not cancelled / completed ones)
+  if (!['Active', 'Pending'].includes(existsBooking.bookingStatus))
+    throw new AppError(
+      StatusCodes.CONFLICT,
+      `A ${existsBooking.bookingStatus} booking can't be approved.`,
+    );
+
+  const wasPermitted = existsBooking.isPermitted;
+
   const result = await Booking.findByIdAndUpdate(
     bookingId,
-    { $set: { isPermitted } },
+    {
+      $set: {
+        isPermitted,
+        ...(isPermitted && !wasPermitted && { approvedAt: new Date() }),
+      },
+    },
     { new: true },
   )
     .populate('user', 'fullName email')
     .populate('product');
+
+  // tell the customer their booking was approved
+  if (isPermitted && !wasPermitted) {
+    await Notification.create({
+      receiverId: existsBooking.user,
+      senderId: isExistsUser._id,
+      title: 'Booking Approved',
+      description: `${(result?.product as any)?.title || 'Your booking'} has been approved by the provider.`,
+      type: 'booking',
+    });
+  }
 
   return result;
 };
@@ -2149,6 +2538,42 @@ const completeBookingIntoDB = async (user: JwtPayload, bookingId: string) => {
     );
   }
 
+  // a cancelled or already completed booking can't be completed again
+  if (['Cancelled', 'Cancel', 'Completed', 'Deleted'].includes(existsBooking.bookingStatus))
+    throw new AppError(
+      StatusCodes.CONFLICT,
+      `This booking is already ${existsBooking.bookingStatus}.`,
+    );
+
+  // Restaurant: seats and slots go back when the booking is completed
+  if (existsBooking.productModel === 'Restaurant')
+    await restoreBookingStock(existsBooking);
+
+  // Late return (Ski Hire / Transport handed over, returned after the end):
+  // record overtime hours x the listing's hourly extra charge
+  const returnedAt = new Date();
+  const overtime: { overTimeHours?: number; overTimeCharge?: number } = {};
+  const end = new Date(existsBooking.endDateAndTime || '');
+  if (
+    ['Ski_Hire', 'Transport'].includes(existsBooking.category) &&
+    existsBooking.isHandOver &&
+    !isNaN(end.getTime()) &&
+    returnedAt > end
+  ) {
+    const Model: any = existsBooking.productModel === 'SkiHire' ? SkiHire : Transport;
+    const rateDoc: any = await Model.findById(productDoc?._id)
+      .select('extraChargePerHour extraChargePerHours')
+      .lean();
+    const rate = Number(
+      existsBooking.category === 'Ski_Hire'
+        ? rateDoc?.extraChargePerHour
+        : rateDoc?.extraChargePerHours,
+    ) || 0;
+    const hours = Math.ceil((returnedAt.getTime() - end.getTime()) / MS_PER_HOUR);
+    overtime.overTimeHours = hours;
+    overtime.overTimeCharge = Math.round(hours * rate * 100) / 100;
+  }
+
   // Ski Hire hand-over: items are back, return them to stock.
   // Skipped if the booking was already completed (stock already restored).
   if (
@@ -2175,7 +2600,14 @@ const completeBookingIntoDB = async (user: JwtPayload, bookingId: string) => {
 
   const result = await Booking.findByIdAndUpdate(
     bookingId,
-    { $set: { bookingStatus: 'Completed', isHandOver: true } },
+    {
+      $set: {
+        bookingStatus: 'Completed',
+        isHandOver: true,
+        returnedAt,
+        ...overtime,
+      },
+    },
     { new: true },
   )
     .populate('user', 'fullName email')
@@ -2188,6 +2620,20 @@ const completeBookingIntoDB = async (user: JwtPayload, bookingId: string) => {
     description: `${(result?.product as any)?.title || 'Your'} booking has been completed by ${isExistsUser?.fullName}. Product id:# ${(result?.product as any)?._id}`,
     type: 'booking',
   });
+
+  // late return: tell the customer the overtime that is due
+  if (overtime.overTimeCharge && overtime.overTimeCharge > 0) {
+    await Notification.create({
+      receiverId: result?.user?._id,
+      senderId: isExistsUser._id,
+      title: 'Overtime Charge',
+      description: `Returned ${overtime.overTimeHours} hour(s) late. Overtime due: ${overtime.overTimeCharge}.`,
+      type: 'payment',
+    });
+  }
+
+  // pay the provider now that the service is done
+  await releaseProviderPayout(bookingId);
 
   return result;
 };
@@ -2282,16 +2728,35 @@ const refundBookingIntoDB = async (
   // calculate refund (10% of total price)
   const finalRefund = Number((existsBooking.totalPrice * 0.9).toFixed(2));
 
-  // decrease balance
-  ownerWallet.balance -= finalRefund;
+  if (existsBooking.providerPayout === 'held') {
+    // provider was never credited (payout held until completion):
+    // give the provider only the kept 10% instead of taking 90% back
+    const providerShare = Number(
+      (existsBooking.totalPrice - finalRefund).toFixed(2),
+    );
+    ownerWallet.balance += providerShare;
+    ownerWallet.transactions.push({
+      user: isExistsUser._id,
+      balance: providerShare,
+      type: WalletTransactionType.EARN,
+    });
+    await ownerWallet.save();
+    await Booking.updateOne(
+      { _id: existsBooking._id },
+      { $set: { providerPayout: 'paid', cancelledBy: 'user', cancelReason: payload?.reason } },
+    );
+  } else {
+    // decrease balance
+    ownerWallet.balance -= finalRefund;
 
-  ownerWallet.transactions.push({
-    user: isExistsUser._id,
-    balance: finalRefund,
-    type: WalletTransactionType.SEND,
-  });
+    ownerWallet.transactions.push({
+      user: isExistsUser._id,
+      balance: finalRefund,
+      type: WalletTransactionType.SEND,
+    });
 
-  await ownerWallet.save();
+    await ownerWallet.save();
+  }
 
   userWallet.balance += finalRefund;
   userWallet.transactions.push({
@@ -2449,6 +2914,10 @@ export const BookingService = {
   addBookingIntoDB,
   createPaymentIntentIntoDB,
   handleStripeWebhook,
+  rejectBookingIntoDB,
+  handOverBookingIntoDB,
+  releaseProviderPayout,
+  cancelBookingWithFullRefund,
   getMyAllBookingIntoDB,
   updateBookingIntoDB,
   updatePermitBookingIntoDB,

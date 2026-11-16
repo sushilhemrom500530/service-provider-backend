@@ -108,6 +108,8 @@ export const updateBookingSchema = z.object({
   body: z.object({
     bookingStatus: bookingStatusEnum.optional(),
     isPermitted: z.boolean().optional(),
+    // used when bookingStatus is "Cancelled" (= reject with refund)
+    reason: z.string().max(500).optional(),
   }),
 });
 
@@ -120,7 +122,16 @@ export const updatePermitBookingSchema = z.object({
   }),
 });
 
+export const rejectBookingSchema = z.object({
+  body: z
+    .object({
+      reason: z.string().max(500, 'Reason is too long').optional(),
+    })
+    .optional(),
+});
+
 export const BookingRoutesValidations = {
+  rejectBookingSchema,
   createBookingSchema,
   createPaymentIntentSchema,
   updateBookingSchema,
