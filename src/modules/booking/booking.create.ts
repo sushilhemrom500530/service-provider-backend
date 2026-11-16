@@ -27,6 +27,9 @@ import {
   computeApprovalDeadline,
   computeSchedule,
   durationToMinutes,
+  fitsOpeningHours,
+  formatDuration,
+  formatTime,
   isRental,
   timeToMinutes,
   toDayKey,
@@ -197,14 +200,18 @@ export const prepareBooking = async (user: JwtPayload, payload: any) => {
         duration = option.duration;
       }
       if (!(unit > 0)) throw bad('This massage has no valid price.');
-      // inside opening hours
-      const open = timeToMinutes(listing.openTime);
-      const close = timeToMinutes(listing.closeTime);
-      const start = timeToMinutes(time)!;
+      // the whole session inside opening hours (hours may cross midnight)
       const len = durationToMinutes(duration) ?? 60;
-      if (open !== null && close !== null && close > open && (start < open || start + len > close))
+      if (!fitsOpeningHours(time, len, listing.openTime, listing.closeTime))
         throw bad(`Choose a time between ${listing.openTime} and ${listing.closeTime} (session ${len} min).`);
-      n = { ...base, date: startOfLocalDay(day), time, duration, personCount: guests };
+      // stored in one format: "10:30 AM", "60 min"
+      n = {
+        ...base,
+        date: startOfLocalDay(day),
+        time: formatTime(time)!,
+        duration: formatDuration(duration) ?? undefined,
+        personCount: guests,
+      };
       totalPrice = round2(unit * guests);
       priceBreakdown = { unitPrice: unit, persons: guests, duration };
       break;

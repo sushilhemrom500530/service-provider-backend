@@ -25,7 +25,8 @@ import {
 } from './../common/listing.helpers';
 import { Massage } from './massage.model';
 import { MASSAGE_CATEGORY, USER_UPLOADS_FOLDER } from './massage.constant';
-import { parseDurationMinutes } from './massage.utils';
+import { formatDuration, parseDurationMinutes } from './massage.utils';
+import { openWindowMinutes } from './../booking/booking.rules';
 
 /* ------------------------------------------------------------------ */
 /* Serializers                                                         */
@@ -38,12 +39,16 @@ const round2 = (n: number) => Math.round(n * 100) / 100;
 /** priceByDuration -> [{id, duration, minutes, price}], shortest first */
 const toDurations = (doc: any) =>
   (doc?.priceByDuration || [])
-    .map((p: any) => ({
-      id: p?._id ? String(p._id) : undefined,
-      duration: p?.duration ?? '',
-      minutes: parseDurationMinutes(p?.duration),
-      price: Number(p?.amount) || 0,
-    }))
+    .map((p: any) => {
+      const minutes = parseDurationMinutes(p?.duration);
+      return {
+        id: p?._id ? String(p._id) : undefined,
+        // one format for old and new listings: "60 min"
+        duration: minutes !== null ? formatDuration(minutes) : (p?.duration ?? ''),
+        minutes,
+        price: Number(p?.amount) || 0,
+      };
+    })
     .sort((a: any, b: any) => (a.minutes ?? Infinity) - (b.minutes ?? Infinity));
 
 /** Starting price: the cheapest duration, else the listing amount */
@@ -118,6 +123,21 @@ const mergeDurations = (existing: any[], incoming: DurationInput[]) =>
     };
   });
 
+/**
+ * Every session must fit inside the opening hours (hours may cross midnight),
+ * otherwise the listing can never be booked. E.g. 682 min in 12:21-2:21 AM -> 400.
+ */
+const assertDurationsFitHours = (minutesList: (number | null)[], openTime: unknown, closeTime: unknown) => {
+  const window = openWindowMinutes(openTime, closeTime);
+  if (window === null) return;
+  const tooLong = minutesList.filter((m): m is number => m !== null && m > window);
+  if (tooLong.length)
+    throw new AppError(
+      StatusCodes.BAD_REQUEST,
+      `Duration ${formatDuration(Math.max(...tooLong))} is longer than the opening hours (${openTime} - ${closeTime}, ${window} min). Shorten it or extend the hours.`,
+    );
+};
+
 const uploadThumbnail = async (file?: Express.Multer.File) =>
   file ? s3Services.uploadSingleFileToS3(file, USER_UPLOADS_FOLDER) : undefined;
 
@@ -175,6 +195,7 @@ const create = async (user: JwtPayload, body: any, file?: Express.Multer.File) =
   if (!file) throw new AppError(StatusCodes.BAD_REQUEST, 'thumbnail image (field "file") is required.');
 
   const durations: DurationInput[] = body.priceByDuration;
+  assertDurationsFitHours(durations.map(d => d.minutes), body.openTime, body.closeTime);
   const data = {
     ...pickDefined(body, [
       'category',
@@ -220,6 +241,15 @@ const update = async (
   if (body.category !== undefined) await assertSubCategory(MASSAGE_CATEGORY, body.category);
 
   const set: Record<string, any> = pickDefined(body, UPDATABLE);
+
+  // re-check when hours or durations change (old untouched data is left alone)
+  if (body.openTime !== undefined || body.closeTime !== undefined || body.priceByDuration !== undefined) {
+    const minutes =
+      body.priceByDuration !== undefined
+        ? (body.priceByDuration as DurationInput[]).map(d => d.minutes)
+        : (listing.priceByDuration || []).map((p: any) => parseDurationMinutes(p?.duration));
+    assertDurationsFitHours(minutes, body.openTime ?? listing.openTime, body.closeTime ?? listing.closeTime);
+  }
 
   if (body.priceByDuration !== undefined) {
     const durations: DurationInput[] = body.priceByDuration;

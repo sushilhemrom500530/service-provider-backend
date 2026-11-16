@@ -85,7 +85,7 @@ One body for all services; fields that don't apply are ignored.
 | `productId` | ✔ | ✔ | ✔ | ✔ | ✔ |
 | `date` (`YYYY-MM-DD`) | ✔ | ✔ | ✔ | | |
 | `personCount` | ✔ (default 1) | ✔ (default 1) | | | ✔ (≤ seats) |
-| `time` (`"10:30 AM"`) | | ✔ | | | |
+| `time` (`"10:30 AM"` or `"14:00"`; the whole session must fit in the opening hours, which may cross midnight) | | ✔ | | | |
 | `duration` (`"60 min"`, one of the listing's durations) | | ✔ | | | |
 | `slotId` | | | ✔ | | |
 | `bookingItems` `[{ itemId, quantity }]` | | | ✔ seat types | ✔ items | |
@@ -187,7 +187,7 @@ Lists return **cards**; `GET /booking/:id` returns the **detail** (card + more).
 | `complete` | provider (Massage, Restaurant, Ski Pass) | Mark as done | `PATCH /booking/:id/complete` |
 | `cancel` | customer | Cancel booking | `PATCH /booking/:id/cancel` `{ reason? }` |
 | `pay_late_fee` | customer | Pay late fee | §6 |
-| `review` | customer | Write a review | `POST /<service>/:listingId/review` (Appendix) |
+| `review` | customer | Write a review | `POST /<service>/:listingId/review` (Appendix). Shown only until the customer has reviewed that listing (one review per customer per listing), so it also disappears from their other bookings of it. |
 
 - All actions return the updated booking detail.
 - A 409 means the booking changed meanwhile (another device, or an automatic rule): refresh.
@@ -214,7 +214,7 @@ Lists return **cards**; `GET /booking/:id` returns the **detail** (card + more).
   - still `Pending`, or more than **24 h** before the start → **100 %**
   - within 24 h of the start → **90 %**; the provider keeps 10 %
   - Response detail includes `refund: { amount, percent }`.
-- **After completion:** the `review` action, which opens the service's review endpoint.
+- **After completion:** the `review` action, which opens the service's review endpoint. After a successful review, refresh the booking: `review` is gone.
 
 ### Provider app
 - **Bookings list:** `GET /booking/provider?tab=requests|upcoming|active|past|cancelled&category=&date=&page=`
@@ -1058,7 +1058,7 @@ Query `page`, `limit`.
 | `file` (or `thumbnail`) | image file | yes | jpg/png/webp/heic… |
 | `category` | string (sub-category id) | yes | must be a Massage sub-category |
 | `title` | string | yes | |
-| `openTime`, `closeTime` | string | yes | `"9:00 AM"`, `"09:00 PM"`, `"21:30"` (12h with AM/PM or 24h). Closing after midnight is allowed. |
+| `openTime`, `closeTime` | string | yes | `"9:00 AM"`, `"09:00 PM"`, `"21:30"` (12h with AM/PM or 24h). Closing after midnight is allowed. Every duration must fit inside these hours (400 otherwise). |
 | `durations` (or old `priceByDuration`) | JSON string array | yes | `[{"duration":"60 min","price":80}]` (old shape `{"duration","amount"}` also accepted). 1-20 entries, no duplicate durations. |
 | `serviceArea` | string | yes | |
 | `benefits` | string | yes | |
@@ -1066,7 +1066,9 @@ Query `page`, `limit`.
 | `amount` | number | no | fallback price; defaults to the cheapest duration |
 | `description` | string | no | |
 
-`duration` accepts `"60"`, `60`, `"60 min"`, `"60mins"`, `"1h"`, `"1 hour"`, `"1.5 hours"`, `"1h 30"`, `"1 hour 30 min"` (5 to 1440 minutes, whole minutes). It is stored and returned as `"<minutes> min"` (e.g. `"1h"` → `"60 min"`). Prices must be > 0.
+`duration` accepts `"60"`, `60`, `"60 min"`, `"60mins"`, `"1h"`, `"1 hour"`, `"1.5 hours"`, `"1h 30"`, `"1 hour 30 min"` (5 to 1440 minutes, whole minutes). It is stored and returned as `"<minutes> min"` (e.g. `"1h"` → `"60 min"`); old listings are returned in the same format. Prices must be > 0. A duration longer than the opening hours is refused (400), e.g. 682 min with hours 12:21 AM - 2:21 AM.
+
+In bookings, massage `schedule.time` is always `"h:mm A"` (e.g. `"2:00 PM"`) and `schedule.duration` is `"<minutes> min"`.
 Owner is always the caller (`owner` in the body is ignored).
 
 ```

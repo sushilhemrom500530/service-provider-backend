@@ -84,6 +84,42 @@ export const durationToMinutes = (value: unknown): number | null => {
   return matched && total > 0 ? Math.round(total) : null;
 };
 
+/** Display form for a duration: "1 hrs" / "60mins" / "60" -> "60 min" (unreadable -> as is) */
+export const formatDuration = (value: unknown): string | null => {
+  if (value === null || value === undefined || value === '') return null;
+  const minutes = durationToMinutes(value);
+  return minutes ? `${minutes} min` : String(value);
+};
+
+/** Display form for a time of day: "14:00" / "2:00pm" -> "2:00 PM" (unreadable -> as is) */
+export const formatTime = (value: unknown): string | null => {
+  if (value === null || value === undefined || value === '') return null;
+  const minutes = timeToMinutes(value);
+  if (minutes === null) return String(value);
+  return moment.utc(0).add(minutes, 'minutes').format('h:mm A');
+};
+
+/**
+ * Length of opening hours in minutes; hours may cross midnight
+ * ("8:45 PM"-"3:30 AM" -> 405). Same open and close = open 24 h. null if unreadable.
+ */
+export const openWindowMinutes = (openTime: unknown, closeTime: unknown): number | null => {
+  const o = timeToMinutes(openTime);
+  const c = timeToMinutes(closeTime);
+  if (o === null || c === null) return null;
+  return (c - o + 1440) % 1440 || 1440;
+};
+
+/** True when a session [time, time + length] fits inside the opening hours (midnight-safe) */
+export const fitsOpeningHours = (time: unknown, length: number, openTime: unknown, closeTime: unknown) => {
+  const window = openWindowMinutes(openTime, closeTime);
+  const o = timeToMinutes(openTime);
+  const s = timeToMinutes(time);
+  if (window === null || o === null || s === null) return true; // unknown hours: don't block
+  const offset = (s - o + 1440) % 1440;
+  return offset + length <= window;
+};
+
 /* ------------------------------------------------------------------ */
 /* Schedule                                                            */
 /* ------------------------------------------------------------------ */
@@ -167,7 +203,12 @@ export const deriveStatus = (b: any, now = new Date()): ApiStatus => {
 /* ------------------------------------------------------------------ */
 export type Viewer = 'customer' | 'provider' | 'admin';
 
-export const allowedActions = (b: any, viewer: Viewer, now = new Date()): string[] => {
+export const allowedActions = (
+  b: any,
+  viewer: Viewer,
+  now = new Date(),
+  opts: { reviewed?: boolean } = {},
+): string[] => {
   const status = deriveStatus(b, now);
   const { startAt, endAt } = computeSchedule(b);
   const started = !!startAt && startAt.getTime() <= now.getTime();
@@ -177,7 +218,8 @@ export const allowedActions = (b: any, viewer: Viewer, now = new Date()): string
     if ((status === 'Pending' || status === 'Confirmed') && !started && !b?.isHandOver)
       actions.push('cancel');
     if (b?.lateFee?.status === 'due') actions.push('pay_late_fee');
-    if (status === 'Completed' && !b?.noShow) actions.push('review');
+    // one review per customer per listing: hide it once written
+    if (status === 'Completed' && !b?.noShow && !opts.reviewed) actions.push('review');
     return actions;
   }
 

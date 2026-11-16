@@ -280,10 +280,10 @@ describe('detail', () => {
         price: { amount: 40, unit: 'per_session' },
       }),
     );
-    // old stored duration text is shown as-is, with minutes parsed
+    // old stored duration text is returned in the one format "<n> min"
     expect(d.durations.map((x: any) => [x.duration, x.minutes, x.price])).toEqual([
       ['30 min', 30, 40],
-      ['1 hour', 60, 70],
+      ['60 min', 60, 70],
     ]);
     expect(d.createdAt).toBeDefined();
   });

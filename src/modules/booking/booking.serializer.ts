@@ -3,6 +3,7 @@
  * that don't apply to a category are null. Internal fields (payout state,
  * drafts, __v…) are never sent.
  */
+import { Types } from 'mongoose';
 import { config } from '../../config';
 import { User } from '../user/user.model';
 import { LISTING_MODELS, MODEL_TO_CATEGORY, hourlyRateOf } from './booking.availability';
@@ -11,6 +12,8 @@ import {
   allowedActions,
   computeSchedule,
   deriveStatus,
+  formatDuration,
+  formatTime,
   rentalTimer,
   toDayKey,
 } from './booking.rules';
@@ -19,6 +22,8 @@ import { toContactUser } from '../../shared/apiHelpers';
 type Ctx = {
   listings: Map<string, any>;
   users: Map<string, any>;
+  /** listingId -> ids of the customers who already reviewed it */
+  reviewers: Map<string, Set<string>>;
 };
 
 const categoryOf = (b: any) => b.category || MODEL_TO_CATEGORY[b.productModel];
@@ -32,15 +37,26 @@ export const loadContext = async (bookings: any[]): Promise<Ctx> => {
     byCategory.get(c)!.add(String(b.product));
   }
   const listings = new Map<string, any>();
+  const reviewers = new Map<string, Set<string>>();
+  const customerIds = [...new Set(bookings.map(b => String(b.user)))];
   await Promise.all(
     [...byCategory.entries()].map(async ([c, ids]) => {
       const entry = LISTING_MODELS[c];
       if (!entry) return;
-      const docs: any[] = await entry.model
-        .find({ _id: { $in: [...ids] } })
-        .select('-reviews -refunds -__v')
-        .lean();
+      const [docs, reviewed]: [any[], any[]] = await Promise.all([
+        entry.model.find({ _id: { $in: [...ids] } }).select('-reviews -refunds -__v').lean(),
+        // only the reviewer ids of these bookings' customers (not the reviews)
+        entry.model
+          .aggregate([
+            { $match: { _id: { $in: [...ids].map(id => new Types.ObjectId(id)) } } },
+            { $project: { userIds: '$reviews.userId' } },
+          ]),
+      ]);
       for (const d of docs) listings.set(String(d._id), d);
+      for (const r of reviewed) {
+        const mine = (r.userIds || []).map(String).filter((u: string) => customerIds.includes(u));
+        reviewers.set(String(r._id), new Set(mine));
+      }
     }),
   );
 
@@ -52,7 +68,7 @@ export const loadContext = async (bookings: any[]): Promise<Ctx> => {
     .select('fullName profileUrl email phoneNumber')
     .lean();
   for (const u of docs) users.set(String(u._id), u);
-  return { listings, users };
+  return { listings, users, reviewers };
 };
 
 const itemLines = (b: any, listing: any) => {
@@ -89,7 +105,9 @@ export const toBookingCard = (b: any, viewer: Viewer, ctx: Ctx, now = new Date()
     id: String(b._id),
     category,
     status,
-    actions: allowedActions(b, viewer, now),
+    actions: allowedActions(b, viewer, now, {
+      reviewed: !!ctx.reviewers?.get(String(b.product))?.has(String(b.user)),
+    }),
     listing: listing
       ? {
           id: String(listing._id),
@@ -102,8 +120,8 @@ export const toBookingCard = (b: any, viewer: Viewer, ctx: Ctx, now = new Date()
       date: toDayKey(b.date ?? startAt),
       startAt,
       endAt,
-      time: b.time ?? null,
-      duration: b.duration ?? null,
+      time: formatTime(b.time),
+      duration: formatDuration(b.duration),
       slot: category === 'Restaurant' ? slotOf(b, listing) : null,
     },
     people: b.personCount ?? null,
