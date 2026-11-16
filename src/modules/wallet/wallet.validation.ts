@@ -9,12 +9,7 @@ const addWallet = z.object({
         invalid_type_error: 'Account Type must be a string',
       })
       .min(1, 'Account Type cannot be empty'),
-    cardNumber: z
-      .number({
-        required_error: 'Card Number is required',
-        invalid_type_error: 'Card Number must be a string',
-      })
-      .min(1, 'Card Number cannot be empty'), 
+    cardNumber: z.union([z.number(), z.string().regex(/^[\d\s]{4,40}$/, 'Card Number must contain digits')]), 
 
     cardHolderName: z.string({
       required_error: 'card Holder Name is required',

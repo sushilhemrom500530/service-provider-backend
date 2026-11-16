@@ -1,882 +1,426 @@
-import mongoose, { Types } from 'mongoose';
-import AppError from '../../errors/AppErro';
+import { Types } from 'mongoose';
 import { StatusCodes } from 'http-status-codes';
-import { Request, Response } from 'express';
+import { JwtPayload } from 'jsonwebtoken';
+import AppError from '../../errors/AppErro';
 import { s3Services } from './../../aws/s3Service';
 import { User } from './../user/user.model';
-import { JwtPayload } from 'jsonwebtoken';
-import { IReview } from '../common/common.interface';
+import { Booking } from './../booking/booking.model';
+import {
+  assertListingOwner,
+  isAdmin,
+  parseSort,
+  pickDefined,
+  toPublicUser,
+  toRating,
+} from '../../shared/apiHelpers';
+import {
+  OPEN_BOOKING_STATUSES,
+  SubCategory,
+  addListingReview,
+  assertSubCategory,
+  buildListingFilter,
+  findListingOr404,
+  getListingReviews,
+  loadSubCategories,
+  paginateListings,
+  setListingActive,
+  softDeleteListing,
+} from '../common/listing.helpers';
 import { SkiHire } from './skihire.model';
-import { Category } from './../category/category.model';
+import { SkiHireItemInput } from './skihire.interface';
 import { USER_UPLOADS_FOLDER } from './skihire.constant';
 
-const getAllSkiHireFromDB = async (user: JwtPayload, query: any) => {
-  const isExistsUser = await User.findOne({ email: user?.email });
-  if (!isExistsUser) {
-    throw new AppError(StatusCodes.NOT_FOUND, 'User not found.');
+const CATEGORY = 'Ski_Hire' as const;
+const LABEL = 'Ski hire';
+
+type UploadedFiles = Record<string, any[]> | undefined;
+
+/* ------------------------------------------------------------------ */
+/* Serializers                                                         */
+/* ------------------------------------------------------------------ */
+
+const cheapestPrice = (items: any[] = []) => {
+  const prices = items.map(i => Number(i?.price)).filter(n => Number.isFinite(n));
+  return prices.length ? Math.min(...prices) : 0;
+};
+
+const toCard = (doc: any, subs: Map<string, SubCategory>) => ({
+  id: String(doc._id),
+  category: CATEGORY,
+  subCategory: subs.get(String(doc.category)) || null,
+  title: doc.title,
+  thumbnail: doc.thumbnail || '',
+  serviceArea: doc.serviceArea || '',
+  price: { amount: cheapestPrice(doc.items), unit: doc.priceUnit || 'per_day' },
+  rating: toRating({ averageRating: doc.averageRating, reviewCount: doc.reviewCount }),
+  provider: toPublicUser(doc.owner),
+  isActive: doc.isActive !== false,
+});
+
+const toItem = (i: any) => ({
+  id: String(i._id),
+  name: i.productName,
+  photo: i.productPhoto || '',
+  price: i.price,
+  quantity: i.totalQty,
+});
+
+const toDetail = (doc: any, subs: Map<string, SubCategory>) => ({
+  ...toCard(doc, subs),
+  description: doc.description || '',
+  priceUnit: doc.priceUnit || 'per_day',
+  extraChargePerHour: Number(doc.extraChargePerHour) || 0,
+  items: (doc.items || []).map(toItem),
+  createdAt: doc.createdAt,
+});
+
+const loadDetail = async (id: string) => {
+  const doc: any = await SkiHire.findOne({ _id: id, isDeleted: { $ne: true } })
+    .select('-reviews -refunds -__v')
+    .populate({ path: 'owner', select: 'fullName profileUrl' })
+    .lean();
+  if (!doc) throw new AppError(StatusCodes.NOT_FOUND, `${LABEL} not found.`);
+  return toDetail(doc, await loadSubCategories(CATEGORY));
+};
+
+/* ------------------------------------------------------------------ */
+/* Uploads                                                             */
+/* ------------------------------------------------------------------ */
+
+const upload = (file: any) => s3Services.uploadSingleFileToS3(file, USER_UPLOADS_FOLDER);
+
+const uploadThumbnail = async (files: UploadedFiles) => {
+  const file = files?.thumbnail?.[0] || files?.file?.[0];
+  return file ? ((await upload(file)) as string) : undefined;
+};
+
+/**
+ * Item photos by index of the sent items array. Supported field names:
+ *   itemPhoto_<i>             (preferred)
+ *   files[<i>] / images[<i>]  (explicit index)
+ *   files / images            (repeated: i-th file = i-th item, what the app sends today)
+ */
+const itemPhotoFiles = (files: UploadedFiles) => {
+  const byIndex = new Map<number, any>();
+  if (!files) return byIndex;
+  const all = Object.values(files).flat();
+  // 1. explicit index: itemPhoto_<i>, files[<i>], images[<i>]
+  for (const f of all) {
+    const name = String(f?.fieldname || '');
+    const m = /^itemPhoto_(\d+)$/.exec(name) || /^(?:files|images)\[(\d+)\]$/.exec(name);
+    if (m && !byIndex.has(Number(m[1]))) byIndex.set(Number(m[1]), f);
   }
+  // 2. repeated files / images (or files[]): fill the free positions in order
+  let next = 0;
+  for (const f of all) {
+    if (!/^(?:files|images)(?:\[\])?$/.test(String(f?.fieldname || ''))) continue;
+    while (byIndex.has(next)) next++;
+    byIndex.set(next, f);
+  }
+  return byIndex;
+};
 
-  // Pagination
-  const page = Number(query.page) || 1;
-  const limit = Number(query.limit) || 10;
-  const skip = (page - 1) * limit;
+/* ------------------------------------------------------------------ */
+/* Item helpers                                                        */
+/* ------------------------------------------------------------------ */
 
-  // Search filter
-  const search = query.search
-    ? { title: { $regex: query.search, $options: 'i' } }
-    : {};
+const itemName = (i: SkiHireItemInput) => (i.name ?? i.productName)?.trim();
+const itemId = (i: SkiHireItemInput) => i.id ?? i._id;
+const itemPhotoUrl = (i: SkiHireItemInput) => {
+  const p = (i.photo ?? i.productPhoto ?? '').trim();
+  return /^https?:\/\//i.test(p) ? p : undefined;
+};
+const sameName = (a: unknown, b: unknown) =>
+  String(a ?? '').trim().toLowerCase() === String(b ?? '').trim().toLowerCase();
 
-  // Category filter
-  let categoryFilter = {};
-  if (query.category) {
-    const categories = await Category.find(
-      {
-        primaryCategoryName: 'Ski_Hire',
-        'subCategory.name': { $regex: query.category, $options: 'i' },
-      },
-      { 'subCategory.$': 1 },
+const sumPrices = (items: any[]) =>
+  items.reduce((sum, i) => sum + (Number(i.price) || 0), 0);
+
+const getItemsInput = (body: any): SkiHireItemInput[] | undefined =>
+  Array.isArray(body?.items)
+    ? body.items
+    : Array.isArray(body?.productItems)
+      ? body.productItems
+      : undefined;
+
+/* ------------------------------------------------------------------ */
+/* Browse                                                              */
+/* ------------------------------------------------------------------ */
+
+const SORTS: Record<string, Record<string, 1 | -1>> = {
+  price_asc: { 'items.price': 1, createdAt: -1 }, // ascending uses the cheapest item
+  price_desc: { 'items.price': -1, createdAt: -1 },
+  rating: { averageRating: -1, reviewCount: -1, createdAt: -1 },
+  newest: { createdAt: -1 },
+};
+
+/** min/max price: at least one item priced inside the range */
+const itemPriceRange = (filter: Record<string, any>) => {
+  const range = filter['items.price'];
+  if (range) {
+    delete filter['items.price'];
+    filter.items = { $elemMatch: { price: range } };
+  }
+  return filter;
+};
+
+const browse = async (query: Record<string, any>) => {
+  const filter = itemPriceRange(
+    await buildListingFilter(CATEGORY, query, { priceField: 'items.price', publicOnly: true }),
+  );
+  const subs = await loadSubCategories(CATEGORY);
+  return paginateListings(SkiHire, filter, query, parseSort(query.sort, SORTS), d =>
+    toCard(d, subs),
+  );
+};
+
+/** Provider: own listings (active + inactive). Admin: all, optional ?owner= */
+const myListings = async (user: JwtPayload, query: Record<string, any>) => {
+  let owner: string | undefined = String(user.userId);
+  if (isAdmin(user))
+    owner = query.owner && Types.ObjectId.isValid(String(query.owner)) ? String(query.owner) : undefined;
+  const filter = await buildListingFilter(
+    CATEGORY,
+    { search: query.search, status: query.status, category: query.category },
+    { owner },
+  );
+  const subs = await loadSubCategories(CATEGORY);
+  return paginateListings(SkiHire, filter, query, parseSort(query.sort, SORTS), d =>
+    toCard(d, subs),
+  );
+};
+
+const getDetail = async (id: string) => {
+  if (!Types.ObjectId.isValid(id))
+    throw new AppError(StatusCodes.BAD_REQUEST, 'Invalid ski hire id.');
+  return loadDetail(id);
+};
+
+const getReviews = (id: string, query: Record<string, any>) =>
+  getListingReviews(SkiHire, id, query);
+
+/* ------------------------------------------------------------------ */
+/* Create                                                              */
+/* ------------------------------------------------------------------ */
+
+const create = async (user: JwtPayload, body: any, files: UploadedFiles) => {
+  const me: any = await User.findById(user?.userId).select('providerType role').lean();
+  if (!me || me.role !== 'Provider' || me.providerType !== CATEGORY)
+    throw new AppError(
+      StatusCodes.FORBIDDEN,
+      'Only Ski Hire providers can create a ski hire listing.',
     );
 
-    const categoryIds = categories.map(c => c.subCategory?.[0]?._id);
-    if (categoryIds.length > 0) {
-      categoryFilter = { category: { $in: categoryIds } };
-    } else {
+  await assertSubCategory(CATEGORY, body.category);
+
+  const input = getItemsInput(body);
+  if (!input?.length)
+    throw new AppError(StatusCodes.BAD_REQUEST, 'At least one item is required.');
+
+  const thumbnail = (await uploadThumbnail(files)) || body.thumbnail;
+  if (!thumbnail) throw new AppError(StatusCodes.BAD_REQUEST, 'thumbnail is required.');
+
+  const photos = itemPhotoFiles(files);
+  const items = await Promise.all(
+    input.map(async (i, index) => {
+      const file = photos.get(index);
+      const quantity = Number(i.quantity);
       return {
-        data: [],
-        pagination: { total: 0, page, limit, totalPages: 0 },
-      };
-    }
-  }
-
-  const filters = {
-    ...search,
-    ...categoryFilter,
-  };
-
-  // Total count
-  const total = await SkiHire.countDocuments(filters);
-
-  // Fetch paginated data
-  const skiHireList = await SkiHire.find(filters)
-    .skip(skip)
-    .limit(limit)
-    .sort({ createdAt: -1 })
-    .populate({
-      path: 'owner',
-      select: '-isDeleted -agreeTermsCondition -__v -createdAt -updatedAt',
-    });
-
-  // Attach matched category (your original logic)
-  const result = await Promise.all(
-    skiHireList.map(async item => {
-      const categoryDoc = await Category.findOne(
-        { primaryCategoryName: 'Ski_Hire', 'subCategory._id': item.category },
-        { 'subCategory.$': 1 },
-      );
-      return {
-        ...item.toObject(),
-        category: categoryDoc?.subCategory?.[0] || null,
+        _id: new Types.ObjectId(),
+        productName: itemName(i) as string,
+        productPhoto: file ? ((await upload(file)) as string) : itemPhotoUrl(i) || '',
+        price: Number(i.price),
+        totalQty: quantity,
+        availableQty: quantity,
       };
     }),
   );
 
-  return {
-    pagination: {
-      total,
-      page,
-      limit,
-      totalPages: Math.ceil(total / limit),
-    },
-    result,
-  };
+  const doc = await SkiHire.create({
+    category: body.category,
+    title: body.title,
+    description: body.description || '',
+    thumbnail,
+    owner: user.userId, // always the caller, never from the body
+    extraChargePerHour: Number(body.extraChargePerHour) || 0,
+    priceUnit: body.priceUnit || 'per_day',
+    serviceArea: body.serviceArea,
+    items,
+    totalPrice: sumPrices(items),
+  });
+  return loadDetail(String(doc._id));
 };
 
-const getAllMySkiHireFromDB = async (user: JwtPayload, query: any) => {
-  const isExistsUser = await User.findOne({ email: user?.email });
-  if (!isExistsUser) {
-    throw new AppError(StatusCodes.NOT_FOUND, 'User not found.');
-  }
+/* ------------------------------------------------------------------ */
+/* Update                                                              */
+/* ------------------------------------------------------------------ */
 
-  // Pagination
-  const page = Number(query.page) || 1;
-  const limit = Number(query.limit) || 10;
-  const skip = (page - 1) * limit;
+/**
+ * Merge sent items into the stored ones.
+ * - match by id/_id, then by the same name, then by position when the
+ *   number of sent items equals the number of stored items
+ * - the stored `_id` is kept (bookings reference it)
+ * - booked stock is kept: available = oldAvailable + (newTotal - oldTotal), 0..total
+ * - missing price/quantity/name/photo keep the old value
+ * - items not sent are kept; removing one needs `removeItemIds`
+ */
+const mergeItems = async (
+  listingId: Types.ObjectId,
+  stored: any[],
+  input: SkiHireItemInput[] | undefined,
+  removeIds: string[] | undefined,
+  files: UploadedFiles,
+) => {
+  const result = stored.map(i => ({
+    _id: i._id,
+    productName: i.productName,
+    productPhoto: i.productPhoto || '',
+    price: i.price,
+    totalQty: i.totalQty,
+    availableQty: i.availableQty ?? i.totalQty,
+  }));
+  const photos = itemPhotoFiles(files);
+  const matched = new Set<number>();
+  const anyIds = (input || []).some(i => Boolean(itemId(i)));
 
-  // Search filter
-  const search = query.search
-    ? { title: { $regex: query.search, $options: 'i' } }
-    : {};
-
-  // Category filter
-  let categoryFilter = {};
-  if (query.category) {
-    const categories = await Category.find(
-      {
-        primaryCategoryName: 'Ski_Hire',
-        'subCategory.name': { $regex: query.category, $options: 'i' },
-      },
-      { 'subCategory.$': 1 },
-    );
-
-    const categoryIds = categories.map(c => c.subCategory?.[0]?._id);
-    if (categoryIds.length > 0) {
-      categoryFilter = { category: { $in: categoryIds } };
+  for (const [index, sent] of (input || []).entries()) {
+    const sentId = itemId(sent);
+    let at = -1;
+    if (sentId) {
+      at = result.findIndex(r => String(r._id) === String(sentId));
+      if (at < 0)
+        throw new AppError(StatusCodes.BAD_REQUEST, `Item ${sentId} does not belong to this listing.`);
     } else {
-      return {
-        data: [],
-        pagination: { total: 0, page, limit, totalPages: 0 },
-      };
+      at = result.findIndex((r, k) => !matched.has(k) && sameName(r.productName, itemName(sent)));
+      // legacy app: the full list without ids -> same position
+      if (at < 0 && !anyIds && input!.length === stored.length && !matched.has(index)) at = index;
     }
-  }
 
-  const filters = {
-    owner: isExistsUser._id,
-    ...search,
-    ...categoryFilter,
-  };
+    const file = photos.get(index);
+    const photo = file ? ((await upload(file)) as string) : itemPhotoUrl(sent);
 
-  // Total count
-  const total = await SkiHire.countDocuments(filters);
-
-  // Fetch paginated data
-  const skiHireList = await SkiHire.find(filters)
-    .skip(skip)
-    .limit(limit)
-    .sort({ createdAt: -1 })
-    .populate({
-      path: 'owner',
-      select: '-isDeleted -agreeTermsCondition -__v -createdAt -updatedAt',
-    });
-
-  // Attach matched category (your original logic)
-  const result = await Promise.all(
-    skiHireList.map(async item => {
-      const categoryDoc = await Category.findOne(
-        { primaryCategoryName: 'Ski_Hire', 'subCategory._id': item.category },
-        { 'subCategory.$': 1 },
-      );
-      return {
-        ...item.toObject(),
-        category: categoryDoc?.subCategory?.[0] || null,
+    if (at >= 0) {
+      if (matched.has(at))
+        throw new AppError(StatusCodes.BAD_REQUEST, 'The same item was sent twice.');
+      matched.add(at);
+      const old = result[at];
+      const newTotal = sent.quantity !== undefined ? Number(sent.quantity) : old.totalQty;
+      const available = Number(old.availableQty) + (newTotal - Number(old.totalQty));
+      result[at] = {
+        ...old,
+        productName: itemName(sent) || old.productName,
+        productPhoto: photo || old.productPhoto,
+        price: sent.price !== undefined ? Number(sent.price) : old.price,
+        totalQty: newTotal,
+        availableQty: Math.min(Math.max(available, 0), newTotal),
       };
-    }),
-  );
-
-  return {
-    pagination: {
-      total,
-      page,
-      limit,
-      totalPages: Math.ceil(total / limit),
-    },
-    result,
-  };
-};
-
-const getSingleSkiHireFromDB = async (id: string, user: JwtPayload) => {
-  const isExistsUser = await User.findOne({ email: user?.email });
-  if (!isExistsUser) {
-    throw new AppError(
-      StatusCodes.NOT_FOUND,
-      'You cannot view this data because your account was not found.',
-    );
-  }
-
-  const skiHire = await SkiHire.findById(id)
-    .populate({
-      path: 'owner',
-      select: '-isDeleted -agreeTermsCondition -__v -createdAt -updatedAt',
-    })
-    .populate({
-      path: 'reviews.userId',
-      select: 'fullName email phoneNumber profileUrl createdAt', // choose what you want
-    })
-    .populate({
-      path: 'refunds.userId',
-      select: 'fullName email phoneNumber profileUrl createdAt',
-    });
-  if (!skiHire)
-    throw new AppError(StatusCodes.NOT_FOUND, 'Ski Hire data not found.');
-
-  // manually populate subcategory
-  const categoryDoc = await Category.findOne(
-    { primaryCategoryName: 'Ski_Hire', 'subCategory._id': skiHire?.category },
-    { 'subCategory.$': 1 },
-  );
-
-  const subCategoryData = categoryDoc?.subCategory?.[0] || null;
-
-  return {
-    ...skiHire.toObject(),
-    category: subCategoryData,
-  };
-};
-
-// const addSkiHireIntoDB = async (req: Request) => {
-//   const user = req.user as JwtPayload;
-//   const { category: categoryId } = req.body;
-
-//   // check user
-//   const isExistsUser = await User.findOne({ email: user?.email });
-//   if (!isExistsUser) {
-//     throw new AppError(
-//       StatusCodes.NOT_FOUND,
-//       'You cannot view this data because your account was not found.'
-//     );
-//   }
-
-//   // Validate provider role and type
-//   if (isExistsUser?.role !== 'Provider') {
-//     throw new AppError(
-//       StatusCodes.FORBIDDEN,
-//       'You are not authorized to create a ski hire service.'
-//     );
-//   }
-
-//   // Now we know user is a Provider — check providerType
-//   if (isExistsUser?.providerType !== 'Ski_Hire') {
-//     throw new AppError(
-//       StatusCodes.FORBIDDEN,
-//       'Only providers with providerType : SkiHire can create a ski hire service.'
-//     );
-//   }
-
-//   const category = await Category.findOne({ primaryCategoryName: 'Ski_Hire' });
-//   if (!category) {
-//     throw new AppError(StatusCodes.NOT_FOUND, 'Ski Hire category not found.');
-//   }
-
-//   const subCategoryItems = category?.subCategory || [];
-
-//   const exists = subCategoryItems.some(
-//     (item: any) => item?._id?.toString() === categoryId?.toString()
-//   );
-
-//   if (!exists) {
-//     throw new AppError(
-//       StatusCodes.BAD_REQUEST,
-//       'Invalid sub-category ID for Ski Hire.'
-//     );
-//   }
-
-//   const uploadedFiles = (req as any).files as
-//     | { [fieldname: string]: any[] }
-//     | undefined;
-
-//   const thumbnailFile: any = uploadedFiles?.thumbnail?.[0];
-//   if (!thumbnailFile) {
-//     throw new AppError(StatusCodes.BAD_REQUEST, 'Thumbnail file not found.');
-//   }
-
-//   const thumbnailUrl = await s3Services.uploadSingleFileToS3(
-//     thumbnailFile,
-//     USER_UPLOADS_FOLDER
-//   );
-
-//   // Parse product items
-//   let productItems: any[] = [];
-
-//   if (typeof req.body.productItems === 'string') {
-//     productItems = JSON.parse(req.body.productItems);
-//   } else if (Array.isArray(req.body.productItems)) {
-//     productItems = req.body.productItems;
-//   } else {
-//     throw new AppError(
-//       StatusCodes.BAD_REQUEST,
-//       'Product items data is missing or invalid.'
-//     );
-//   }
-
-//   //  Upload product item images
-//   const productItemFiles: any[] = uploadedFiles?.images || [];
-
-//   const processedProductItems = await Promise.all(
-//     productItems.map(async (item: any, index: number) => {
-//       const productFile = productItemFiles[index];
-//       if (!productFile) {
-//         throw new AppError(
-//           StatusCodes.BAD_REQUEST,
-//           `Product image for item "${item?.productName}" is missing.`
-//         );
-//       }
-
-//       const productPhotoUrl = await s3Services.uploadSingleFileToS3(
-//         productFile,
-//         USER_UPLOADS_FOLDER
-//       );
-
-//       return {
-//         productName: item?.productName,
-//         productPhoto: productPhotoUrl,
-//         price: Number(item.price),
-//         totalQty: Number(item.quantity),
-//         availableQty: Number(item.quantity),
-//       };
-//     })
-//   );
-
-//   const totalPrice = processedProductItems.reduce(
-//     (sum: number, item: any) => sum + item?.price,
-//     0
-//   );
-
-//   const skiHireData = {
-//     category: categoryId || req.body.category,
-//     title: req.body.title,
-//     thumbnail: thumbnailUrl,
-//     owner: isExistsUser?._id,
-//     extraChargePerHour: Number(req.body.extraChargePerHour || 0) || 0,
-//     totalPrice,
-//     serviceArea: req.body.serviceArea,
-//     items: processedProductItems,
-//   };
-
-//   const result = await SkiHire.create(skiHireData);
-//   return result;
-// };
-
-const addSkiHireIntoDB = async (req: Request) => {
-  const user = req.user as JwtPayload;
-  const { category: categoryId } = req.body;
-
-  // check user
-  const isExistsUser = await User.findOne({ email: user?.email });
-  if (!isExistsUser) {
-    throw new AppError(
-      StatusCodes.NOT_FOUND,
-      'You cannot view this data because your account was not found.',
-    );
-  }
-
-  // Validate provider role and type
-  if (isExistsUser?.role !== 'Provider') {
-    throw new AppError(
-      StatusCodes.FORBIDDEN,
-      'You are not authorized to create a ski hire service.',
-    );
-  }
-
-  if (isExistsUser?.providerType !== 'Ski_Hire') {
-    throw new AppError(
-      StatusCodes.FORBIDDEN,
-      'Only providers with providerType : SkiHire can create a ski hire service.',
-    );
-  }
-
-  // Validate category
-  const category = await Category.findOne({ primaryCategoryName: 'Ski_Hire' });
-  if (!category) {
-    throw new AppError(StatusCodes.NOT_FOUND, 'Ski Hire category not found.');
-  }
-
-  const subCategoryItems = category?.subCategory || [];
-
-  const exists = subCategoryItems.some(
-    (item: any) => item?._id?.toString() === categoryId?.toString(),
-  );
-
-  if (!exists) {
-    throw new AppError(
-      StatusCodes.BAD_REQUEST,
-      'Invalid sub-category ID for Ski Hire.',
-    );
-  }
-
-  // Uploaded files
-  const uploadedFiles = (req as any).files as
-    | { [fieldname: string]: any[] }
-    | undefined;
-
-  // Thumbnail file
-  const thumbnailFile = uploadedFiles?.thumbnail?.[0];
-  if (!thumbnailFile) {
-    throw new AppError(StatusCodes.BAD_REQUEST, 'Thumbnail file not found.');
-  }
-
-  const thumbnailUrl = await s3Services.uploadSingleFileToS3(
-    thumbnailFile,
-    USER_UPLOADS_FOLDER,
-  );
-
-  // Parse product items
-  let productItems: any[] = [];
-
-  if (typeof req.body.productItems === 'string') {
-    productItems = JSON.parse(req.body.productItems);
-  } else if (Array.isArray(req.body.productItems)) {
-    productItems = req.body.productItems;
-  } else {
-    throw new AppError(
-      StatusCodes.BAD_REQUEST,
-      'Product items data is missing or invalid.',
-    );
-  }
-
-  // ============================================================
-  //  FIX: SUPPORT files[0], files[1] OR multiple selection
-  // ============================================================
-
-  let productItemFiles: any[] = [];
-
-  if (uploadedFiles?.files) {
-    if (Array.isArray(uploadedFiles.files)) {
-      // Normal multi-file upload
-      productItemFiles = uploadedFiles.files;
     } else {
-      // Convert index-like keys ('0', '1') into sorted array
-      const keys = Object.keys(uploadedFiles.files)
-        .map(k => parseInt(k))
-        .sort((a, b) => a - b);
-
-      productItemFiles = keys.map(k => uploadedFiles.files[k][0]);
-    }
-  }
-
-  // ============================================================
-
-  const processedProductItems = await Promise.all(
-    productItems.map(async (item: any, index: number) => {
-      const productFile = productItemFiles[index];
-
-      if (!productFile) {
+      const name = itemName(sent);
+      if (!name || sent.price === undefined || sent.quantity === undefined)
         throw new AppError(
           StatusCodes.BAD_REQUEST,
-          `Product image for item "${item?.productName}" is missing.`,
+          `New item #${index + 1} needs name, price and quantity.`,
         );
-      }
-
-      const productPhotoUrl = await s3Services.uploadSingleFileToS3(
-        productFile,
-        USER_UPLOADS_FOLDER,
-      );
-
-      return {
-        productName: item.productName,
-        productPhoto: productPhotoUrl,
-        price: Number(item.price),
-        totalQty: Number(item.quantity),
-        availableQty: Number(item.quantity),
-      };
-    }),
-  );
-
-  const totalPrice = processedProductItems.reduce(
-    (sum: number, item: any) => sum + Number(item?.price),
-    0,
-  );
-
-  const skiHireData = {
-    category: categoryId,
-    title: req.body.title,
-    thumbnail: thumbnailUrl,
-    owner: isExistsUser?._id,
-    extraChargePerHour: Number(req.body.extraChargePerHour || 0) || 0,
-    priceUnit: req.body.priceUnit || 'per_day',
-    totalPrice,
-    serviceArea: req.body.serviceArea,
-    items: processedProductItems,
-  };
-
-  const result = await SkiHire.create(skiHireData);
-  return result;
-};
-
-const reviewSkiHire = async (
-  id: string,
-  user: JwtPayload,
-  payload: Partial<IReview>,
-) => {
-  // Verify user exists
-  const isExistsUser = await User.findOne({ email: user?.email });
-  if (!isExistsUser) {
-    throw new AppError(
-      StatusCodes.NOT_FOUND,
-      'You cannot view this data because your account was not found.',
-    );
+      matched.add(result.length);
+      result.push({
+        _id: new Types.ObjectId(),
+        productName: name,
+        productPhoto: photo || '',
+        price: Number(sent.price),
+        totalQty: Number(sent.quantity),
+        availableQty: Number(sent.quantity),
+      });
+    }
   }
 
-  // Ensure user role is 'User'
-  if (isExistsUser?.role !== 'User') {
-    throw new AppError(
-      StatusCodes.FORBIDDEN,
-      'You cannot add a review because your account is not a user.',
-    );
-  }
-
-  // Find the SkiPass product
-  const skiHire = await SkiHire.findById(id);
-  if (!skiHire) {
-    throw new AppError(StatusCodes.NOT_FOUND, 'Ski Hire data not found');
-  }
-
-  //  (Optional) Prevent duplicate reviews by the same user
-  const alreadyReviewed =
-    skiHire.reviews?.some(
-      review => review.userId.toString() === isExistsUser._id.toString(),
-    ) || false;
-  if (alreadyReviewed) {
-    throw new AppError(
-      StatusCodes.BAD_REQUEST,
-      'You have already reviewed this skiHire.',
-    );
-  }
-
-  // Push new review
-  const newReview = {
-    userId: isExistsUser!._id,
-    rating: payload?.rating,
-    comment: payload?.comment,
-    createdAt: new Date(),
-  };
-
-  if (!Array.isArray(skiHire.reviews)) {
-    skiHire.reviews = [];
-  }
-
-  skiHire.reviews.push(newReview as IReview);
-
-  // Recalculate average rating
-  const total: number = skiHire.reviews.reduce(
-    (sum: number, r: IReview) => sum + (r.rating || 0),
-    0,
-  );
-  skiHire.averageRating = skiHire.reviews.length
-    ? parseFloat((total / skiHire.reviews.length).toFixed(1))
-    : 0;
-
-  // Save updated skiHire
-  await skiHire.save({ validateModifiedOnly: true });
-
-  return skiHire;
-};
-
-// const updateSkiHireIntoDB = async (req: Request) => {
-//   const id = req?.params?.id;
-//   const user = req.user as JwtPayload;
-
-//   // Check if ski hire exists
-//   const isExistsSkiHire = await SkiHire.findById(id);
-//   if (!isExistsSkiHire) {
-//     throw new AppError(StatusCodes.NOT_FOUND, 'Ski Hire data not found.');
-//   }
-
-//   // Verify user
-//   const isExistsUser = await User.findOne({ email: user?.email });
-//   if (!isExistsUser) {
-//     throw new AppError(
-//       StatusCodes.NOT_FOUND,
-//       'You cannot view this data because your account was not found.'
-//     );
-//   }
-
-//   // Check provider role & type
-//   if (
-//     isExistsUser?.role !== 'Provider' ||
-//     isExistsUser?.providerType !== 'Ski_Hire'
-//   ) {
-//     throw new AppError(
-//       StatusCodes.FORBIDDEN,
-//       'You are not authorized to update this ski hire service.'
-//     );
-//   }
-
-//   const uploadedFilesUpdate = (req as any).files as
-//     | { [fieldname: string]: any[] }
-//     | undefined;
-
-//   if (uploadedFilesUpdate?.thumbnail?.[0]) {
-//     const thumbnailFile: any = uploadedFilesUpdate.thumbnail[0];
-//     const thumbnailUrl = await s3Services.uploadSingleFileToS3(
-//       thumbnailFile,
-//       USER_UPLOADS_FOLDER
-//     );
-//     req.body.thumbnail = thumbnailUrl;
-//   }
-
-//   // Update product items if provided
-//   if (req.body.productItems) {
-//     let productItems: any[] = [];
-//     if (typeof req.body?.productItems === 'string') {
-//       productItems = JSON.parse(req.body?.productItems);
-//     } else if (Array.isArray(req.body?.productItems)) {
-//       productItems = req.body?.productItems;
-//     } else {
-//       throw new AppError(
-//         StatusCodes.BAD_REQUEST,
-//         'Product items data is invalid.'
-//       );
-//     }
-
-//     const existingLength = isExistsSkiHire.items.length;
-
-//     if (productItems.length !== existingLength) {
-//       throw new AppError(
-//         StatusCodes.BAD_REQUEST,
-//         `Product items length must match existing length (${existingLength}).`
-//       );
-//     }
-
-//     const productItemFiles: any[] = uploadedFilesUpdate?.images || [];
-
-//     const processedProductItems = await Promise.all(
-//       productItems.map(async (item: any, index: number) => {
-//         // Preserve existing photo if exists
-//         let productPhoto = item?.productPhoto || '';
-
-//         // Only try to match uploaded file if _id exists
-//         let productFile;
-//         if (item._id) {
-//           productFile = productItemFiles.find(
-//             (file: any) => file.fieldname === item?._id.toString()
-//           );
-//         } else {
-//           // fallback: use index to match new products
-//           productFile = productItemFiles[index];
-//         }
-
-//         if (productFile) {
-//           productPhoto = await s3Services.uploadSingleFileToS3(
-//             productFile,
-//             USER_UPLOADS_FOLDER
-//           );
-//         }
-
-//         return {
-//           _id: item._id, // may be undefined for new products
-//           productName: item.productName,
-//           productPhoto,
-//           price: Number(item.price),
-//           totalQty: Number(item.quantity),
-//           availableQty: Number(item.quantity),
-//         };
-//       })
-//     );
-
-//     req.body.items = processedProductItems;
-
-//     req.body.totalPrice = processedProductItems.reduce(
-//       (sum: number, item: any) => sum + item.price,
-//       0
-//     );
-//   }
-
-//   const result = await SkiHire.findByIdAndUpdate(
-//     id,
-//     {
-//       ...req.body,
-//     },
-//     { new: true }
-//   );
-
-//   return result;
-// };
-
-export const updateSkiHireIntoDB = async (req: Request) => {
-  const id = req?.params?.id;
-  const user = req.user as JwtPayload;
-
-  // Check if ski hire exists
-  const isExistsSkiHire = await SkiHire.findById(id);
-  if (!isExistsSkiHire) {
-    throw new AppError(StatusCodes.NOT_FOUND, 'Ski Hire data not found.');
-  }
-
-  // Verify user
-  const isExistsUser = await User.findOne({ email: user?.email });
-  if (!isExistsUser) {
-    throw new AppError(
-      StatusCodes.NOT_FOUND,
-      'You cannot view this data because your account was not found.',
-    );
-  }
-
-  // Check provider role & type
-  if (
-    isExistsUser?.role !== 'Provider' ||
-    isExistsUser?.providerType !== 'Ski_Hire'
-  ) {
-    throw new AppError(
-      StatusCodes.FORBIDDEN,
-      'You are not authorized to update this ski hire service.',
-    );
-  }
-
-  const uploadedFilesUpdate = (req as any).files as
-    | { [fieldname: string]: any[] }
-    | undefined;
-
-  // ------------------------------
-  // Update Thumbnail (if uploaded)
-  // ------------------------------
-  if (uploadedFilesUpdate?.thumbnail?.[0]) {
-    const thumbnailFile = uploadedFilesUpdate.thumbnail[0];
-    const thumbnailUrl = await s3Services.uploadSingleFileToS3(
-      thumbnailFile,
-      USER_UPLOADS_FOLDER,
-    );
-    req.body.thumbnail = thumbnailUrl;
-  }
-
-  // ------------------------------
-  // Update Product Items
-  // ------------------------------
-  if (req.body.productItems) {
-    let productItems: any[] = [];
-
-    if (typeof req.body.productItems === 'string') {
-      productItems = JSON.parse(req.body.productItems);
-    } else if (Array.isArray(req.body.productItems)) {
-      productItems = req.body.productItems;
-    } else {
+  for (const removeId of removeIds || []) {
+    const at = result.findIndex(r => String(r._id) === String(removeId));
+    if (at < 0)
+      throw new AppError(StatusCodes.BAD_REQUEST, `Item ${removeId} does not belong to this listing.`);
+    const booked = await Booking.exists({
+      product: listingId,
+      bookingStatus: { $in: OPEN_BOOKING_STATUSES },
+      'bookingItems.itemId': result[at]._id,
+    });
+    if (booked)
       throw new AppError(
-        StatusCodes.BAD_REQUEST,
-        'Product items data is invalid.',
+        StatusCodes.CONFLICT,
+        `"${result[at].productName}" has upcoming or active bookings and cannot be removed.`,
       );
-    }
-
-    // validation items length match
-
-    // const existingLength = isExistsSkiHire.items.length;
-
-    // if (productItems.length !== existingLength) {
-    //   throw new AppError(
-    //     StatusCodes.BAD_REQUEST,
-    //     `Product items length must match existing length (${existingLength}).`
-    //   );
-    // }
-
-    // ============================================================
-    // FIXED: Support files[0], files[1], files[2]
-    // ============================================================
-    let productItemFiles: any[] = [];
-
-    if (uploadedFilesUpdate?.files) {
-      if (Array.isArray(uploadedFilesUpdate.files)) {
-        // Multi-select files → array directly
-        productItemFiles = uploadedFilesUpdate.files;
-      } else {
-        // Convert keys ("0", "1") → sorted numeric array
-        const keys = Object.keys(uploadedFilesUpdate.files)
-          .map(k => parseInt(k))
-          .sort((a, b) => a - b);
-
-        productItemFiles = keys.map(k => uploadedFilesUpdate.files[k][0]);
-      }
-    }
-
-    // ============================================================
-
-    const processedProductItems = await Promise.all(
-      productItems.map(async (item: any, index: number) => {
-        // Preserve existing photo
-        let productPhoto = item?.productPhoto || '';
-
-        // Try to match uploaded file by index
-        let productFile = productItemFiles[index];
-
-        // Upload new file if exists
-        if (productFile) {
-          productPhoto = await s3Services.uploadSingleFileToS3(
-            productFile,
-            USER_UPLOADS_FOLDER,
-          );
-        }
-
-        // ---- QUANTITY: keep units that are already booked ----
-        // existing item: available = old available + (new total - old total)
-        // e.g. total 10, 3 booked (available 7), edited to 12 -> available 9
-        // match by _id; if the app didn't send _id, match by the same
-        // product name, then by position when the item count is unchanged
-        const oldItems: any[] = (isExistsSkiHire.items as any[]) || [];
-        const sameName = (a: any, b: any) =>
-          String(a ?? '').trim().toLowerCase() ===
-          String(b ?? '').trim().toLowerCase();
-        const existing: any = item?._id
-          ? oldItems.find((i: any) => i._id?.toString() === item._id?.toString())
-          : oldItems.find((i: any) => sameName(i.productName, item.productName)) ||
-            (oldItems.length === productItems.length ? oldItems[index] : null);
-        // keep the same item _id so existing bookings still point to it
-        if (!item?._id && existing?._id) item._id = existing._id;
-
-        const newTotalQty =
-          item.quantity !== undefined && item.quantity !== null && item.quantity !== ''
-            ? Number(item.quantity)
-            : Number(existing?.totalQty ?? 0);
-
-        let newAvailableQty = newTotalQty;
-        if (existing) {
-          const oldTotalQty = Number(existing.totalQty) || 0;
-          const oldAvailableQty = Number(existing.availableQty ?? oldTotalQty);
-          newAvailableQty = oldAvailableQty + (newTotalQty - oldTotalQty);
-        }
-        // never below 0 or above the total
-        newAvailableQty = Math.min(Math.max(newAvailableQty, 0), newTotalQty);
-
-        return {
-          _id: item._id,
-          productName: item.productName,
-          // keep the old photo when no new one was sent
-          productPhoto: productPhoto || existing?.productPhoto || '',
-          price: Number(item.price),
-          totalQty: newTotalQty,
-          availableQty: newAvailableQty,
-        };
-      }),
-    );
-
-    req.body.items = processedProductItems;
-
-    req.body.totalPrice = processedProductItems.reduce(
-      (sum: number, item: any) => sum + item.price,
-      0,
-    );
+    result.splice(at, 1);
   }
 
-  // ------------------------------
-  // Final Update Query
-  // ------------------------------
-  const result = await SkiHire.findByIdAndUpdate(
-    id,
-    {
-      ...req.body,
-    },
-    { new: true },
-  );
-
+  if (!result.length)
+    throw new AppError(StatusCodes.BAD_REQUEST, 'A listing needs at least one item.');
   return result;
 };
 
-const deleteSkiHireIntoDB = async (id: string, user: JwtPayload) => {
-  const isExistsUser = await User.findOne({ email: user?.email });
-  if (!isExistsUser) {
-    throw new AppError(
-      StatusCodes.NOT_FOUND,
-      'You cannot view this data because your account was not found.',
-    );
+const UPDATABLE = [
+  'category',
+  'title',
+  'description',
+  'thumbnail',
+  'extraChargePerHour',
+  'priceUnit',
+  'serviceArea',
+];
+
+const update = async (id: string, user: JwtPayload, body: any, files: UploadedFiles) => {
+  const listing: any = await findListingOr404(SkiHire, id, LABEL);
+  assertListingOwner(listing, user);
+
+  const $set: Record<string, any> = pickDefined(body || {}, UPDATABLE);
+  if ($set.category !== undefined) await assertSubCategory(CATEGORY, $set.category);
+  if ($set.extraChargePerHour !== undefined)
+    $set.extraChargePerHour = Number($set.extraChargePerHour) || 0;
+
+  const thumbnail = await uploadThumbnail(files);
+  if (thumbnail) $set.thumbnail = thumbnail;
+
+  const input = getItemsInput(body);
+  const removeIds: string[] | undefined = body?.removeItemIds;
+  const hasItemPhotos = itemPhotoFiles(files).size > 0;
+  if (input || removeIds?.length || hasItemPhotos) {
+    const stored = (listing.toObject?.() ?? listing).items || [];
+    // photos without an items array: index i = stored item i
+    const effectiveInput =
+      input ?? (hasItemPhotos ? stored.map((s: any) => ({ id: String(s._id) })) : undefined);
+    $set.items = await mergeItems(listing._id, stored, effectiveInput, removeIds, files);
+    $set.totalPrice = sumPrices($set.items);
   }
 
-  const skiHire = await SkiHire.findById(id);
-  if (!skiHire) {
-    throw new AppError(StatusCodes.NOT_FOUND, 'Ski Hire data not found.');
-  }
-
-  if (skiHire?.owner.toString() !== isExistsUser?._id.toString()) {
-    throw new AppError(
-      StatusCodes.FORBIDDEN,
-      'You are not authorized to delete this ski hire.',
-    );
-  }
-
-  const result = await SkiHire.findByIdAndDelete(id);
-  return result;
+  if (Object.keys($set).length)
+    await SkiHire.updateOne({ _id: listing._id }, { $set }, { runValidators: true });
+  return loadDetail(String(listing._id));
 };
+
+/* ------------------------------------------------------------------ */
+/* Status / delete / review                                            */
+/* ------------------------------------------------------------------ */
+
+const setStatus = async (id: string, user: JwtPayload, isActive: unknown) => {
+  const listing = await findListingOr404(SkiHire, id, LABEL);
+  assertListingOwner(listing, user);
+  return setListingActive(SkiHire, listing, isActive);
+};
+
+const remove = async (id: string, user: JwtPayload) => {
+  const listing = await findListingOr404(SkiHire, id, LABEL);
+  assertListingOwner(listing, user);
+  return softDeleteListing(SkiHire, listing);
+};
+
+const review = (id: string, user: JwtPayload, body: any) =>
+  addListingReview(SkiHire, id, user, { rating: body?.rating, comment: body?.comment });
 
 export const SkiHireService = {
-  getAllSkiHireFromDB,
-  getAllMySkiHireFromDB,
-  getSingleSkiHireFromDB,
-  addSkiHireIntoDB,
-  reviewSkiHire,
-  updateSkiHireIntoDB,
-  deleteSkiHireIntoDB,
+  browse,
+  myListings,
+  getDetail,
+  getReviews,
+  create,
+  update,
+  setStatus,
+  remove,
+  review,
 };

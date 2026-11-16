@@ -1,24 +1,24 @@
+// Tests run ONLY against an in-memory MongoDB (src/test/setup.ts).
+// src/test/env.ts runs first and overrides MONGODB_URL so the production
+// database in .env can never be reached from a test.
 module.exports = {
   preset: 'ts-jest',
   testEnvironment: 'node',
   roots: ['<rootDir>/src'],
-  testMatch: [
-    '**/__tests__/**/*.ts',
-    '**/?(*.)+(spec|test).ts'
-  ],
+  testMatch: ['**/?(*.)+(spec|test).ts'],
   transform: {
-    '^.+\\.ts$': 'ts-jest',
+    '^.+\\.ts$': ['ts-jest', { diagnostics: false }],
   },
+  setupFiles: ['<rootDir>/src/test/env.ts'],
+  setupFilesAfterEnv: ['<rootDir>/src/test/setup.ts'],
   collectCoverageFrom: [
     'src/**/*.ts',
     '!src/**/*.d.ts',
     '!src/server.ts',
-    '!src/app.ts',
+    '!src/test/**',
+    '!src/scripts/**',
     '!src/**/*.interface.ts',
-    '!src/**/index.ts'
   ],
   coverageDirectory: 'coverage',
-  coverageReporters: ['text', 'lcov', 'html'],
-  setupFilesAfterEnv: ['<rootDir>/src/__tests__/setup.ts'],
-  testTimeout: 30000
+  testTimeout: 60000,
 };

@@ -1,52 +1,21 @@
+import { Request, Response } from 'express';
 import { StatusCodes } from 'http-status-codes';
+import { JwtPayload } from 'jsonwebtoken';
 import catchAsync from '../../shared/catchAsync';
 import sendResponse from '../../shared/sendResponse';
-import { Request, Response } from 'express';
-import { IPayment } from './payment.interface';
-import pick from '../../shared/pick';
 import { PaymentService } from './payment.service';
-import { Wallet } from './../wallet/wallet.model'; 
 
-
-const getAllPayment = catchAsync(async (req: Request, res: Response) => { 
-  const user = req.user; 
-  const result = await PaymentService.getAllPayment(req.query as any );
-
-  sendResponse(res, {
-    code: StatusCodes.OK,
-    message: 'Payment Retrieved successfully',
-    data: result,
-  });
+const getAllPayment = catchAsync(async (req: Request, res: Response) => {
+  const { data, meta } = await PaymentService.getAllPayment(req.user as JwtPayload, req.query as any);
+  sendResponse(res, { code: StatusCodes.OK, message: 'Payments fetched.', data, meta });
 });
 
-
-const findById = catchAsync(async (req: Request, res: Response) => { 
-  const paymentId = req.params.id; 
-  const result = await PaymentService.paymentFindById(paymentId as string );
-
-  sendResponse(res, {
-    code: StatusCodes.OK,
-    message: 'Payment Retrieved successfully',
-    data: result,
-  });
+const findById = catchAsync(async (req: Request, res: Response) => {
+  const data = await PaymentService.paymentFindById(String(req.params.id));
+  sendResponse(res, { code: StatusCodes.OK, message: 'Payment fetched.', data });
 });
-
-
-const deletePayment = catchAsync(async (req: Request, res: Response) => { 
-  const deleteId = req.params.id; 
-  const result = await PaymentService.deletePaymentById(deleteId as string );
-
-  sendResponse(res, {
-    code: StatusCodes.OK,
-    message: 'Payment Deleted successfully',
-    data: result,
-  });
-});
-
-
 
 export const PaymentController = {
   getAllPayment,
   findById,
-  deletePayment
 };

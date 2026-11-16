@@ -1,438 +1,205 @@
-import { JwtPayload } from 'jsonwebtoken';
-import AppError from './../../errors/AppErro';
-import { User } from './../user/user.model';
-import { Wallet } from './../wallet/wallet.model';
-import { Booking } from './../booking/booking.model';
-import { SkiPass } from './../skiPass/skipass.model';
-import { SkiHire } from './../skiHire/skihire.model';
-import { Transport } from './../transport/transport.model';
-import { Restaurant } from './../restaurant/restaurant.model';
-import { Massage } from './../massage/massage.model';
-import mongoose from 'mongoose';
-import { IQuery } from './meta.inteface';
+/**
+ * Dashboards, computed from bookings with MongoDB aggregations
+ * (never by loading every booking into memory).
+ *
+ *  GET /dashboard/meta/provider : provider home (counts, earnings, today, recent)
+ *  GET /dashboard/meta/admin    : platform overview (+ ?year= chart)
+ *  GET /dashboard/meta/common-service | restaurant-service : admin booking lists
+ *  GET /dashboard/meta/service/:id : one booking (admin)
+ */
+import { Types } from 'mongoose';
 import { StatusCodes } from 'http-status-codes';
-import { startOfYear, endOfYear, setYear } from 'date-fns';
-import dayjs from 'dayjs';
-import { Category } from './../category/category.model';
+import { JwtPayload } from 'jsonwebtoken';
+import AppError from '../../errors/AppErro';
+import { Booking } from '../booking/booking.model';
+import { User } from '../user/user.model';
+import { Wallet } from '../wallet/wallet.model';
+import { listingIdsOfOwner, LISTING_MODELS } from '../booking/booking.availability';
+import { loadContext, toBookingCard } from '../booking/booking.serializer';
+import { BookingService } from '../booking/booking.service';
+import { OPEN_STATUSES, startOfLocalDay, endOfLocalDay, toDayKey } from '../booking/booking.rules';
 
-//  for provider home page data
-const getProviderDashboard = async (user: JwtPayload) => {
-  const isExistUser = await User.findOne({
-    email: user?.email,
-    role: 'Provider',
-  });
+const round2 = (n: number) => Math.round((Number(n) || 0) * 100) / 100;
+const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
 
-  if (!isExistUser) {
-    throw new AppError(StatusCodes.NOT_FOUND, 'User not found.');
-  }
+const getProviderDashboard = async (user: JwtPayload, query: Record<string, any> = {}) => {
+  const ownerId = String(query.providerId && user.role === 'Admin' ? query.providerId : user.userId);
+  const ids = await listingIdsOfOwner(ownerId);
+  const now = new Date();
+  const today = toDayKey(now)!;
 
-  const totalBalance = await Wallet.findOne({
-    user: isExistUser?._id,
-  }).select('balance');
-
-  const providerBookings = await Booking.find()
-    .populate({
-      path: 'product',
-      select: '-__v ',
+  const [counts, money, todays, recent, wallet, listings] = await Promise.all([
+    Booking.aggregate([
+      { $match: { product: { $in: ids } } },
+      {
+        $group: {
+          _id: null,
+          total: { $sum: 1 },
+          requests: {
+            $sum: { $cond: [{ $and: [{ $in: ['$bookingStatus', OPEN_STATUSES] }, { $ne: ['$isPermitted', true] }] }, 1, 0] },
+          },
+          upcoming: {
+            $sum: {
+              $cond: [
+                { $and: [{ $in: ['$bookingStatus', OPEN_STATUSES] }, { $eq: ['$isPermitted', true] }, { $gt: ['$startAt', now] }] },
+                1,
+                0,
+              ],
+            },
+          },
+          inProgress: {
+            $sum: {
+              $cond: [
+                {
+                  $and: [
+                    { $in: ['$bookingStatus', OPEN_STATUSES] },
+                    { $eq: ['$isPermitted', true] },
+                    { $or: [{ $eq: ['$isHandOver', true] }, { $lte: ['$startAt', now] }] },
+                  ],
+                },
+                1,
+                0,
+              ],
+            },
+          },
+          completed: { $sum: { $cond: [{ $eq: ['$bookingStatus', 'Completed'] }, 1, 0] } },
+          cancelled: { $sum: { $cond: [{ $in: ['$bookingStatus', ['Cancelled', 'Deleted', 'Cancel']] }, 1, 0] } },
+        },
+      },
+    ]),
+    Booking.aggregate([
+      { $match: { product: { $in: ids } } },
+      {
+        $group: {
+          _id: null,
+          earned: { $sum: { $add: [{ $ifNull: ['$providerEarning', 0] }, { $ifNull: ['$lateFee.providerEarning', 0] }] } },
+          fees: { $sum: { $add: [{ $ifNull: ['$platformFee', 0] }, { $ifNull: ['$lateFee.platformFee', 0] }] } },
+          pending: { $sum: { $cond: [{ $eq: ['$providerPayout', 'held'] }, { $ifNull: ['$totalPrice', 0] }, 0] } },
+          lateFeesDue: { $sum: { $cond: [{ $eq: ['$lateFee.status', 'due'] }, { $ifNull: ['$lateFee.amount', 0] }, 0] } },
+        },
+      },
+    ]),
+    Booking.find({
+      product: { $in: ids },
+      bookingStatus: { $in: [...OPEN_STATUSES, 'Completed'] },
+      startAt: { $lte: endOfLocalDay(today) },
+      endAt: { $gte: startOfLocalDay(today) },
     })
-    .populate('user', 'fullName email phoneNumber image')
-    .sort({ createdAt: -1 });
+      .sort({ startAt: 1 })
+      .limit(20)
+      .lean(),
+    Booking.find({ product: { $in: ids } }).sort({ createdAt: -1 }).limit(5).lean(),
+    Wallet.findOne({ user: ownerId }).select('balance').lean(),
+    Promise.all(
+      Object.values(LISTING_MODELS).map(({ model }) =>
+        model.countDocuments({ owner: new Types.ObjectId(ownerId), isDeleted: { $ne: true } }),
+      ),
+    ),
+  ]);
 
-  const providerOnlyBookings = providerBookings.filter(
-    (booking: any) =>
-      booking?.product?.owner?.toString() === isExistUser._id.toString()
-  );
-
-  const totalBooking = providerOnlyBookings.length;
-
-  const today = new Date();
-  today.setHours(0, 0, 0, 0);
-
-  const todayBookingCount = providerOnlyBookings.filter((booking: any) => {
-    const created = new Date(booking.createdAt);
-    return created >= today;
-  }).length;
-
-  const recentBookings = providerOnlyBookings
-    .slice(0, 4)
-    .map((booking: any) => {
-      const b = booking.toObject ? booking.toObject() : booking;
-      // format product
-      const product = booking.product
-        ? {
-            _id: booking.product._id,
-            thumbnail: booking?.product?.thumbnail,
-            title: booking?.product?.title,
-            skiPassType: booking?.product?.skiPassType || '',
-            serviceArea: booking?.product?.serviceArea || '',
-          }
-        : null;
-
-      // format slots
-      const fullSlots = (booking.slots || [])
-        .map((slotId: any) =>
-          booking.product?.slots?.find(
-            (s: any) => s._id.toString() === slotId.toString()
-          )
-        )
-        .filter(Boolean);
-
-      //  full booking items
-      const fullBookingItems = booking?.bookingItems?.map((item: any) => {
-        const fullItem =
-          booking?.product?.items?.find(
-            (p: any) => p._id.toString() === item.itemId.toString()
-          ) || null;
-
-        return {
-          ...item.toObject?.(),
-          itemDetails: fullItem || null,
-        };
-      });
-
-      // format duration
-      const start = dayjs(booking.startDateAndTime);
-      const end = dayjs(booking.endDateAndTime);
-      const diffMinutes = end.diff(start, 'minute');
-      const hours = Math.floor(diffMinutes / 60);
-      const minutes = diffMinutes % 60;
-
-      if (b?.category === 'Ski_Hire' || b?.category === 'Transport') {
-        b.duration = `${hours}h ${minutes}m`;
-      }
-
-      return {
-        ...b,
-        product,
-        slots: fullSlots,
-        bookingItems: fullBookingItems,
-      };
-    });
-
-  // Services of this provider
-  const models: Record<string, any> = {
-    SkiHire,
-    Transport,
-    Restaurant,
-    Massage,
-    SkiPass,  
-  };
-
-  let allProducts: any[] = [];
-
-  for (const [modelName, Model] of Object.entries(models)) {
-    const products = await Model.find({ owner: isExistUser?._id })
-      .select('-__v')
-      .sort({ createdAt: -1 });
-
-    const formatted = await Promise.all(
-      products.map(async (p: any) => {
-        let categoryValue = null;
-
-        const categoryDoc = await Category.findOne({
-          $or: [{ _id: p.category }, { 'subCategory._id': p.category }],
-        }).lean();
-
-        if (categoryDoc) {
-          const subCat = categoryDoc.subCategory?.find(
-            (sc: any) => sc._id.toString() === p.category.toString()
-          );
-          categoryValue = subCat || categoryDoc;
-        }
-
-        return {
-          ...p.toObject(),
-          model: modelName,
-          category: categoryValue,
-          reviewCount: p.reviews?.length || 0,
-        };
-      })
-    );
-
-    allProducts.push(...formatted);
-  }
-
-  const recentServices = allProducts.slice(0, 4);
-
+  const ctx = await loadContext([...todays, ...recent]);
+  const c = counts[0] || {};
+  const m = money[0] || {};
   return {
-    stats: {
-      todayBookingCount,
-      totalBooking,
-      totalBalance: totalBalance?.balance || 0,
+    bookings: {
+      total: c.total || 0,
+      requests: c.requests || 0,
+      upcoming: c.upcoming || 0,
+      inProgress: c.inProgress || 0,
+      completed: c.completed || 0,
+      cancelled: c.cancelled || 0,
     },
-    recentBookings,
-    recentServices,
+    earnings: {
+      balance: round2((wallet as any)?.balance),
+      earned: round2(m.earned),
+      platformFees: round2(m.fees),
+      pending: round2(m.pending),
+      lateFeesDue: round2(m.lateFeesDue),
+    },
+    listings: listings.reduce((s: number, n: number) => s + n, 0),
+    today: todays.map(b => toBookingCard(b, 'provider', ctx, now)),
+    recent: recent.map(b => toBookingCard(b, 'provider', ctx, now)),
   };
 };
 
-// admin dashboard data
-const getAdminDashboard = async (user: JwtPayload, query: any) => {
-  const isExistUser = await User.findOne({
-    email: user?.email,
-    role: 'Admin',
-  });
+const getAdminDashboard = async (_user: JwtPayload, query: Record<string, any> = {}) => {
+  const year = Number(query?.year) || new Date().getFullYear();
+  const from = new Date(Date.UTC(year, 0, 1));
+  const to = new Date(Date.UTC(year + 1, 0, 1));
+  const paidStatuses = ['Active', 'Pending', 'Completed'];
 
-  if (!isExistUser) {
-    throw new AppError(StatusCodes.NOT_FOUND, 'Admin not found.');
-  }
-
-  const totalBalance = await Wallet.findOne({ user: isExistUser._id }).select(
-    'balance'
-  );
-  const totalUser = await User.countDocuments();
-  const totalProvider = await User.countDocuments({ role: 'Provider' });
-
-  // Get year from query (default: current year)
-  const selectedYear = query?.year
-    ? parseInt(query?.year, 10)
-    : new Date().getFullYear();
-
-  // Use date-fns to set start and end of selected year
-  const yearStart = startOfYear(setYear(new Date(), selectedYear));
-  const yearEnd = endOfYear(setYear(new Date(), selectedYear));
-
-  // Define all models and their income field names
-  const modelsWithFields = [
-    { model: SkiHire, field: 'price', name: 'Ski Hire' },
-    { model: SkiPass, field: 'price', name: 'Ski Pass' },
-    { model: Transport, field: 'amount', name: 'Transport' },
-    { model: Restaurant, field: 'amount', name: 'Restaurant' },
-    { model: Massage, field: 'price', name: 'Massage' },
-  ];
-
-  // Monthly earnings (merge all)
-  const monthlyTotals = Array(12).fill(0);
-
-  for (const { model, field } of modelsWithFields) {
-    const result = await model.aggregate([
-      {
-        $match: {
-          createdAt: { $gte: yearStart, $lte: yearEnd },
-        },
-      },
+  const [users, providers, byMonth, byCategory, totals, adminWallets] = await Promise.all([
+    User.countDocuments({ role: 'User', isDeleted: { $ne: true } }),
+    User.countDocuments({ role: 'Provider', isDeleted: { $ne: true } }),
+    Booking.aggregate([
+      { $match: { createdAt: { $gte: from, $lt: to }, bookingStatus: { $in: paidStatuses } } },
       {
         $group: {
           _id: { $month: '$createdAt' },
-          total: { $sum: `$${field}` },
+          revenue: { $sum: '$totalPrice' },
+          fees: { $sum: { $ifNull: ['$platformFee', 0] } },
+          bookings: { $sum: 1 },
         },
       },
-    ]);
+    ]),
+    Booking.aggregate([
+      { $match: { createdAt: { $gte: from, $lt: to } } },
+      { $group: { _id: '$category', bookings: { $sum: 1 }, revenue: { $sum: { $cond: [{ $in: ['$bookingStatus', paidStatuses] }, '$totalPrice', 0] } } } },
+    ]),
+    Booking.aggregate([
+      {
+        $group: {
+          _id: null,
+          bookings: { $sum: 1 },
+          revenue: { $sum: { $cond: [{ $in: ['$bookingStatus', paidStatuses] }, '$totalPrice', 0] } },
+          fees: { $sum: { $add: [{ $ifNull: ['$platformFee', 0] }, { $ifNull: ['$lateFee.platformFee', 0] }] } },
+          refunds: { $sum: { $ifNull: ['$refundAmount', 0] } },
+        },
+      },
+    ]),
+    Wallet.find({ user: { $in: (await User.find({ role: 'Admin' }).select('_id').lean()).map(a => a._id) } })
+      .select('balance')
+      .lean(),
+  ]);
 
-    result.forEach(r => {
-      monthlyTotals[r._id - 1] += r.total;
-    });
-  }
-
-  const earningsChart = [
-    { month: 'Jan', earnings: monthlyTotals[0] },
-    { month: 'Feb', earnings: monthlyTotals[1] },
-    { month: 'Mar', earnings: monthlyTotals[2] },
-    { month: 'Apr', earnings: monthlyTotals[3] },
-    { month: 'May', earnings: monthlyTotals[4] },
-    { month: 'Jun', earnings: monthlyTotals[5] },
-    { month: 'Jul', earnings: monthlyTotals[6] },
-    { month: 'Aug', earnings: monthlyTotals[7] },
-    { month: 'Sep', earnings: monthlyTotals[8] },
-    { month: 'Oct', earnings: monthlyTotals[9] },
-    { month: 'Nov', earnings: monthlyTotals[10] },
-    { month: 'Dec', earnings: monthlyTotals[11] },
-  ];
-
-  // Pie chart — booking by service
-  const bookingByServices = await Promise.all(
-    modelsWithFields.map(async ({ model, name }) => ({
-      name,
-      value: await model.countDocuments(),
-    }))
-  );
-
+  const t = totals[0] || {};
   return {
     stats: {
-      totalIncome: totalBalance?.balance || 0,
-      totalUser,
-      totalProvider,
+      customers: users,
+      providers,
+      bookings: t.bookings || 0,
+      revenue: round2(t.revenue),
+      platformFees: round2(t.fees),
+      refunds: round2(t.refunds),
+      platformBalance: round2(adminWallets.reduce((s: number, w: any) => s + (Number(w.balance) || 0), 0)),
     },
     charts: {
-      earnings: earningsChart,
-      bookingByServices,
+      year,
+      monthly: MONTHS.map((month, i) => {
+        const r = byMonth.find((x: any) => x._id === i + 1) || {};
+        return { month, revenue: round2(r.revenue), platformFees: round2(r.fees), bookings: r.bookings || 0 };
+      }),
+      byCategory: ['Ski_Pass', 'Ski_Hire', 'Transport', 'Restaurant', 'Massage'].map(category => {
+        const r = byCategory.find((x: any) => x._id === category) || {};
+        return { category, bookings: r.bookings || 0, revenue: round2(r.revenue) };
+      }),
     },
   };
 };
 
-const getCommonService = async (user: JwtPayload, query: IQuery) => {
-  const isExistUser = await User.findOne({
-    email: user?.email,
-    role: 'Admin',
-  });
+/** Admin booking lists (web panel): all non-restaurant / restaurant bookings */
+const getCommonService = async (_user: JwtPayload, query: Record<string, any> = {}) =>
+  BookingService.getAllBookingsAdmin(query);
 
-  if (!isExistUser) {
-    throw new AppError(StatusCodes.NOT_FOUND, 'Admin not found.');
-  }
+const getRestaurantManagement = async (_user: JwtPayload, query: Record<string, any> = {}) =>
+  BookingService.getAllBookingsAdmin({ ...query, category: 'Restaurant' });
 
-  const page = Number(query.page) || 1;
-  const limit = Number(query.limit) || 10;
-  const skip = (page - 1) * limit;
-
-  const filters: any = { category: { $ne: 'Restaurant' } };
-
-  if (query.bookingStatus) {
-    filters.bookingStatus = { $regex: query.bookingStatus, $options: 'i' };
-  }
-
-  // Optional search by user name/email or product title
-  if (query.search) {
-    const [users, skiPasses] = await Promise.all([
-      User.find(
-        {
-          $or: [
-            { name: { $regex: query.search, $options: 'i' } },
-            { email: { $regex: query.search, $options: 'i' } },
-          ],
-        },
-        '_id'
-      ),
-      Booking.db
-        .model('SkiPass')
-        .find({ title: { $regex: query.search, $options: 'i' } }, '_id'),
-    ]);
-
-    filters.$or = [
-      { user: { $in: users.map(u => u._id) } },
-      { product: { $in: skiPasses.map(p => p._id) } },
-    ];
-  }
-
-  const total = await Booking.countDocuments(filters);
-
-  // Query bookings with populate and pagination
-  const bookings = await Booking.find(filters)
-    .populate({
-      path: 'user',
-      select: 'fullName email phoneNumber role status',
-    })
-    .populate({
-      path: 'product',
-      select: 'title category owner totalPrice items thumbnail serviceArea',
-      populate: {
-        path: 'owner',
-        select: 'fullName email phoneNumber role providerType',
-      },
-    })
-    .sort({ createdAt: -1 })
-    .skip(skip)
-    .limit(limit);
-
-  return {
-    pagination: {
-      total,
-      page,
-      limit,
-      totalPages: Math.ceil(total / limit),
-    },
-    bookings,
-  };
+const getSingleService = async (user: JwtPayload, bookingId: string) => {
+  if (!Types.ObjectId.isValid(String(bookingId)))
+    throw new AppError(StatusCodes.BAD_REQUEST, 'Invalid booking id.');
+  return BookingService.getBookingById(bookingId, user);
 };
 
-const getSingleService = async (user: JwtPayload, serviceId: string) => {
-  // Check if admin exists
-  const isExistUser = await User.findOne({
-    email: user?.email,
-    role: 'Admin',
-  });
-
-  if (!isExistUser) {
-    throw new AppError(StatusCodes.NOT_FOUND, 'Admin not found.');
-  }
-
-  // Fetch the booking with user and product/owner populated
-  const booking = await Booking.findById(serviceId)
-    .populate({
-      path: 'user',
-      select: '-password',
-    })
-    .populate({
-      path: 'product',
-      populate: {
-        path: 'owner',
-        select: '-password',
-      },
-    })
-    .lean();
-
-  if (!booking) {
-    throw new AppError(StatusCodes.NOT_FOUND, 'Booking not found.');
-  }
-
-  return booking;
-};
-
-const getRestaurantManagement = async (user: JwtPayload, query: IQuery) => {
-  const isExistUser = await User.findOne({
-    email: user?.email,
-    role: 'Admin',
-  });
-
-  if (!isExistUser) {
-    throw new AppError(StatusCodes.NOT_FOUND, 'Admin not found.');
-  }
-
-  // Pagination
-  const page = Number(query.page) || 1;
-  const limit = Number(query.limit) || 10;
-  const skip = (page - 1) * limit;
-
-  const filters: any = { category: 'Restaurant', bookingStatus: 'Pending' };
-
-  // Optional filters
-  if (query.bookingStatus)
-    filters.bookingStatus = { $regex: query.bookingStatus, $options: 'i' };
-  if (query.userId) filters.userId = { $regex: query.userId, $options: 'i' };
-
-  if (query.search) {
-    const matchedUsers = await User.find(
-      {
-        $or: [
-          { name: { $regex: query.search, $options: 'i' } },
-          { email: { $regex: query.search, $options: 'i' } },
-        ],
-      },
-      '_id'
-    );
-
-    filters.user = { $in: matchedUsers.map(u => u._id) };
-  }
-
-  const total = await Booking.countDocuments(filters);
-
-  // Fetch bookings with populate and pagination
-  const bookings = await Booking.find(filters)
-    .populate({
-      path: 'user',
-      select: 'name email phoneNumber role status',
-    })
-    .populate({
-      path: 'product',
-      select:
-        'title owner totalPrice items thumbnail serviceArea availableSlots serviceFee',
-      populate: {
-        path: 'owner',
-        select: 'name email phoneNumber role providerType',
-      },
-    })
-    .sort({ createdAt: -1 })
-    .skip(skip)
-    .limit(limit);
-
-  return {
-    pagination: {
-      total,
-      page,
-      limit,
-      totalPages: Math.ceil(total / limit),
-    },
-    bookings,
-  };
-};
 export const MetaService = {
   getProviderDashboard,
   getAdminDashboard,

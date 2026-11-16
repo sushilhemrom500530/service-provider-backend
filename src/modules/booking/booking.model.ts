@@ -124,10 +124,53 @@ const bookingSchema = new Schema<IBooking>(
     // and what the provider actually received
     platformFee: { type: Number },
     providerEarning: { type: Number },
+
+    // ---------- normalised schedule (every category) ----------
+    // when the service starts / ends, used by jobs, tabs and timers
+    startAt: { type: Date },
+    endAt: { type: Date },
+    // restaurant: the booked slot's times (kept even if the listing changes)
+    slotTime: {
+      startTime: { type: String },
+      endTime: { type: String },
+    },
+    // rental never picked up: completed automatically, not refunded
+    noShow: { type: Boolean },
+    // refund paid to the customer (customer cancel / reject / expiry)
+    refundAmount: { type: Number },
+    refundedAt: { type: Date },
+    cancelledAt: { type: Date },
+    completedAt: { type: Date },
+    // late return of a rental (Ski Hire / Transport)
+    lateFee: {
+      hours: { type: Number },
+      amount: { type: Number },
+      status: { type: String, enum: ['none', 'due', 'paid'] },
+      paymentIntentId: { type: String },
+      paidAt: { type: Date },
+      platformFee: { type: Number },
+      providerEarning: { type: Number },
+    },
+    // card dispute / chargeback opened by the customer's bank
+    dispute: {
+      status: { type: String, enum: ['open', 'won', 'lost'] },
+      amount: { type: Number },
+      reason: { type: String },
+      openedAt: { type: Date },
+      closedAt: { type: Date },
+      // provider money taken back while the dispute is open
+      recoveredNet: { type: Number },
+      recoveredFee: { type: Number },
+    },
   },
   {
     timestamps: true,
   },
 );
+
+bookingSchema.index({ product: 1, bookingStatus: 1, startAt: 1 });
+bookingSchema.index({ user: 1, createdAt: -1 });
+bookingSchema.index({ bookingStatus: 1, approvalDeadline: 1 });
+bookingSchema.index({ bookingStatus: 1, endAt: 1 });
 
 export const Booking = model<IBooking>('Booking', bookingSchema);

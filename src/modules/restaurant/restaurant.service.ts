@@ -1,1221 +1,620 @@
-import mongoose, { Types } from 'mongoose';
-import AppError from '../../errors/AppErro';
+import { Types } from 'mongoose';
+import moment from 'moment-timezone';
 import { StatusCodes } from 'http-status-codes';
-import { Request, Response } from 'express';
+import { JwtPayload } from 'jsonwebtoken';
+import AppError from '../../errors/AppErro';
 import { s3Services } from './../../aws/s3Service';
 import { User } from './../user/user.model';
-import { JwtPayload } from 'jsonwebtoken';
+import { Booking } from './../booking/booking.model';
 import { Restaurant } from './restaurant.model';
+import { RestaurantSetting, RESTAURANT_SETTING_KEY } from './restaurantSetting.model';
 import { USER_UPLOADS_FOLDER } from './restaurant.constant';
-import { IRestaurant, ISlot } from './restaurant.interface';
-import { Category } from './../category/category.model';
-import { isRestaurantOpen } from './../../utils/restaurentTimeConvert';
+import { assertValidSlots, assertSlotsWithinOpeningHours } from './../../utils/slotTime';
 import {
-  assertValidSlots,
-  assertSlotsWithinOpeningHours,
-} from './../../utils/slotTime';
-import { IReview } from './../common/common.interface';
+  assertListingOwner,
+  idOf,
+  isAdmin,
+  parseSort,
+  pickDefined,
+  toPublicUser,
+  toRating,
+} from './../../shared/apiHelpers';
+import {
+  OPEN_BOOKING_STATUSES,
+  SubCategory,
+  addListingReview,
+  assertSubCategory,
+  buildListingFilter,
+  findListingOr404,
+  getListingReviews,
+  loadSubCategories,
+  paginateListings,
+  setListingActive,
+  softDeleteListing,
+} from './../common/listing.helpers';
+import { NormalizedSeat, SlotInput, TIME_FORMATS, normalizeSeats } from './restaurant.validations';
 
-const getAllRestaurantFromDB = async (user: JwtPayload, query: any) => {
-  const isExistsUser = await User.findOne({ email: user?.email });
-  if (!isExistsUser) {
-    throw new AppError(StatusCodes.NOT_FOUND, 'User not found.');
-  }
+const PRIMARY = 'Restaurant' as const;
+const LIST_SELECT = '-reviews -refunds -__v -availableSlots -slots';
+const DETAIL_SELECT = '-reviews -refunds -__v -availableSlots';
 
-  // Pagination
-  const page = Number(query.page) || 1;
-  const limit = Number(query.limit) || 10;
-  const skip = (page - 1) * limit;
-
-  // Search filter
-  const search = query.search
-    ? { title: { $regex: query.search, $options: 'i' } }
-    : {};
-
-  // Category filter
-  let categoryFilter = {};
-  if (query.category) {
-    const categories = await Category.find(
-      {
-        primaryCategoryName: 'Restaurant',
-        'subCategory.name': { $regex: query.category, $options: 'i' },
-      },
-      { 'subCategory.$': 1 },
-    );
-
-    const categoryIds = categories.map(c => c.subCategory?.[0]?._id);
-
-    if (categoryIds.length > 0) {
-      categoryFilter = { category: { $in: categoryIds } };
-    } else {
-      return {
-        data: [],
-        pagination: { total: 0, page, limit, totalPages: 0 },
-      };
-    }
-  }
-
-  const filters = {
-    ...search,
-    ...categoryFilter,
-  };
-
-  // Total after filters
-  const total = await Restaurant.countDocuments(filters);
-
-  // Fetch paginated restaurant data
-  const restaurantList = await Restaurant.find(filters)
-    .skip(skip)
-    .limit(limit)
-    .populate({
-      path: 'owner',
-      select: '-isDeleted -agreeTermsCondition -__v -createdAt -updatedAt',
-    })
-    .sort({ createdAt: -1 });
-
-  // Attach category data (kept exactly as your logic)
-  const result = await Promise.all(
-    restaurantList.map(async item => {
-      const categoryDoc = await Category.findOne(
-        {
-          primaryCategoryName: 'Restaurant',
-          'subCategory._id': item.category,
-        },
-        { 'subCategory.$': 1 },
-      );
-
-      return {
-        ...item.toObject(),
-        category: categoryDoc?.subCategory?.[0] || null,
-      };
-    }),
-  );
-
-  return {
-    pagination: {
-      total,
-      page,
-      limit,
-      totalPages: Math.ceil(total / limit),
-    },
-    result,
-  };
+const SORTS: Record<string, Record<string, 1 | -1>> = {
+  price_asc: { 'items.price': 1, createdAt: -1 },
+  price_desc: { 'items.price': -1, createdAt: -1 },
+  rating: { averageRating: -1, createdAt: -1 },
+  newest: { createdAt: -1 },
 };
 
-const getAllMyRestaurantFromDB = async (user: JwtPayload, query: any) => {
-  const isExistsUser = await User.findOne({ email: user?.email });
-  if (!isExistsUser) {
-    throw new AppError(StatusCodes.NOT_FOUND, 'User not found.');
-  }
+type UploadedFiles = Record<string, any[]> | undefined;
 
-  // Pagination
-  const page = Number(query.page) || 1;
-  const limit = Number(query.limit) || 10;
-  const skip = (page - 1) * limit;
+/* ------------------------------------------------------------------ */
+/* Opening hours                                                       */
+/* ------------------------------------------------------------------ */
 
-  // Search filter
-  const search = query.search
-    ? { title: { $regex: query.search, $options: 'i' } }
-    : {};
+/** Time zone of the restaurants' opening hours (env override) */
+export const RESTAURANT_TIMEZONE =
+  process.env.RESTAURANT_TIMEZONE || process.env.BUSINESS_TIMEZONE || 'Europe/Paris';
 
-  // Category filter
-  let categoryFilter = {};
-  if (query.category) {
-    const categories = await Category.find(
-      {
-        primaryCategoryName: 'Restaurant',
-        'subCategory.name': { $regex: query.category, $options: 'i' },
-      },
-      { 'subCategory.$': 1 },
-    );
-
-    const categoryIds = categories.map(c => c.subCategory?.[0]?._id);
-
-    if (categoryIds.length > 0) {
-      categoryFilter = { category: { $in: categoryIds } };
-    } else {
-      return {
-        data: [],
-        pagination: { total: 0, page, limit, totalPages: 0 },
-      };
-    }
-  }
-
-  const filters = {
-    owner: isExistsUser._id,
-    ...search,
-    ...categoryFilter,
-  };
-
-  // Total after filters
-  const total = await Restaurant.countDocuments(filters);
-
-  // Fetch paginated restaurant data
-  const restaurantList = await Restaurant.find(filters)
-    .select('-__v')
-    .skip(skip)
-    .limit(limit)
-    .populate({
-      path: 'owner',
-      select: 'email address fullName profileUrl',
-    })
-    .sort({ createdAt: -1 });
-
-  // Attach category data (kept exactly as your logic)
-  const result = await Promise.all(
-    restaurantList.map(async item => {
-      const categoryDoc = await Category.findOne(
-        {
-          primaryCategoryName: 'Restaurant',
-          'subCategory._id': item.category,
-        },
-        { 'subCategory.$': 1 },
-      );
-
-      return {
-        ...item.toObject(),
-        category: categoryDoc?.subCategory?.[0] || null,
-      };
-    }),
-  );
-
-  return {
-    pagination: {
-      total,
-      page,
-      limit,
-      totalPages: Math.ceil(total / limit),
-    },
-    result,
-  };
+const toMinutes = (time: unknown): number | null => {
+  const m = moment(String(time ?? '').trim(), TIME_FORMATS, true);
+  return m.isValid() ? m.hours() * 60 + m.minutes() : null;
 };
 
-const getSingleRestaurantFromDB = async (id: string, user: JwtPayload) => {
-  const isExistsUser = await User.findOne({ email: user?.email });
-  if (!isExistsUser) {
-    throw new AppError(
-      StatusCodes.NOT_FOUND,
-      'You cannot view this data because your account was not found.',
-    );
-  }
-  const restaurant = await Restaurant.findById(id)
-    .populate({
-      path: 'owner',
-      select: '-isDeleted -agreeTermsCondition -__v -createdAt -updatedAt',
-    })
-    .populate({
-      path: 'reviews.userId',
-      select: 'fullName email phoneNumber profileUrl createdAt', // choose what you want
-    })
-    .populate({
-      path: 'refunds.userId',
-      select: 'fullName email phoneNumber profileUrl createdAt',
-    });
-
-  if (!restaurant)
-    throw new AppError(StatusCodes.NOT_FOUND, 'Restaurant not found.');
-
-  // manually populate subcategory
-  const categoryDoc = await Category.findOne(
-    {
-      primaryCategoryName: 'Restaurant',
-      'subCategory._id': restaurant?.category,
-    },
-    { 'subCategory.$': 1 },
-  );
-
-  const subCategoryData = categoryDoc?.subCategory?.[0] || null;
-
-  return {
-    ...restaurant.toObject(),
-    category: subCategoryData,
-  };
-};
-
-// const addRestaurantIntoDB = async (req: Request) => {
-//   const user = req.user as JwtPayload;
-
-//   // Check if user exists
-//   const isExistsUser = await User.findOne({ email: user?.email });
-//   if (!isExistsUser)
-//     throw new AppError(StatusCodes.NOT_FOUND, 'User not found.');
-
-//   // Validate role and providerType
-//   if (isExistsUser.role !== 'Provider')
-//     throw new AppError(
-//       StatusCodes.FORBIDDEN,
-//       'You are not authorized to create a restaurant.'
-//     );
-//   if (isExistsUser.providerType !== 'Restaurant')
-//     throw new AppError(
-//       StatusCodes.FORBIDDEN,
-//       'Provider must be Restaurant type.'
-//     );
-
-//   // Validate category
-//   const category = await Category.findOne({
-//     primaryCategoryName: 'Restaurant',
-//   });
-//   if (!category)
-//     throw new AppError(StatusCodes.NOT_FOUND, 'Restaurant category not found.');
-
-//   const subCategoryItems = category?.subCategory || [];
-//   const exists = subCategoryItems.some(
-//     (item: any) => item?._id?.toString() === req.body?.category?.toString()
-//   ) as boolean;
-//   if (!exists)
-//     throw new AppError(StatusCodes.BAD_REQUEST, 'Invalid sub-category ID.');
-
-//   // Upload thumbnail
-//   const uploadedFiles = (req as any).files as
-//     | { [fieldname: string]: any[] }
-//     | undefined;
-
-//   const thumbnailFile: any = uploadedFiles?.thumbnail?.[0];
-//   if (!thumbnailFile)
-//     throw new AppError(StatusCodes.BAD_REQUEST, 'Thumbnail file not found.');
-//   const thumbnailUrl = await s3Services.uploadSingleFileToS3(
-//     thumbnailFile,
-//     USER_UPLOADS_FOLDER
-//   );
-
-//   // Parse menu items (ICategoryItem[])
-//   let items: any[] = [];
-//   if (typeof req.body.items === 'string') {
-//     items = JSON.parse(req.body.items);
-//   } else if (Array.isArray(req.body.items)) {
-//     items = req.body.items;
-//   } else {
-//     throw new AppError(
-//       StatusCodes.BAD_REQUEST,
-//       'Items data is missing or invalid.'
-//     );
-//   }
-
-//   // 🔹 Validate items
-//   if (items.length !== 2) {
-//     throw new AppError(
-//       StatusCodes.BAD_REQUEST,
-//       'Items must contain exactly 2 seat types: Normal and VIP.'
-//     );
-//   }
-
-//   // Check for duplicate seat names (case-insensitive)
-//   const seatNames = items.map(i => i?.seat?.trim().toLowerCase());
-//   const duplicateSeat = seatNames.some(
-//     (seat, index) => seatNames.indexOf(seat) !== index
-//   );
-//   if (duplicateSeat) {
-//     throw new AppError(
-//       StatusCodes.BAD_REQUEST,
-//       'Duplicate seat types are not allowed.'
-//     );
-//   }
-
-//   // Upload item photos (1:1 mapping)
-//   const itemFiles: any[] = uploadedFiles?.files || [];
-//   const processedItems = await Promise.all(
-//     items.map(async (item, index) => {
-//       const file = itemFiles[index];
-//       let photoUrl = item.photo;
-//       if (file) {
-//         photoUrl = await s3Services.uploadSingleFileToS3(
-//           file,
-//           USER_UPLOADS_FOLDER
-//         );
-//       }
-//       return {
-//         ...item,
-//         totalQty: Number(item.totalQty),
-//         availableQty: Number(item.totalQty),
-//         price: Number(item.price),
-//         photo: photoUrl,
-//       };
-//     })
-//   );
-
-//   // Parse slots and availableSlots (ISlot[])
-//   let slots: ISlot[] = [];
-//   if (typeof req.body.slots === 'string') slots = JSON.parse(req.body.slots);
-//   else if (Array.isArray(req.body.slots)) slots = req.body.slots;
-
-//   // coppy available slots on slots
-//   let availableSlots = slots;
-
-//   // Calculate status
-//   const isOpenNow = isRestaurantOpen(req.body.openTime, req.body.closeTime);
-
-//   // Prepare restaurant data
-//   const restaurantData: Partial<IRestaurant> = {
-//     title: req.body.title,
-//     thumbnail: thumbnailUrl,
-//     category: req.body.category,
-//     owner: isExistsUser._id,
-//     openTime: req.body.openTime,
-//     closeTime: req.body.closeTime,
-//     serviceArea: req.body.serviceArea,
-//     foodType: req.body.foodType,
-//     status: isOpenNow ? 'Open' : 'Closed',
-//     description: req.body.description,
-//     slots,
-//     items: processedItems,
-//   };
-
-//   const result = await Restaurant.create(restaurantData);
-//   return result;
-// };
-
-const addRestaurantIntoDB = async (req: Request) => {
-  const user = req.user as JwtPayload;
-
-  // Check if user exists
-  const isExistsUser = await User.findOne({ email: user?.email });
-  if (!isExistsUser)
-    throw new AppError(StatusCodes.NOT_FOUND, 'User not found.');
-
-  // Validate role and providerType
-  if (isExistsUser.role !== 'Provider')
-    throw new AppError(
-      StatusCodes.FORBIDDEN,
-      'You are not authorized to create a restaurant.',
-    );
-  if (isExistsUser.providerType !== 'Restaurant')
-    throw new AppError(
-      StatusCodes.FORBIDDEN,
-      'Provider must be Restaurant type.',
-    );
-
-  // Validate category
-  const category = await Category.findOne({
-    primaryCategoryName: 'Restaurant',
-  });
-  if (!category)
-    throw new AppError(StatusCodes.NOT_FOUND, 'Restaurant category not found.');
-
-  const subCategoryItems = category?.subCategory || [];
-  const exists = subCategoryItems.some(
-    (item: any) => item?._id?.toString() === req.body?.category?.toString(),
-  ) as boolean;
-  if (!exists)
-    throw new AppError(StatusCodes.BAD_REQUEST, 'Invalid sub-category ID.');
-
-  // Upload thumbnail
-  const uploadedFiles = (req as any).files as
-    | { [fieldname: string]: any[] }
-    | undefined;
-
-  const thumbnailFile: any = uploadedFiles?.thumbnail?.[0];
-  if (!thumbnailFile)
-    throw new AppError(StatusCodes.BAD_REQUEST, 'Thumbnail file not found.');
-  const thumbnailUrl = await s3Services.uploadSingleFileToS3(
-    thumbnailFile,
-    USER_UPLOADS_FOLDER,
-  );
-
-  // Parse menu items (ICategoryItem[])
-  let items: any[] = [];
-  if (typeof req.body.items === 'string') {
-    items = JSON.parse(req.body.items);
-  } else if (Array.isArray(req.body.items)) {
-    items = req.body.items;
-  } else {
-    throw new AppError(
-      StatusCodes.BAD_REQUEST,
-      'Items data is missing or invalid.',
-    );
-  }
-
-  // 🔹 Validate items
-  if (items.length !== 2) {
-    throw new AppError(
-      StatusCodes.BAD_REQUEST,
-      'Items must contain exactly 2 seat types: Normal and VIP.',
-    );
-  }
-
-  // Check for duplicate seat names (case-insensitive)
-  const seatNames = items.map(i => i?.seat?.trim().toLowerCase());
-  const duplicateSeat = seatNames.some(
-    (seat, index) => seatNames.indexOf(seat) !== index,
-  );
-  if (duplicateSeat) {
-    throw new AppError(
-      StatusCodes.BAD_REQUEST,
-      'Duplicate seat types are not allowed.',
-    );
-  }
-
-  // 🔹 Upload item photos (supports files[0], files[1] from Postman)
-  let itemFiles: any[] = [];
-  if (uploadedFiles?.files) {
-    if (Array.isArray(uploadedFiles.files)) {
-      itemFiles = uploadedFiles.files;
-    } else {
-      // convert object keys '0', '1' → array in order
-      const keys = Object.keys(uploadedFiles.files)
-        .map(k => parseInt(k))
-        .sort((a, b) => a - b);
-      itemFiles = keys.map(k => uploadedFiles.files[k][0]); // each key is array
-    }
-  }
-
-  const processedItems = await Promise.all(
-    items.map(async (item, index) => {
-      const file = itemFiles[index];
-      let photoUrl = item.photo;
-      if (file) {
-        photoUrl = await s3Services.uploadSingleFileToS3(
-          file,
-          USER_UPLOADS_FOLDER,
-        );
-      }
-      return {
-        ...item,
-        totalQty: Number(item.totalQty),
-        availableQty: Number(item.totalQty),
-        price: Number(item.price),
-        photo: photoUrl,
-      };
-    }),
-  );
-
-  // Parse slots and availableSlots (ISlot[])
-  let slots: ISlot[] = [];
-  if (typeof req.body.slots === 'string') slots = JSON.parse(req.body.slots);
-  else if (Array.isArray(req.body.slots)) slots = req.body.slots;
-
-  // reject slots that end before they start ("10:30 PM - 12:30 PM")
-  assertValidSlots(slots as any);
-  // and slots outside the opening hours
-  assertSlotsWithinOpeningHours(slots as any, req.body.openTime, req.body.closeTime);
-
-  let availableSlots = slots; // copy available slots
-
-  // Calculate status
-  const isOpenNow = isRestaurantOpen(req.body.openTime, req.body.closeTime);
-
-  // Prepare restaurant data
-  const restaurantData: Partial<IRestaurant> = {
-    title: req.body.title,
-    thumbnail: thumbnailUrl,
-    category: req.body.category,
-    owner: isExistsUser._id,
-    openTime: req.body.openTime,
-    closeTime: req.body.closeTime,
-    serviceArea: req.body.serviceArea,
-    foodType: req.body.foodType,
-    status: isOpenNow ? 'Open' : 'Closed',
-    // description: req.body.description,
-    slots,
-    items: processedItems,
-  };
-
-  const result = await Restaurant.create(restaurantData);
-  return result;
-};
-
-export const reviewRestaurant = async (
-  id: string,
-  user: JwtPayload,
-  payload: Partial<IReview>,
+/** Open right now? (hours may cross midnight; open == close means 24 h) */
+export const isOpenAt = (
+  openTime: unknown,
+  closeTime: unknown,
+  now: Date = new Date(),
+  tz: string = RESTAURANT_TIMEZONE,
 ) => {
-  // Verify user exists
-  const isExistsUser = await User.findOne({ email: user?.email });
-  if (!isExistsUser) {
-    throw new AppError(
-      StatusCodes.NOT_FOUND,
-      'You cannot view this data because your account was not found.',
-    );
-  }
-
-  // Ensure user role is 'User'
-  if (isExistsUser?.role !== 'User') {
-    throw new AppError(
-      StatusCodes.FORBIDDEN,
-      'You cannot add a review because your account is not a user.',
-    );
-  }
-
-  // Find the SkiPass product
-  const restaurant = await Restaurant.findById(id);
-  if (!restaurant) {
-    throw new AppError(StatusCodes.NOT_FOUND, 'Restaurant not found');
-  }
-
-  //  (Optional) Prevent duplicate reviews by the same user
-  const alreadyReviewed =
-    restaurant.reviews?.some(
-      review => review?.userId.toString() === isExistsUser?._id.toString(),
-    ) || false;
-  if (alreadyReviewed) {
-    throw new AppError(
-      StatusCodes.BAD_REQUEST,
-      'You have already reviewed this restaurant.',
-    );
-  }
-
-  // Push new review
-  const newReview = {
-    userId: isExistsUser!._id,
-    rating: payload?.rating,
-    comment: payload?.comment,
-    createdAt: new Date(),
-  } as IReview;
-
-  if (!Array.isArray(restaurant.reviews)) {
-    restaurant.reviews = [];
-  }
-
-  restaurant.reviews.push(newReview);
-
-  // Recalculate average rating
-  const total: number = restaurant.reviews.reduce(
-    (sum: number, r: IReview) => sum + (r?.rating || 0),
-    0,
-  );
-  restaurant.averageRating = restaurant.reviews.length
-    ? parseFloat((total / restaurant.reviews.length).toFixed(1))
-    : 0;
-
-  // Save updated restaurant
-  await restaurant.save({ validateModifiedOnly: true });
-
-  return restaurant;
+  const o = toMinutes(openTime);
+  const c = toMinutes(closeTime);
+  if (o === null || c === null) return false;
+  if (o === c) return true;
+  const local = moment.tz(now, tz);
+  const n = local.hours() * 60 + local.minutes();
+  return o < c ? n >= o && n < c : n >= o || n < c;
 };
 
-// export const updateRestaurantIntoDB = async (req: Request) => {
-//   const id = req.params.id;
-//   const user = req.user as JwtPayload;
+/* ------------------------------------------------------------------ */
+/* Serializers                                                         */
+/* ------------------------------------------------------------------ */
 
-//   // Check if restaurant exists
-//   const restaurant = await Restaurant.findById(id);
-//   if (!restaurant)
-//     throw new AppError(StatusCodes.NOT_FOUND, 'Restaurant not found.');
+const seatPrices = (doc: any) =>
+  (doc?.items || [])
+    .map((i: any) => Number(i?.price))
+    .filter((n: number) => Number.isFinite(n));
 
-//   // Check user
-//   const isExistsUser = await User.findOne({ email: user?.email });
-//   if (!isExistsUser)
-//     throw new AppError(StatusCodes.NOT_FOUND, 'User not found.');
-//   if (
-//     isExistsUser.role !== 'Provider' ||
-//     isExistsUser.providerType !== 'Restaurant'
-//   ) {
-//     throw new AppError(
-//       StatusCodes.FORBIDDEN,
-//       'You are not authorized to update this restaurant.'
-//     );
-//   }
+export const toCard = (doc: any, subs: Map<string, SubCategory>) => {
+  const prices = seatPrices(doc);
+  return {
+    id: idOf(doc),
+    category: PRIMARY,
+    subCategory: subs.get(String(doc?.category)) || null,
+    title: doc?.title || '',
+    thumbnail: doc?.thumbnail || '',
+    serviceArea: doc?.serviceArea || '',
+    price: { amount: prices.length ? Math.min(...prices) : 0, unit: 'per_seat' },
+    rating: toRating(doc),
+    provider: toPublicUser(doc?.owner),
+    isActive: doc?.isActive !== false,
+  };
+};
 
-//   // Validate category if provided
-//   if (req.body.category) {
-//     const category = await Category.findOne({
-//       primaryCategoryName: 'Restaurant',
-//     });
-//     if (!category)
-//       throw new AppError(
-//         StatusCodes.NOT_FOUND,
-//         'Restaurant category not found.'
-//       );
+export const toSeat = (i: any) => ({
+  id: idOf(i),
+  type: i?.seat,
+  photo: i?.photo || '',
+  price: Number(i?.price) || 0,
+  quantity: Number(i?.totalQty) || 0,
+  description: i?.description || '',
+});
 
-//     const subCategoryItems = category?.subCategory || [];
-//     const exists = subCategoryItems.some(
-//       (item: any) => item?._id.toString() === req.body.category
-//     ) as boolean;
-//     if (!exists)
-//       throw new AppError(StatusCodes.BAD_REQUEST, 'Invalid sub-category ID.');
-//     restaurant.category = req.body?.category;
-//   }
+export const toDetail = (doc: any, subs: Map<string, SubCategory>) => ({
+  ...toCard(doc, subs),
+  description: doc?.description || '',
+  openTime: doc?.openTime || '',
+  closeTime: doc?.closeTime || '',
+  isOpenNow: isOpenAt(doc?.openTime, doc?.closeTime),
+  foodType: doc?.foodType || '',
+  serviceFee: Number(doc?.serviceFee) || 0,
+  seats: (doc?.items || []).map(toSeat),
+  slots: (doc?.slots || []).map((s: any) => ({
+    id: idOf(s),
+    startTime: s?.startTime,
+    endTime: s?.endTime,
+  })),
+  createdAt: doc?.createdAt,
+});
 
-//   // Upload new thumbnail if provided
-//   const uploadedFilesUpdate = (req as any).files as
-//     | { [fieldname: string]: any[] }
-//     | undefined;
+const loadDetail = async (id: string) => {
+  const doc: any = await Restaurant.findOne({ _id: id, isDeleted: { $ne: true } })
+    .select(DETAIL_SELECT)
+    .populate({ path: 'owner', select: 'fullName profileUrl' })
+    .lean();
+  if (!doc) throw new AppError(StatusCodes.NOT_FOUND, 'Restaurant not found.');
+  return toDetail(doc, await loadSubCategories(PRIMARY));
+};
 
-//   const thumbnailFile: any = uploadedFilesUpdate?.thumbnail?.[0];
-//   if (thumbnailFile) {
-//     const thumbnailUrl = await s3Services.uploadSingleFileToS3(
-//       thumbnailFile,
-//       USER_UPLOADS_FOLDER
-//     );
-//     restaurant.thumbnail = thumbnailUrl;
-//   }
+/* ------------------------------------------------------------------ */
+/* Files                                                               */
+/* ------------------------------------------------------------------ */
 
-//   // Update items if provided
-//   if (req.body.items) {
-//     let items: any[] = [];
-//     if (typeof req.body.items === 'string') items = JSON.parse(req.body.items);
-//     else if (Array.isArray(req.body.items)) items = req.body.items;
-//     else
-//       throw new AppError(
-//         StatusCodes.BAD_REQUEST,
-//         'Items data is missing or invalid.'
-//       );
+const thumbnailFile = (files: UploadedFiles) => files?.thumbnail?.[0] || files?.file?.[0];
 
-//     if (items.length !== 2) {
-//       throw new AppError(
-//         StatusCodes.BAD_REQUEST,
-//         'Items must contain exactly 2 seat types: Normal and VIP.'
-//       );
-//     }
+/**
+ * Seat photo per seat index (index in the `seats`/`items` array of the request):
+ *   files[0], files[1] | files (in order) | seatPhoto_<i> | itemPhoto_<i>
+ */
+const seatPhotoFiles = (files: UploadedFiles) => {
+  const map = new Map<number, any>();
+  const plain: any[] = [];
+  for (const f of files?.files || []) {
+    const m = /^files\[(\d+)\]$/.exec(String(f?.fieldname || ''));
+    if (m) map.set(Number(m[1]), f);
+    else plain.push(f);
+  }
+  let pos = 0;
+  for (const f of plain) {
+    while (map.has(pos)) pos += 1;
+    map.set(pos, f);
+    pos += 1;
+  }
+  for (const [name, list] of Object.entries(files || {})) {
+    const m = /^(?:seatPhoto|itemPhoto)_(\d+)$/.exec(name);
+    if (m && list?.[0]) map.set(Number(m[1]), list[0]);
+  }
+  return map;
+};
 
-//     const seatNames = items.map(i => i.seat?.trim().toLowerCase());
-//     const duplicateSeat = seatNames.some(
-//       (seat, index) => seatNames.indexOf(seat) !== index
-//     );
-//     if (duplicateSeat) {
-//       throw new AppError(
-//         StatusCodes.BAD_REQUEST,
-//         'Duplicate seat types are not allowed.'
-//       );
-//     }
+const upload = (file: any) => s3Services.uploadSingleFileToS3(file, USER_UPLOADS_FOLDER);
 
-//     const itemFiles: any[] = uploadedFilesUpdate?.files || [];
-//     const processedItems = await Promise.all(
-//       items.map(async (item, index) => {
-//         const file = itemFiles[index];
-//         let photoUrl = item.photo || restaurant.items[index]?.photo;
-//         if (file)
-//           photoUrl = await s3Services.uploadSingleFileToS3(
-//             file,
-//             USER_UPLOADS_FOLDER
-//           );
+/* ------------------------------------------------------------------ */
+/* Service fee (one platform-wide setting)                             */
+/* ------------------------------------------------------------------ */
 
-//         return {
-//           ...item,
-//           totalQty: Number(item.totalQty),
-//           availableQty: Number(item.totalQty),
-//           price: Number(item.price),
-//           photo: photoUrl,
-//         };
-//       })
-//     );
+/**
+ * Current restaurant service fee: the setting document, else the highest
+ * fee among existing restaurants (before the setting existed), else 0.
+ */
+export async function getRestaurantServiceFee(): Promise<number> {
+  const setting: any = await RestaurantSetting.findOne({ key: RESTAURANT_SETTING_KEY }).lean();
+  const fromSetting = Number(setting?.serviceFee);
+  if (setting && Number.isFinite(fromSetting)) return fromSetting;
+  const top: any = await Restaurant.findOne({ serviceFee: { $gt: 0 } })
+    .sort({ serviceFee: -1 })
+    .select('serviceFee')
+    .lean();
+  const fromListings = Number(top?.serviceFee);
+  return Number.isFinite(fromListings) ? fromListings : 0;
+}
 
-//     restaurant.items = processedItems;
-//   }
+const updateServiceFee = async (serviceFee: number) => {
+  await RestaurantSetting.findOneAndUpdate(
+    { key: RESTAURANT_SETTING_KEY },
+    { $set: { serviceFee } },
+    { upsert: true, new: true, runValidators: true, setDefaultsOnInsert: true },
+  );
+  // the booking module reads restaurant.serviceFee: keep every listing in sync
+  const result = await Restaurant.updateMany({}, { $set: { serviceFee } });
+  return { serviceFee, updatedRestaurants: result.modifiedCount };
+};
 
-//   // Update slots if provided
-//   if (req.body.slots) {
-//     let newSlots: ISlot[] = [];
+const getServiceFee = async () => ({ serviceFee: await getRestaurantServiceFee() });
 
-//     if (typeof req.body.slots === 'string') {
-//       newSlots = JSON.parse(req.body.slots);
-//     } else if (Array.isArray(req.body.slots)) {
-//       newSlots = req.body.slots;
-//     }
+/* ------------------------------------------------------------------ */
+/* Browse / mine / detail / reviews                                    */
+/* ------------------------------------------------------------------ */
 
-//     const oldSlots = restaurant.slots || [];
+/** Price range on the SAME seat (`items.price` alone would mix seats) */
+const priceOnOneSeat = (filter: Record<string, any>) => {
+  const range = filter['items.price'];
+  if (range) {
+    delete filter['items.price'];
+    filter.items = { $elemMatch: { price: range } };
+  }
+  return filter;
+};
 
-//     const mergedSlots: ISlot[] = [];
+const browse = async (query: Record<string, any>) => {
+  // `status` is a provider filter: never let it widen the public list
+  const { status: _ignored, ...q } = query || {};
+  const filter = priceOnOneSeat(
+    await buildListingFilter(PRIMARY, q, { priceField: 'items.price', publicOnly: true }),
+  );
+  const subs = await loadSubCategories(PRIMARY);
+  return paginateListings(
+    Restaurant,
+    filter,
+    q,
+    parseSort(q.sort, SORTS),
+    d => toCard(d, subs),
+    LIST_SELECT,
+  );
+};
 
-//     //  Keep existing IDs for old slots
-//     newSlots.forEach((slot, index) => {
-//       if (oldSlots[index]) {
-//         mergedSlots.push({
-//           _id: oldSlots[index]._id,
-//           startTime: slot.startTime,
-//           endTime: slot.endTime,
-//         });
-//       } else {
-//         mergedSlots.push({
-//           startTime: slot.startTime,
-//           endTime: slot.endTime,
-//         } as ISlot);
-//       }
-//     });
+const mine = async (user: JwtPayload, query: Record<string, any>) => {
+  let owner: string | undefined = String(user.userId);
+  if (isAdmin(user))
+    owner = Types.ObjectId.isValid(String(query?.owner || '')) ? String(query.owner) : undefined;
+  const filter = priceOnOneSeat(
+    await buildListingFilter(PRIMARY, query, { priceField: 'items.price', owner }),
+  );
+  const subs = await loadSubCategories(PRIMARY);
+  return paginateListings(
+    Restaurant,
+    filter,
+    query,
+    parseSort(query?.sort, SORTS),
+    d => toCard(d, subs),
+    LIST_SELECT,
+  );
+};
 
-//     // Assign updated slots
-//     restaurant.slots = mergedSlots;
-//     restaurant.availableSlots = mergedSlots; // MATCH EXACTLY
-//   }
+const detail = async (id: string) => {
+  if (!Types.ObjectId.isValid(String(id)))
+    throw new AppError(StatusCodes.BAD_REQUEST, 'Invalid restaurant id.');
+  return loadDetail(id);
+};
 
-//   // Update other fields
-//   const fieldsToUpdate: Partial<IRestaurant> = {
-//     title: req.body.title,
-//     openTime: req.body.openTime,
-//     closeTime: req.body.closeTime,
-//     serviceArea: req.body.serviceArea,
-//     foodType: req.body.foodType,
-//     // description: req.body.description,
-//   };
+const reviews = (id: string, query: Record<string, any>) =>
+  getListingReviews(Restaurant, id, query);
 
-//   Object.keys(fieldsToUpdate).forEach(key => {
-//     if (fieldsToUpdate[key as keyof IRestaurant] !== undefined) {
-//       (restaurant as any)[key] = fieldsToUpdate[key as keyof IRestaurant];
-//     }
-//   });
+const review = (id: string, user: JwtPayload, body: any) =>
+  addListingReview(Restaurant, id, user, body);
 
-//   // Recalculate status
-//   if (req.body.openTime && req.body.closeTime) {
-//     restaurant.status = isRestaurantOpen(
-//       restaurant.openTime,
-//       restaurant.closeTime
-//     )
-//       ? 'Open'
-//       : 'Closed';
-//   }
+/* ------------------------------------------------------------------ */
+/* Create                                                              */
+/* ------------------------------------------------------------------ */
 
-//   const updatedRestaurant = await restaurant.save();
-//   return updatedRestaurant;
-// };
-
-export const updateRestaurantIntoDB = async (req: Request) => {
-  const id = req.params.id;
-  const user = req.user as JwtPayload;
-  console.log('get all form data :', req.body);
-  // Check if restaurant exists
-  const restaurant = await Restaurant.findById(id);
-  if (!restaurant)
-    throw new AppError(StatusCodes.NOT_FOUND, 'Restaurant not found.');
-
-  // Check user
-  const isExistsUser = await User.findOne({ email: user?.email });
-  if (!isExistsUser)
-    throw new AppError(StatusCodes.NOT_FOUND, 'User not found.');
-
-  if (
-    isExistsUser.role !== 'Provider' ||
-    isExistsUser.providerType !== 'Restaurant'
-  ) {
+const assertRestaurantProvider = async (user: JwtPayload) => {
+  const u: any = await User.findById(user?.userId).select('providerType role').lean();
+  if (!u || u.role !== 'Provider' || u.providerType !== PRIMARY)
     throw new AppError(
       StatusCodes.FORBIDDEN,
-      'You are not authorized to update this restaurant.',
+      'Only Restaurant providers can create a restaurant.',
     );
-  }
-  console.log('get all form data :', req.body);
+  return u;
+};
 
-  // Validate category if provided
+const create = async (user: JwtPayload, body: any, files: UploadedFiles) => {
+  const provider = await assertRestaurantProvider(user);
+  await assertSubCategory(PRIMARY, body.category);
 
-  if (req.body.category) {
-    const category = await Category.findOne({
-      primaryCategoryName: 'Restaurant',
-    });
-    if (!category)
-      throw new AppError(
-        StatusCodes.NOT_FOUND,
-        'Restaurant category not found.',
-      );
+  const seats = normalizeSeats(body) || [];
+  const slots: SlotInput[] = body.slots || [];
+  assertValidSlots(slots as any);
+  assertSlotsWithinOpeningHours(slots as any, body.openTime, body.closeTime);
 
-    const subCategoryItems = category?.subCategory || [];
-    const exists = subCategoryItems.some(
-      (item: any) => item?._id.toString() === req.body.category,
-    ) as boolean;
-
-    if (!exists)
-      throw new AppError(StatusCodes.BAD_REQUEST, 'Invalid sub-category ID.');
-
-    restaurant.category = req.body?.category;
-  }
-
-  // -----------------------
-  // FILE HANDLING (updated)
-  // -----------------------
-
-  const uploadedFiles = (req as any).files as
-    | { [fieldname: string]: any[] }
-    | undefined;
-
-  // Thumbnail
-  const thumbnailFile = uploadedFiles?.thumbnail?.[0];
-  if (thumbnailFile) {
-    const thumbnailUrl = await s3Services.uploadSingleFileToS3(
-      thumbnailFile,
-      USER_UPLOADS_FOLDER,
-    );
-    restaurant.thumbnail = thumbnailUrl;
-  }
-
-  // -----------------------
-  // UPDATE ITEMS (FULL FIX WITH QUANTITY CALCULATION)
-  // -----------------------
-
-  if (req.body.items) {
-    let items: any[] = [];
-
-    if (typeof req.body.items === 'string') items = JSON.parse(req.body.items);
-    else if (Array.isArray(req.body.items)) items = req.body.items;
-    else
+  // check every photo exists before uploading anything
+  const thumb = thumbnailFile(files);
+  if (!thumb && !body.thumbnail)
+    throw new AppError(StatusCodes.BAD_REQUEST, 'Thumbnail is required (file field "thumbnail").');
+  const photoFiles = seatPhotoFiles(files);
+  seats.forEach((s, i) => {
+    if (!photoFiles.get(i) && !s.photo)
       throw new AppError(
         StatusCodes.BAD_REQUEST,
-        'Items data is missing or invalid.',
+        `Photo is required for the ${s.type} seat (file field "files[${i}]" or a "photo" URL).`,
       );
-
-    // Duplicate seat validation
-    const seatNames = items.map(i => (i.seat || '').trim().toLowerCase());
-    const duplicateSeat = seatNames.some(
-      (seat, index) => seat && seatNames.indexOf(seat) !== index,
-    );
-
-    if (duplicateSeat) {
-      throw new AppError(
-        StatusCodes.BAD_REQUEST,
-        'Duplicate seat types are not allowed.',
-      );
-    }
-
-    // Build file list (supports files[], files["0"], files["1"])
-    let itemFiles: any[] = [];
-    if (uploadedFiles?.files) {
-      if (Array.isArray(uploadedFiles.files)) {
-        itemFiles = uploadedFiles.files;
-      } else {
-        const keys = Object.keys(uploadedFiles.files)
-          .map(k => parseInt(k))
-          .filter(n => !Number.isNaN(n))
-          .sort((a, b) => a - b);
-
-        itemFiles = keys.map(k => uploadedFiles.files[k][0]);
-      }
-    }
-
-    const existingItems = restaurant.items ? [...restaurant.items] : [];
-
-    // Process incoming items
-    const processedIncoming = await Promise.all(
-      items.map(async (item, index) => {
-        const file = itemFiles[index];
-
-        const seatNormalized = (item.seat || '')
-          .toString()
-          .trim()
-          .toLowerCase();
-
-        const existing = existingItems.find(
-          (ei: any) =>
-            (ei.seat || '').toString().trim().toLowerCase() === seatNormalized,
-        );
-
-        // ---- PHOTO ----
-        let photoUrl = item.photo || (existing ? existing.photo : undefined);
-        if (file) {
-          photoUrl = await s3Services.uploadSingleFileToS3(
-            file,
-            USER_UPLOADS_FOLDER,
-          );
-        }
-
-        // ---- QUANTITY CALCULATION ----
-        let newTotalQty = Number(item.totalQty);
-        let newAvailableQty = 0;
-
-        if (existing) {
-          const oldTotalQty = Number(existing.totalQty);
-          const oldAvailableQty = Number(existing.availableQty);
-
-          const diff = newTotalQty - oldTotalQty; // may be negative
-
-          // Client provided availableQty?
-          if (item.availableQty !== undefined && item.availableQty !== null) {
-            newAvailableQty = Number(item.availableQty);
-          } else {
-            // Auto-adjust availableQty based on difference
-            newAvailableQty = oldAvailableQty + diff;
-          }
-
-          // Never allow below 0
-          if (newAvailableQty < 0) newAvailableQty = 0;
-        } else {
-          // New item
-          newAvailableQty =
-            item.availableQty !== undefined && item.availableQty !== null
-              ? Number(item.availableQty)
-              : newTotalQty;
-        }
-
-        const priceNum =
-          item.price !== undefined
-            ? Number(item.price)
-            : existing
-              ? existing.price
-              : 0;
-
-        const out: any = {
-          seat: item.seat,
-          photo: photoUrl,
-          totalQty: newTotalQty,
-          availableQty: newAvailableQty,
-          price: priceNum,
-          description:
-            item.description ?? (existing ? existing.description : ''),
-        };
-
-        // if (existing && existing?._id) {
-        //   out?._id = existing?._id; // preserve
-        // }
-        if (existing && existing._id) {
-          out._id = existing._id;
-        } else if (item._id) {
-          out._id = item._id;
-        }
-
-        return out;
-      }),
-    );
-
-    // ------------- MERGE -------------
-    const mergedMap: Map<string, any> = new Map();
-
-    existingItems.forEach((ei: any) => {
-      const key = ei._id
-        ? ei._id.toString()
-        : (ei.seat || '').toString().trim().toLowerCase();
-      mergedMap.set(key, ei);
-    });
-
-    processedIncoming.forEach(pi => {
-      if (pi._id) {
-        mergedMap.set(pi._id.toString(), pi);
-      } else {
-        const key = (pi.seat || '').toString().trim().toLowerCase();
-        if (mergedMap.has(key)) mergedMap.set(key, pi);
-        else
-          mergedMap.set(`${key}-${Math.random().toString(36).slice(2, 8)}`, pi);
-      }
-    });
-
-    const finalItems = Array.from(mergedMap.values());
-
-    restaurant.items = finalItems.map((it: any) => ({
-      ...(it._id ? { _id: it._id } : {}),
-      seat: it.seat,
-      photo: it.photo,
-      totalQty: Number(it.totalQty),
-      availableQty: Number(it.availableQty),
-      price: Number(it.price),
-      description: it.description ?? '',
-    }));
-  }
-
-  // -----------------------
-  // UPDATE SLOTS (same logic)
-  // -----------------------
-
-  // if (req.body.slots) {
-  //   let newSlots: ISlot[] = [];
-
-  //   if (typeof req.body.slots === 'string') {
-  //     newSlots = JSON.parse(req.body.slots);
-  //   } else if (Array.isArray(req.body.slots)) {
-  //     newSlots = req.body.slots;
-  //   }
-
-  //   const oldSlots = restaurant.slots || [];
-  //   const oldAvailableSlots = restaurant.availableSlots || [];
-
-  //   const mergedSlots: any[] = [];
-
-  //   // 1️⃣ Merge slots with preservation of existing _id
-  //   newSlots.forEach(slot => {
-  //     if (slot._id) {
-  //       mergedSlots.push({
-  //         _id: slot._id,
-  //         startTime: slot.startTime,
-  //         endTime: slot.endTime,
-  //       });
-  //     } else {
-  //       mergedSlots.push({
-  //         _id: new mongoose.Types.ObjectId(),
-  //         startTime: slot.startTime,
-  //         endTime: slot.endTime,
-  //       });
-  //     }
-  //   });
-
-  //   restaurant.slots = mergedSlots;
-
-  //   const oldAvailableMap = new Map(
-  //     oldAvailableSlots.map(s => [s._id?.toString(), s]),
-  //   );
-
-  //   const newAvailableSlots: any[] = [];
-
-  //   mergedSlots.forEach(slot => {
-  //     const slotId = slot._id.toString();
-
-  //     if (oldAvailableMap.has(slotId)) {
-  //       newAvailableSlots.push(oldAvailableMap.get(slotId));
-  //     } else {
-  //       newAvailableSlots.push({
-  //         _id: slot._id,
-  //         startTime: slot.startTime,
-  //         endTime: slot.endTime,
-  //       });
-  //     }
-  //   });
-
-  //   restaurant.availableSlots = newAvailableSlots;
-  // }
-
-  // -----------------------
-  // UPDATE SLOTS (FIXED)
-  // -----------------------
-
-  // -----------------------
-  // UPDATE SLOTS (PATCH STYLE ✅)
-  // -----------------------
-
-  // -----------------------
-  // UPDATE SLOTS (FINAL FIX)
-  // -----------------------
-
-  if (req.body.slots) {
-    let incomingSlots: any[] = [];
-
-    // ✅ Parse input
-    if (typeof req.body.slots === 'string') {
-      incomingSlots = JSON.parse(req.body.slots);
-    } else if (Array.isArray(req.body.slots)) {
-      incomingSlots = req.body.slots;
-    }
-
-    // ✅ Remove empty items (VERY IMPORTANT for your case)
-    incomingSlots = incomingSlots
-      .filter((slot: any) => slot && (slot.startTime || slot.endTime))
-      .map((slot: any) => ({
-        _id: slot._id?.toString(),
-        startTime: slot.startTime,
-        endTime: slot.endTime,
-      }));
-
-    // reject slots that end before they start ("10:30 PM - 12:30 PM")
-    assertValidSlots(incomingSlots);
-    // and slots outside the (new or current) opening hours
-    assertSlotsWithinOpeningHours(
-      incomingSlots,
-      req.body.openTime || restaurant.openTime,
-      req.body.closeTime || restaurant.closeTime,
-    );
-
-    const existingSlots = restaurant.slots || [];
-
-    const existingMap = new Map(
-      existingSlots.map((s: any) => [s._id.toString(), s]),
-    );
-
-    // 🔁 PATCH behavior (update + create, no delete)
-    for (const slot of incomingSlots) {
-      if (!slot) continue;
-
-      if (slot._id && existingMap.has(slot._id)) {
-        // ✅ UPDATE EXISTING SLOT
-        const existing = existingMap.get(slot._id);
-
-        if (slot.startTime !== undefined) {
-          existing.startTime = slot.startTime;
-        }
-        if (slot.endTime !== undefined) {
-          existing.endTime = slot.endTime;
-        }
-
-        // 🔁 sync availableSlots
-        const available = (restaurant.availableSlots || []).find(
-          (a: any) => a._id.toString() === slot._id,
-        );
-
-        if (available) {
-          available.startTime = existing.startTime;
-          available.endTime = existing.endTime;
-        }
-      } else {
-        // 🆕 CREATE NEW SLOT
-        const newId = new mongoose.Types.ObjectId();
-
-        const newSlot = {
-          _id: newId,
-          startTime: slot.startTime,
-          endTime: slot.endTime,
-        };
-
-        restaurant.slots.push(newSlot);
-
-        if (!restaurant.availableSlots) {
-          restaurant.availableSlots = [];
-        }
-
-        restaurant.availableSlots.push({
-          _id: newId,
-          startTime: slot.startTime,
-          endTime: slot.endTime,
-        });
-      }
-    }
-  }
-  // -----------------------
-  // UPDATE OTHER FIELDS
-  // -----------------------
-
-  const fieldsToUpdate: Partial<IRestaurant> = {
-    title: req.body.title,
-    openTime: req.body.openTime,
-    closeTime: req.body.closeTime,
-    serviceArea: req.body.serviceArea,
-    foodType: req.body.foodType,
-  };
-
-  Object.keys(fieldsToUpdate).forEach(key => {
-    if (fieldsToUpdate[key as keyof IRestaurant] !== undefined) {
-      (restaurant as any)[key] = fieldsToUpdate[key as keyof IRestaurant];
-    }
   });
 
-  // Recalculate status
-  if (req.body.openTime && req.body.closeTime) {
-    restaurant.status = isRestaurantOpen(
-      restaurant.openTime,
-      restaurant.closeTime,
-    )
-      ? 'Open'
-      : 'Closed';
-  }
+  const thumbnail = thumb ? await upload(thumb) : body.thumbnail;
+  const items = await Promise.all(
+    seats.map(async (s, i) => {
+      const file = photoFiles.get(i);
+      return {
+        seat: s.type,
+        photo: file ? await upload(file) : s.photo,
+        price: s.price,
+        totalQty: s.quantity,
+        availableQty: s.quantity,
+        description: s.description ?? '',
+      };
+    }),
+  );
 
-  const updatedRestaurant = await restaurant.save();
-  return updatedRestaurant;
+  const doc = await Restaurant.create({
+    title: body.title,
+    description: body.description ?? '',
+    thumbnail,
+    category: body.category,
+    owner: provider._id,
+    openTime: body.openTime,
+    closeTime: body.closeTime,
+    serviceArea: body.serviceArea,
+    foodType: body.foodType ?? '',
+    serviceFee: await getRestaurantServiceFee(),
+    // legacy field, set once; the API answers with the computed isOpenNow
+    status: isOpenAt(body.openTime, body.closeTime) ? 'Open' : 'Closed',
+    items,
+    slots: slots.map(s => ({ startTime: s.startTime, endTime: s.endTime })),
+    isActive: true,
+    isDeleted: false,
+  });
+  return loadDetail(String(doc._id));
 };
 
-const deleteRestaurantIntoDB = async (id: string, user: JwtPayload) => {
-  const isExistsUser = await User.findOne({ email: user?.email });
-  if (!isExistsUser) {
+/* ------------------------------------------------------------------ */
+/* Update                                                              */
+/* ------------------------------------------------------------------ */
+
+const clamp = (n: number, min: number, max: number) => Math.min(max, Math.max(min, n));
+
+const assertNoOpenBookings = async (listingId: unknown, extra: Record<string, any>, what: string) => {
+  const open = await Booking.exists({
+    product: listingId,
+    bookingStatus: { $in: OPEN_BOOKING_STATUSES },
+    ...extra,
+  });
+  if (open)
     throw new AppError(
-      StatusCodes.NOT_FOUND,
-      'You cannot view this data because your account was not found.',
+      StatusCodes.CONFLICT,
+      `This ${what} has upcoming or active bookings and cannot be removed.`,
     );
-  }
+};
 
-  const restaurant = await Restaurant.findById(id);
-  if (!restaurant) {
-    throw new AppError(StatusCodes.NOT_FOUND, 'Restaurant not found.');
-  }
+/** Merge the seats of the request into the stored `items` (keeps _id and booked stock) */
+const mergeSeats = async (
+  listing: any,
+  incoming: NormalizedSeat[] | undefined,
+  removeIds: string[],
+  files: UploadedFiles,
+) => {
+  const existing: any[] = (listing.items || []).map((i: any) =>
+    typeof i?.toObject === 'function' ? i.toObject() : { ...i },
+  );
+  const byId = new Map(existing.map(i => [String(i._id), i]));
 
-  if (restaurant?.owner.toString() !== isExistsUser?._id.toString()) {
+  for (const id of removeIds)
+    if (!byId.has(id)) throw new AppError(StatusCodes.BAD_REQUEST, `Unknown seat id: ${id}`);
+  if (removeIds.length)
+    await assertNoOpenBookings(listing._id, { 'bookingItems.itemId': { $in: removeIds } }, 'seat');
+
+  const removed = new Set(removeIds);
+  const kept = existing.filter(i => !removed.has(String(i._id)));
+  const added: any[] = [];
+  const photoFiles = seatPhotoFiles(files);
+  const pendingUploads: { target: any; file: any }[] = [];
+
+  (incoming || []).forEach((s, index) => {
+    let target: any;
+    if (s.id) {
+      if (removed.has(s.id))
+        throw new AppError(StatusCodes.BAD_REQUEST, `Seat ${s.id} is both updated and removed.`);
+      target = kept.find(i => String(i._id) === s.id);
+      if (!target) throw new AppError(StatusCodes.BAD_REQUEST, `Unknown seat id: ${s.id}`);
+    } else if (s.type) {
+      target = kept.find(i => i.seat === s.type);
+    }
+    const file = photoFiles.get(index);
+
+    if (target) {
+      const oldTotal = Number(target.totalQty) || 0;
+      const oldAvailable = Number.isFinite(Number(target.availableQty))
+        ? Number(target.availableQty)
+        : oldTotal;
+      const newTotal = s.quantity ?? oldTotal;
+      if (s.type) target.seat = s.type;
+      if (s.price !== undefined) target.price = s.price;
+      if (s.description !== undefined) target.description = s.description;
+      if (s.photo) target.photo = s.photo;
+      target.totalQty = newTotal;
+      // keep booked seats booked
+      target.availableQty = clamp(oldAvailable + (newTotal - oldTotal), 0, newTotal);
+    } else {
+      if (!s.type || s.price === undefined || s.quantity === undefined)
+        throw new AppError(
+          StatusCodes.BAD_REQUEST,
+          'A new seat needs type (VIP or Normal), price and quantity.',
+        );
+      target = {
+        _id: new Types.ObjectId(),
+        seat: s.type,
+        price: s.price,
+        totalQty: s.quantity,
+        availableQty: s.quantity,
+        description: s.description ?? '',
+        photo: s.photo,
+      };
+      added.push(target);
+    }
+    if (file) pendingUploads.push({ target, file });
+  });
+
+  const final = [...kept, ...added];
+  if (final.length < 1)
+    throw new AppError(StatusCodes.BAD_REQUEST, 'A restaurant needs at least one seat type.');
+  const types = final.map(i => i.seat);
+  if (new Set(types).size !== types.length || final.length > 2)
     throw new AppError(
-      StatusCodes.FORBIDDEN,
-      'You are not authorized to delete this restaurant.',
+      StatusCodes.BAD_REQUEST,
+      'A restaurant has at most one VIP and one Normal seat type.',
     );
+  const uploading = new Set(pendingUploads.map(p => p.target));
+  for (const i of final)
+    if (!i.photo && !uploading.has(i))
+      throw new AppError(StatusCodes.BAD_REQUEST, `Photo is required for the ${i.seat} seat.`);
+
+  return {
+    final,
+    upload: async () => {
+      await Promise.all(
+        pendingUploads.map(async p => {
+          p.target.photo = await upload(p.file);
+        }),
+      );
+      return final.map(i => ({
+        _id: i._id,
+        seat: i.seat,
+        photo: i.photo,
+        price: Number(i.price),
+        totalQty: Number(i.totalQty),
+        availableQty: Number(i.availableQty),
+        description: i.description ?? '',
+      }));
+    },
+  };
+};
+
+/** Merge slots (patch: update by id, add new, remove only via removeSlotIds) */
+const mergeSlots = async (
+  listing: any,
+  incoming: SlotInput[] | undefined,
+  removeIds: string[],
+  openTime: string,
+  closeTime: string,
+  hoursChanged: boolean,
+) => {
+  const plain = (s: any) => ({ _id: s._id, startTime: s.startTime, endTime: s.endTime });
+  const existing: any[] = (listing.slots || []).map(plain);
+  const available: any[] = (listing.availableSlots || []).map(plain);
+  const ids = new Set(existing.map(s => String(s._id)));
+
+  for (const id of removeIds)
+    if (!ids.has(id)) throw new AppError(StatusCodes.BAD_REQUEST, `Unknown slot id: ${id}`);
+  if (removeIds.length)
+    await assertNoOpenBookings(listing._id, { slots: { $in: removeIds } }, 'slot');
+
+  const removed = new Set(removeIds);
+  const slots = existing.filter(s => !removed.has(String(s._id)));
+  let availableSlots = available.filter(s => !removed.has(String(s._id)));
+  const changed: any[] = [];
+
+  for (const s of incoming || []) {
+    const id = s.id ?? s._id;
+    if (id) {
+      if (removed.has(id))
+        throw new AppError(StatusCodes.BAD_REQUEST, `Slot ${id} is both updated and removed.`);
+      const target = slots.find(x => String(x._id) === id);
+      if (!target) throw new AppError(StatusCodes.BAD_REQUEST, `Unknown slot id: ${id}`);
+      if (s.startTime) target.startTime = s.startTime;
+      if (s.endTime) target.endTime = s.endTime;
+      changed.push(target);
+      // keep the bookable copy in sync (same as before)
+      availableSlots = availableSlots.map(a =>
+        String(a._id) === id ? { ...a, startTime: target.startTime, endTime: target.endTime } : a,
+      );
+    } else {
+      if (!s.startTime || !s.endTime)
+        throw new AppError(StatusCodes.BAD_REQUEST, 'A new slot needs startTime and endTime.');
+      const slot = { _id: new Types.ObjectId(), startTime: s.startTime, endTime: s.endTime };
+      slots.push(slot);
+      availableSlots.push({ ...slot });
+      changed.push(slot);
+    }
   }
 
-  const result = await Restaurant.findByIdAndDelete(id);
-  return result;
+  if (!slots.length)
+    throw new AppError(StatusCodes.BAD_REQUEST, 'A restaurant needs at least one slot.');
+
+  assertValidSlots(changed);
+  assertSlotsWithinOpeningHours(hoursChanged ? slots : changed, openTime, closeTime);
+  return { slots, availableSlots };
 };
 
-const updateServiceFee = async (payload: any) => {
-  const { serviceFee } = payload;
-  const result = await Restaurant.updateMany({}, { $set: { serviceFee } });
-  return result;
+const update = async (id: string, user: JwtPayload, body: any, files: UploadedFiles) => {
+  const listing: any = await findListingOr404(Restaurant, id, 'Restaurant');
+  assertListingOwner(listing, user);
+
+  const $set: Record<string, any> = pickDefined(body, [
+    'title',
+    'description',
+    'serviceArea',
+    'foodType',
+    'openTime',
+    'closeTime',
+  ]);
+
+  if (body.category !== undefined) {
+    await assertSubCategory(PRIMARY, body.category);
+    $set.category = new Types.ObjectId(String(body.category));
+  }
+
+  const openTime = body.openTime ?? listing.openTime;
+  const closeTime = body.closeTime ?? listing.closeTime;
+  const hoursChanged = body.openTime !== undefined || body.closeTime !== undefined;
+
+  // seats (validated before any upload)
+  const seats = normalizeSeats(body);
+  const removeSeatIds: string[] = [...(body.removeSeatIds || []), ...(body.removeItemIds || [])];
+  const seatMerge =
+    seats || removeSeatIds.length
+      ? await mergeSeats(listing, seats, removeSeatIds, files)
+      : undefined;
+
+  // slots
+  const removeSlotIds: string[] = body.removeSlotIds || [];
+  if (body.slots !== undefined || removeSlotIds.length || hoursChanged) {
+    const merged = await mergeSlots(
+      listing,
+      body.slots,
+      removeSlotIds,
+      openTime,
+      closeTime,
+      hoursChanged,
+    );
+    if (body.slots !== undefined || removeSlotIds.length) {
+      $set.slots = merged.slots;
+      $set.availableSlots = merged.availableSlots;
+    }
+  }
+
+  // uploads last: nothing is uploaded for a request that fails validation
+  const thumb = thumbnailFile(files);
+  if (thumb) $set.thumbnail = await upload(thumb);
+  else if (body.thumbnail) $set.thumbnail = body.thumbnail;
+  if (seatMerge) $set.items = await seatMerge.upload();
+
+  if (!Object.keys($set).length) return loadDetail(id);
+
+  // stock / slot lists are rewritten: refuse if a booking changed them meanwhile
+  const filter: Record<string, any> = { _id: listing._id, isDeleted: { $ne: true } };
+  if (($set.items || $set.availableSlots) && listing.updatedAt)
+    filter.updatedAt = listing.updatedAt;
+
+  const updated = await Restaurant.findOneAndUpdate(
+    filter,
+    { $set },
+    { new: true, runValidators: true },
+  )
+    .select('_id')
+    .lean();
+  if (!updated)
+    throw new AppError(
+      StatusCodes.CONFLICT,
+      'This restaurant was changed at the same time (for example by a booking). Please try again.',
+    );
+  return loadDetail(id);
 };
 
-const getServiceFee = async () => {
-  console.log('get service fee from db');
-  const restaurant = await Restaurant.findOne().select('serviceFee');
-  return restaurant?.serviceFee || 0;
+/* ------------------------------------------------------------------ */
+/* Status / delete                                                     */
+/* ------------------------------------------------------------------ */
+
+const setStatus = async (id: string, user: JwtPayload, isActive: unknown) => {
+  const listing = await findListingOr404(Restaurant, id, 'Restaurant');
+  assertListingOwner(listing, user);
+  return setListingActive(Restaurant, listing, isActive);
+};
+
+const remove = async (id: string, user: JwtPayload) => {
+  const listing = await findListingOr404(Restaurant, id, 'Restaurant');
+  assertListingOwner(listing, user);
+  return softDeleteListing(Restaurant, listing);
 };
 
 export const RestaurantService = {
-  getAllRestaurantFromDB,
-  getAllMyRestaurantFromDB,
-  addRestaurantIntoDB,
-  reviewRestaurant,
-  getSingleRestaurantFromDB,
-  updateRestaurantIntoDB,
-  deleteRestaurantIntoDB,
+  browse,
+  mine,
+  detail,
+  reviews,
+  review,
+  create,
+  update,
+  setStatus,
+  remove,
   updateServiceFee,
   getServiceFee,
+  getRestaurantServiceFee,
 };

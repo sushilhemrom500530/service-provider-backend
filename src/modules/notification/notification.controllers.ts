@@ -1,26 +1,41 @@
 import { StatusCodes } from 'http-status-codes';
 import { NotificationService } from './notification.services';
 import catchAsync from '../../shared/catchAsync';
-import pick from '../../shared/pick';
 import sendResponse from '../../shared/sendResponse';
-import { notificationFilters } from './notification.constants';
-import AppError from '../../errors/AppErro';
-import { CustomJwtPayload } from '../../types';
 
-const getALLNotification = catchAsync(async (req, res) => { 
-  const userId = (req.user as CustomJwtPayload)?.userId;
-  if (!userId) {
-    throw new AppError(StatusCodes.UNAUTHORIZED, 'User not authenticated');
-  }
-  const result = await NotificationService.getAllUserNotification( 
-    userId
+const userIdOf = (req: any) => String(req.user?.userId);
+
+const getMyNotifications = catchAsync(async (req, res) => {
+  const { data, meta } = await NotificationService.getMyNotifications(
+    userIdOf(req),
+    req.query as Record<string, any>,
   );
   sendResponse(res, {
     code: StatusCodes.OK,
-    data: result,
     message: 'Notifications fetched successfully',
+    data,
+    meta,
   });
-}); 
+});
+
+const getUnreadCount = catchAsync(async (req, res) => {
+  const data = await NotificationService.getUnreadCount(userIdOf(req));
+  sendResponse(res, { code: StatusCodes.OK, message: 'Unread count', data });
+});
+
+const markRead = catchAsync(async (req, res) => {
+  const data = await NotificationService.markRead(userIdOf(req), String(req.params.id));
+  sendResponse(res, { code: StatusCodes.OK, message: 'Notification marked as read', data });
+});
+
+const markAllRead = catchAsync(async (req, res) => {
+  const data = await NotificationService.markAllRead(userIdOf(req));
+  sendResponse(res, { code: StatusCodes.OK, message: 'All notifications marked as read', data });
+});
+
 export const NotificationController = {
-  getALLNotification, 
+  getMyNotifications,
+  getUnreadCount,
+  markRead,
+  markAllRead,
 };

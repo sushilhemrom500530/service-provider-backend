@@ -3,108 +3,74 @@ import fileUploadHandler from './../../shared/fileUploadHandler';
 import { USER_UPLOADS_FOLDER } from './restaurant.constant';
 import auth from './../../middlewares/auth';
 import { RestaurantController } from './restaurant.controller';
-import validateRequest from './../../shared/validateRequest';
+import validateRequest, { parseJsonFields } from './../../shared/validateRequest';
 import convertHeicToPngMiddleware from './../../shared/convertHeicToPngMiddleware';
 import { RestaurantValidations } from './restaurant.validations';
-import { CommonValidations } from './../common/common.validation';
 
 const uploads = fileUploadHandler(USER_UPLOADS_FOLDER);
 
-const router = Router();
-
-// get all
-router.get(
-  '/all',
-  auth('User', 'Admin', 'Provider'),
-  RestaurantController.getAllRestaurantFromDB,
-);
-
-// specific provider all
-router.get(
-  '/my-all',
-  auth('User', 'Admin', 'Provider'),
-  RestaurantController.getAllMyRestaurantFromDB,
-);
-
-// get single
-router.get(
-  '/:id',
-  auth('User', 'Admin', 'Provider'),
-  RestaurantController.getSingleRestaurantFromDB,
-);
-
-// create
-router.post(
-  '/create',
-  auth('Admin', 'Provider'),
+// thumbnail + seat photos (files / files[0] / files[1] / seatPhoto_<i>); multer skips JSON bodies
+const listingUpload = [
   uploads.fields([
     { name: 'thumbnail', maxCount: 1 },
     { name: 'files', maxCount: 20 },
   ]),
   convertHeicToPngMiddleware(USER_UPLOADS_FOLDER),
-  validateRequest(RestaurantValidations.createRestaurant),
-  RestaurantController.addRestaurantIntoDB,
-);
+  parseJsonFields(['seats', 'items', 'slots', 'removeSeatIds', 'removeItemIds', 'removeSlotIds']),
+];
 
-// review
-router.post(
-  '/review/:id',
-  auth('User'),
-  validateRequest(CommonValidations.reviewSchema),
-  RestaurantController.reviewRestaurant,
-);
+const router = Router();
 
-// update
-// router.patch(
-//   '/update/:id',
-//   auth('Admin', 'Provider'),
-//   uploads.fields([
-//     { name: 'thumbnail', maxCount: 1 },
-//     { name: 'files', maxCount: 20 },
-//   ]),
-//   validateRequest(RestaurantValidations.updateRestaurant),
-//   RestaurantController.updateRestaurantIntoDB,
-// );
+/* ---------- collection routes (before /:id) ---------- */
+
+router.get(['/', '/all'], RestaurantController.browse);
+
+router.get(['/my', '/my-all'], auth('Provider', 'Admin'), RestaurantController.mine);
+
+router.get(
+  ['/service-fee', '/view/service-fee'],
+  auth('User', 'Provider', 'Admin'),
+  RestaurantController.getServiceFee,
+);
 
 router.patch(
-  '/update/:id',
-  auth('Admin', 'Provider'),
-  (req, res, next) => {
-    const contentType = req.headers['content-type'] || '';
-    console.log('content type : ', req.files, contentType);
-    if (contentType.includes('multipart/form-data')) {
-      return uploads.fields([
-        { name: 'thumbnail', maxCount: 1 },
-        { name: 'files', maxCount: 20 },
-      ])(req, res, next);
-    }
-
-    next();
-  },
-  convertHeicToPngMiddleware(USER_UPLOADS_FOLDER),
-  validateRequest(RestaurantValidations.updateRestaurant),
-  RestaurantController.updateRestaurantIntoDB,
-);
-
-// update service fee
-router.patch(
-  '/service-fee/update',
+  ['/service-fee', '/service-fee/update'],
   auth('Admin'),
   validateRequest(RestaurantValidations.updateServiceFee),
-  RestaurantController.updateRestaurantServiceFee,
-);
-// update service fee
-router.get(
-  '/view/service-fee',
-  auth('Admin'),
-  RestaurantController.getRestaurantServiceFee,
+  RestaurantController.updateServiceFee,
 );
 
-// delete
-router.delete(
-  '/delete/:id',
-  auth('Admin', 'Provider'),
-  RestaurantController.deleteRestaurantIntoDB,
+router.post(
+  ['/', '/create'],
+  auth('Provider', 'Admin'),
+  ...listingUpload,
+  validateRequest(RestaurantValidations.createRestaurant),
+  RestaurantController.create,
 );
+
+/* ---------- item routes ---------- */
+
+router.get('/:id/reviews', RestaurantController.reviews);
+
+router.post(['/:id/review', '/review/:id'], auth('User'), RestaurantController.review);
+
+router.patch(
+  '/:id/status',
+  auth('Provider', 'Admin'),
+  validateRequest(RestaurantValidations.updateStatus),
+  RestaurantController.setStatus,
+);
+
+router.patch(
+  ['/:id', '/update/:id'],
+  auth('Provider', 'Admin'),
+  ...listingUpload,
+  validateRequest(RestaurantValidations.updateRestaurant),
+  RestaurantController.update,
+);
+
+router.delete(['/:id', '/delete/:id'], auth('Provider', 'Admin'), RestaurantController.remove);
+
+router.get('/:id', RestaurantController.detail);
 
 export const RestaurantRoutes = router;

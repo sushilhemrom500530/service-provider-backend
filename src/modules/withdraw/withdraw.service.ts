@@ -1,250 +1,185 @@
-import mongoose, { Types } from 'mongoose';
-import { User } from './../user/user.model';
-import AppError from './../../errors/AppErro';
+/**
+ * Provider withdrawals.
+ *
+ *  request : the amount is RESERVED at once (taken from the wallet balance
+ *            atomically), so several requests can never exceed the balance.
+ *  accept  : admin paid the provider (bank transfer) -> status Paid.
+ *  reject  : the reserved amount goes back to the provider's wallet.
+ * The platform fee was already taken when the provider earned the money
+ * (wallet/ledger.ts), so nothing is deducted here. The admin wallet holds
+ * the platform's fees and is not used to pay providers.
+ */
+import { Types } from 'mongoose';
 import { StatusCodes } from 'http-status-codes';
-import { Wallet } from './../wallet/wallet.model';
-import { generateTransactionId } from './../../utils/generateTransactionId';
 import { JwtPayload } from 'jsonwebtoken';
-import { WalletTransactionType } from './../wallet/wallet.interface';
+import AppError from '../../errors/AppErro';
+import { Wallet } from '../wallet/wallet.model';
+import { User } from '../user/user.model';
+import { WalletTransactionType } from '../wallet/wallet.interface';
+import { changeBalance } from '../wallet/ledger';
+import { generateTransactionId } from '../../utils/generateTransactionId';
 import { Withdraw } from './withdraw.model';
-import { IWithdraw } from './withdraw.inteface';
-import { Notification } from './../notification/notification.model';
-import { PLATFORM_FEE_ON_EARNING } from './../../utils/platformFee';
+import { notify } from '../notification/notify';
+import { buildMeta, getPagination, escapeRegex } from '../../shared/apiHelpers';
 
-const getAllFromDB = async (query: any) => {
-  const page = Number(query.page) || 1;
-  const limit = Number(query.limit) || 10;
-  const skip = (page - 1) * limit;
-
-  const match: any = {};
-  if (query.status) {
-    match.status = { $regex: query.status, $options: 'i' };
-  }
-
-  // Build search regex
-  if (query.search) {
-    const searchRegex = new RegExp(query.search, 'i');
-    const searchOr: any[] = [
-      { 'user.email': searchRegex },
-      { 'user.fullName': searchRegex },
-    ];
-
-    // _id search only if valid ObjectId
-    if (query.search.match(/^[0-9a-fA-F]{24}$/)) {
-      searchOr.push({ _id: new mongoose.Types.ObjectId(query.search) });
-    }
-
-    match.$or = searchOr;
-  }
-
-  const aggregate = Withdraw.aggregate()
-    .lookup({
-      from: 'users', // collection name
-      localField: 'user',
-      foreignField: '_id',
-      as: 'user',
-    })
-    .unwind('$user')
-    .match(match)
-    .sort({ createdAt: -1 })
-    .skip(skip)
-    .limit(limit);
-
-  const result: any = await aggregate.exec();
-
-  // total count
-  const totalAgg = Withdraw.aggregate()
-    .lookup({
-      from: 'users',
-      localField: 'user',
-      foreignField: '_id',
-      as: 'user',
-    })
-    .unwind('$user')
-    .match(match);
-
-  const totalResult: any = await totalAgg.exec();
-
-  const maskedResult = result.map((item: any) => {
-    const cardId: string = item.cardId || '';
-    const last4: string = cardId.slice(-4);
-    return {
-      ...item,
-      cardId: last4 ? `xxxx xxxx xxxx ${last4}` : '',
-    };
-  });
-
-  return {
-    pagination: {
-      total: totalResult.length,
-      page,
-      limit,
-      totalPages: Math.ceil(totalResult.length / limit),
-    },
-    withdrawals: maskedResult,
-  };
+const round2 = (n: number) => Math.round(n * 100) / 100;
+const mask = (card: unknown) => {
+  const last4 = String(card ?? '').slice(-4);
+  return last4 ? `•••• ${last4}` : '';
 };
 
-const sendWithdrawRequest = async (user: JwtPayload, payload: IWithdraw) => {
-  const isExistsUser = await User.findOne({ email: user?.email });
-  if (!isExistsUser)
-    throw new AppError(StatusCodes.NOT_FOUND, 'User not found');
+const toDto = (w: any) => ({
+  id: String(w._id),
+  amount: w.amount,
+  status: w.status,
+  card: mask(w.cardId),
+  transactionId: w.transactionId,
+  note: w.note || null,
+  provider:
+    w.user && typeof w.user === 'object' && w.user._id
+      ? { id: String(w.user._id), name: w.user.fullName || '', email: w.user.email || '' }
+      : undefined,
+  createdAt: w.createdAt,
+  updatedAt: w.updatedAt,
+});
 
-  if (isExistsUser.role !== 'Provider')
-    throw new AppError(
-      StatusCodes.FORBIDDEN,
-      'Only providers can withdraw funds',
-    );
-  console.log('Payload:', isExistsUser, payload);
-  const adminUser = await User.findOne({ role: 'Admin' });
-  if (!adminUser) {
-    throw new AppError(StatusCodes.NOT_FOUND, 'Admin user not found');
-  }
-  const ownerId = adminUser?._id || '';
+/** POST /Withdraw/send-request { cardId, amount } (provider) */
+const sendWithdrawRequest = async (user: JwtPayload, payload: any) => {
+  if (user.role !== 'Provider')
+    throw new AppError(StatusCodes.FORBIDDEN, 'Only providers can withdraw.');
+  const amount = round2(Number(payload?.amount));
+  if (!(amount >= 1)) throw new AppError(StatusCodes.BAD_REQUEST, 'amount must be at least 1.');
 
-  const wallet = await Wallet.findOne({ user: isExistsUser._id })
-    .select('-transactions -__v')
-    .lean();
-
-  if (!wallet) throw new AppError(StatusCodes.NOT_FOUND, 'Wallet not found');
-
-  const selectedAccount = wallet?.walletAccounts?.find(
-    acc => acc?.cardNumber.toString() === payload?.cardId.toString(),
+  const wallet: any = await Wallet.findOne({ user: user.userId }).select('walletAccounts balance').lean();
+  if (!wallet) throw new AppError(StatusCodes.NOT_FOUND, 'Wallet not found.');
+  const account = (wallet.walletAccounts || []).find(
+    (a: any) =>
+      String(a?._id) === String(payload?.cardId) || String(a?.cardNumber) === String(payload?.cardId),
   );
-  console.log('wallet :', wallet);
-  console.log('Selected Account:', selectedAccount);
-  console.log('Wallet payload?.cardId:', payload?.cardId);
-  if (!selectedAccount)
-    throw new AppError(
-      StatusCodes.BAD_REQUEST,
-      'Selected wallet account not found',
-    );
-  if (wallet?.balance < payload.amount)
-    throw new AppError(StatusCodes.BAD_REQUEST, 'Insufficient wallet balance');
+  if (!account) throw new AppError(StatusCodes.BAD_REQUEST, 'Choose one of your saved payout accounts (cardId).');
 
-  const withdrawData: Partial<IWithdraw> = {
-    user: isExistsUser?._id,
-    wallet: wallet?._id,
-    cardId: payload?.cardId,
-    amount: payload?.amount,
+  // reserve the money atomically: fails if the balance is too low
+  const reserved = await Wallet.updateOne(
+    { user: user.userId, balance: { $gte: amount } },
+    {
+      $inc: { balance: -amount },
+      $push: {
+        transactions: {
+          user: new Types.ObjectId(String(user.userId)),
+          balance: amount,
+          type: WalletTransactionType.WITHDRAW,
+          createdAt: new Date(),
+        },
+      },
+    },
+  );
+  if (!reserved.modifiedCount)
+    throw new AppError(StatusCodes.BAD_REQUEST, `Insufficient balance (available ${round2(wallet.balance)}).`);
+
+  const doc = await Withdraw.create({
+    user: user.userId,
+    wallet: wallet._id,
+    cardId: String(account.cardNumber),
+    amount,
+    profitCharge: 0,
     transactionId: generateTransactionId('WD'),
-    profitCharge: wallet?.profitCharge || 0,
-  };
-  // create notification
-  await Notification.create({
-    title: 'Withdrawal Request',
-    description: 'You have a new withdrawal request',
-    receiverId: ownerId,
-    type: 'withdrawal',
-    isRead: false,
-    senderId: isExistsUser?._id,
   });
 
-  const result = await Withdraw.create(withdrawData);
-  return result;
+  const admins = await User.find({ role: 'Admin' }).select('_id').lean();
+  for (const a of admins)
+    await notify(a._id, {
+      title: 'Withdrawal request',
+      description: `A provider requested a withdrawal of ${amount}.`,
+      type: 'withdraw',
+      senderId: user.userId,
+      event: 'withdraw.requested',
+    });
+  return toDto(doc.toObject());
 };
 
+/** PATCH /Withdraw/accept-request { withdrawalId, status: 'accept' | 'reject', note? } (admin) */
 const acceptWithdrawRequest = async (
   user: JwtPayload,
   withdrawId: string,
-  acceptStatus: 'accept' | 'reject',
+  decision: 'accept' | 'reject',
+  note?: string,
 ) => {
-  const isExistsAdmin = await User.findOne({ role: user?.role });
-  if (!isExistsAdmin) {
-    throw new AppError(StatusCodes.NOT_FOUND, 'Admin user not found');
-  }
+  if (!Types.ObjectId.isValid(String(withdrawId)))
+    throw new AppError(StatusCodes.BAD_REQUEST, 'Invalid withdrawalId.');
+  if (!['accept', 'reject'].includes(decision))
+    throw new AppError(StatusCodes.BAD_REQUEST, "status must be 'accept' or 'reject'.");
 
-  const adminWallet = await Wallet.findOne({ user: isExistsAdmin?._id });
-  if (!adminWallet) {
-    throw new AppError(StatusCodes.NOT_FOUND, 'Admin wallet not found');
-  }
-
-  const withdraw = await Withdraw.findById(withdrawId);
-  if (!withdraw) {
-    throw new AppError(StatusCodes.NOT_FOUND, 'Withdraw request not found');
-  }
-
-  if (withdraw?.status === 'Paid') {
+  const updated: any = await Withdraw.findOneAndUpdate(
+    { _id: withdrawId, status: 'Pending' },
+    {
+      $set: {
+        status: decision === 'accept' ? 'Paid' : 'Rejected',
+        acceptStatus: decision,
+        ...(note ? { note: String(note).slice(0, 300) } : {}),
+      },
+    },
+    { new: true },
+  ).lean();
+  if (!updated) {
+    const exists = await Withdraw.exists({ _id: withdrawId });
     throw new AppError(
-      StatusCodes.BAD_REQUEST,
-      'Withdraw request already paided',
+      exists ? StatusCodes.CONFLICT : StatusCodes.NOT_FOUND,
+      exists ? 'This request was already processed.' : 'Withdrawal request not found.',
     );
   }
 
-  const providerWallet = await Wallet.findOne({ user: withdraw?.user });
-  if (!providerWallet) {
-    throw new AppError(StatusCodes.NOT_FOUND, 'Provider wallet not found');
+  if (decision === 'reject')
+    await changeBalance(updated.user, updated.amount, WalletTransactionType.RECEIVE, user.userId);
+
+  await notify(updated.user, {
+    title: decision === 'accept' ? 'Withdrawal paid' : 'Withdrawal rejected',
+    description:
+      decision === 'accept'
+        ? `Your withdrawal of ${updated.amount} has been paid.`
+        : `Your withdrawal of ${updated.amount} was rejected and returned to your balance.${note ? ` ${note}` : ''}`,
+    type: 'withdraw',
+    senderId: user.userId,
+    event: decision === 'accept' ? 'withdraw.paid' : 'withdraw.rejected',
+  });
+  return toDto(updated);
+};
+
+/** GET /Withdraw/all (admin) ?status=&search=&page=&limit= */
+const getAllFromDB = async (query: Record<string, any>) => {
+  const { page, limit, skip } = getPagination(query);
+  const filter: Record<string, any> = {};
+  if (['Pending', 'Paid', 'Rejected'].includes(String(query.status))) filter.status = query.status;
+  const s = escapeRegex(query.search);
+  if (s) {
+    const users = await User.find({
+      $or: [{ email: { $regex: s, $options: 'i' } }, { fullName: { $regex: s, $options: 'i' } }],
+    })
+      .select('_id')
+      .limit(200)
+      .lean();
+    filter.user = { $in: users.map(u => u._id) };
   }
-  // Calculate profit and withdrawal amount
-  // the platform fee is now taken when the provider earns the money
-  // (utils/platformFee), so it is not taken again here
-  const profitRate: number = PLATFORM_FEE_ON_EARNING
-    ? 0
-    : (adminWallet?.profitCharge || 0) / 100;
-  const profitAmount: number = withdraw.amount * profitRate;
-  const withdrawalAmount: number = withdraw.amount - profitAmount;
+  const [docs, total] = await Promise.all([
+    Withdraw.find(filter).sort({ createdAt: -1 }).skip(skip).limit(limit).populate('user', 'fullName email').lean(),
+    Withdraw.countDocuments(filter),
+  ]);
+  return { data: docs.map(toDto), meta: buildMeta(page, limit, total) };
+};
 
-  //  Check admin balance
-  if (adminWallet.balance < withdrawalAmount) {
-    throw new AppError(
-      StatusCodes.BAD_REQUEST,
-      'Insufficient admin wallet balance',
-    );
-  }
-  if (acceptStatus === 'accept') {
-    // Update admin wallet
-    adminWallet.balance -= withdrawalAmount;
-    adminWallet.transactions.push({
-      user: new Types.ObjectId(withdraw?.user),
-      balance: -withdrawalAmount,
-      type: WalletTransactionType.WITHDRAW,
-      createdAt: new Date(),
-    });
-
-    // Update provider wallet
-    providerWallet.balance -= withdraw?.amount;
-    providerWallet.transactions.push({
-      user: new Types.ObjectId(isExistsAdmin?._id),
-      balance: withdraw?.amount,
-      type: WalletTransactionType.WITHDRAW,
-      createdAt: new Date(),
-    });
-
-    // Save both wallets
-    await adminWallet.save();
-    await providerWallet.save();
-
-    withdraw.status = 'Paid';
-    await withdraw.save();
-    // create notification
-    await Notification.create({
-      title: 'Accepted Withdrawal Request',
-      description: 'Your withdrawal request has been accepted',
-      receiverId: providerWallet?.user,
-      type: 'withdrawal',
-      isRead: false,
-      senderId: isExistsAdmin?._id,
-    });
-  } else {
-    withdraw.status = 'Rejected';
-    await withdraw.save();
-
-    // create notification
-    await Notification.create({
-      title: 'Rejected Withdrawal Request',
-      description: 'Your withdrawal request has been rejected',
-      receiverId: providerWallet?.user,
-      type: 'withdrawal',
-      isRead: false,
-      senderId: isExistsAdmin?._id,
-    });
-  }
-
-  return withdraw;
+/** GET /Withdraw/my (provider) */
+const getMyWithdrawals = async (user: JwtPayload, query: Record<string, any>) => {
+  const { page, limit, skip } = getPagination(query);
+  const filter = { user: new Types.ObjectId(String(user.userId)) };
+  const [docs, total] = await Promise.all([
+    Withdraw.find(filter).sort({ createdAt: -1 }).skip(skip).limit(limit).lean(),
+    Withdraw.countDocuments(filter),
+  ]);
+  return { data: docs.map(toDto), meta: buildMeta(page, limit, total) };
 };
 
 export const WithdrawService = {
   getAllFromDB,
+  getMyWithdrawals,
   sendWithdrawRequest,
   acceptWithdrawRequest,
 };

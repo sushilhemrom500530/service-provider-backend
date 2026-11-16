@@ -4,132 +4,90 @@ import { JwtPayload } from 'jsonwebtoken';
 import catchAsync from './../../shared/catchAsync';
 import sendResponse from './../../shared/sendResponse';
 import { RestaurantService } from './restaurant.service';
-import { IReview } from './../common/common.interface';
 
-const getAllRestaurantFromDB = catchAsync(
-  async (req: Request, res: Response) => {
-    const user = req.user as JwtPayload;
-    const result = await RestaurantService.getAllRestaurantFromDB(
-      user,
-      req.query as any,
-    );
-    sendResponse(res, {
-      code: StatusCodes.OK,
-      message: 'Restaurant fetched successfully.',
-      data: result,
-    });
-  },
-);
+const idParam = (req: Request) => String(req.params.id);
+const filesOf = (req: Request) => (req as any).files as Record<string, any[]> | undefined;
 
-const getAllMyRestaurantFromDB = catchAsync(
-  async (req: Request, res: Response) => {
-    const user = req.user as JwtPayload;
-    const result = await RestaurantService.getAllMyRestaurantFromDB(
-      user,
-      req.query as any,
-    );
-    sendResponse(res, {
-      code: StatusCodes.OK,
-      message: 'Restaurant fetched successfully.',
-      data: result,
-    });
-  },
-);
+const browse = catchAsync(async (req: Request, res: Response) => {
+  const { data, meta } = await RestaurantService.browse(req.query as any);
+  sendResponse(res, { code: StatusCodes.OK, message: 'Restaurants fetched.', data, meta });
+});
 
-const getSingleRestaurantFromDB = catchAsync(
-  async (req: Request, res: Response) => {
-    const id = req.params.id;
-    const user = req.user as JwtPayload;
+const mine = catchAsync(async (req: Request, res: Response) => {
+  const { data, meta } = await RestaurantService.mine(req.user as JwtPayload, req.query as any);
+  sendResponse(res, { code: StatusCodes.OK, message: 'Your restaurants fetched.', data, meta });
+});
 
-    const result = await RestaurantService.getSingleRestaurantFromDB(id, user);
-    sendResponse(res, {
-      code: StatusCodes.OK,
-      message: 'Restaurant fetched successfully',
-      data: result,
-    });
-  },
-);
+const detail = catchAsync(async (req: Request, res: Response) => {
+  const data = await RestaurantService.detail(idParam(req));
+  sendResponse(res, { code: StatusCodes.OK, message: 'Restaurant fetched.', data });
+});
 
-const addRestaurantIntoDB = catchAsync(async (req: Request, res: Response) => {
-  const result = await RestaurantService.addRestaurantIntoDB(req as any);
-  sendResponse(res, {
-    code: StatusCodes.OK,
-    message: 'Restaurant added successfully',
-    data: result,
+const reviews = catchAsync(async (req: Request, res: Response) => {
+  const { data, meta, rating } = await RestaurantService.reviews(idParam(req), req.query as any);
+  res.status(StatusCodes.OK).json({
+    success: true,
+    message: 'Reviews fetched.',
+    data,
+    meta,
+    rating,
   });
 });
 
-const reviewRestaurant = catchAsync(async (req: Request, res: Response) => {
-  const user = req.user as JwtPayload;
-  const id = req.params.id;
-  const reviewData = req.body;
-  const result = await RestaurantService.reviewRestaurant(
-    id as string,
-    user,
-    reviewData as IReview,
+const create = catchAsync(async (req: Request, res: Response) => {
+  const data = await RestaurantService.create(req.user as JwtPayload, req.body, filesOf(req));
+  sendResponse(res, { code: StatusCodes.CREATED, message: 'Restaurant created.', data });
+});
+
+const update = catchAsync(async (req: Request, res: Response) => {
+  const data = await RestaurantService.update(
+    idParam(req),
+    req.user as JwtPayload,
+    req.body,
+    filesOf(req),
   );
-  sendResponse(res, {
-    code: StatusCodes.OK,
-    message: 'Review successfully',
-    data: result,
-  });
+  sendResponse(res, { code: StatusCodes.OK, message: 'Restaurant updated.', data });
 });
 
-const updateRestaurantIntoDB = catchAsync(
-  async (req: Request, res: Response) => {
-    const result = await RestaurantService.updateRestaurantIntoDB(req as any);
-    sendResponse(res, {
-      code: StatusCodes.OK,
-      message: 'Restaurant updated successfully',
-      data: result,
-    });
-  },
-);
+const setStatus = catchAsync(async (req: Request, res: Response) => {
+  const data = await RestaurantService.setStatus(
+    idParam(req),
+    req.user as JwtPayload,
+    req.body?.isActive,
+  );
+  sendResponse(res, { code: StatusCodes.OK, message: 'Restaurant status updated.', data });
+});
 
-const updateRestaurantServiceFee = catchAsync(
-  async (req: Request, res: Response) => {
-    const result = await RestaurantService.updateServiceFee(req.body as any);
-    sendResponse(res, {
-      code: StatusCodes.OK,
-      message: 'Restaurant Service fee updated successfully',
-      data: result,
-    });
-  },
-);
+const remove = catchAsync(async (req: Request, res: Response) => {
+  const data = await RestaurantService.remove(idParam(req), req.user as JwtPayload);
+  sendResponse(res, { code: StatusCodes.OK, message: 'Restaurant deleted.', data });
+});
 
-const getRestaurantServiceFee = catchAsync(
-  async (req: Request, res: Response) => {
-    console.log('get service fee controller');
-    const result = await RestaurantService.getServiceFee();
-    sendResponse(res, {
-      code: StatusCodes.OK,
-      message: 'Restaurant Service fee fetched successfully',
-      data: result,
-    });
-  },
-);
+const review = catchAsync(async (req: Request, res: Response) => {
+  const data = await RestaurantService.review(idParam(req), req.user as JwtPayload, req.body);
+  sendResponse(res, { code: StatusCodes.CREATED, message: 'Review added.', data });
+});
 
-const deleteRestaurantIntoDB = catchAsync(
-  async (req: Request, res: Response) => {
-    const id = req.params.id;
-    const user = req.user as JwtPayload;
-    const result = await RestaurantService.deleteRestaurantIntoDB(id, user);
-    sendResponse(res, {
-      code: StatusCodes.OK,
-      message: 'Restaurant deleted successfully',
-      data: result,
-    });
-  },
-);
+const updateServiceFee = catchAsync(async (req: Request, res: Response) => {
+  const data = await RestaurantService.updateServiceFee(Number(req.body.serviceFee));
+  sendResponse(res, { code: StatusCodes.OK, message: 'Restaurant service fee updated.', data });
+});
+
+const getServiceFee = catchAsync(async (_req: Request, res: Response) => {
+  const data = await RestaurantService.getServiceFee();
+  sendResponse(res, { code: StatusCodes.OK, message: 'Restaurant service fee fetched.', data });
+});
 
 export const RestaurantController = {
-  getAllRestaurantFromDB,
-  getAllMyRestaurantFromDB,
-  getSingleRestaurantFromDB,
-  addRestaurantIntoDB,
-  reviewRestaurant,
-  updateRestaurantIntoDB,
-  deleteRestaurantIntoDB,
-  updateRestaurantServiceFee,
-  getRestaurantServiceFee,  
+  browse,
+  mine,
+  detail,
+  reviews,
+  create,
+  update,
+  setStatus,
+  remove,
+  review,
+  updateServiceFee,
+  getServiceFee,
 };

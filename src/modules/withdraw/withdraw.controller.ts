@@ -1,58 +1,43 @@
-import { JwtPayload } from 'jsonwebtoken';
-import catchAsync from './../../shared/catchAsync';
 import { Request, Response } from 'express';
-import sendResponse from './../../shared/sendResponse';
 import { StatusCodes } from 'http-status-codes';
-import { IWithdraw } from './withdraw.inteface';
+import { JwtPayload } from 'jsonwebtoken';
+import catchAsync from '../../shared/catchAsync';
+import sendResponse from '../../shared/sendResponse';
 import { WithdrawService } from './withdraw.service';
 
 const getAllFromDB = catchAsync(async (req: Request, res: Response) => {
-  const result = await WithdrawService.getAllFromDB(req.query as any);
+  const { data, meta } = await WithdrawService.getAllFromDB(req.query as any);
+  sendResponse(res, { code: StatusCodes.OK, message: 'Withdrawals fetched.', data, meta });
+});
 
-  sendResponse(res, {
-    code: StatusCodes.OK,
-    message: 'Withdraw Retrieved successfully',
-    data: result,
-  });
+const getMyWithdrawals = catchAsync(async (req: Request, res: Response) => {
+  const { data, meta } = await WithdrawService.getMyWithdrawals(req.user as JwtPayload, req.query as any);
+  sendResponse(res, { code: StatusCodes.OK, message: 'Withdrawals fetched.', data, meta });
 });
 
 const sendWithdrawRequest = catchAsync(async (req: Request, res: Response) => {
-  const user = req.user as JwtPayload;
-  const formData = req.body;
+  const data = await WithdrawService.sendWithdrawRequest(req.user as JwtPayload, req.body);
+  sendResponse(res, { code: StatusCodes.CREATED, message: 'Withdrawal requested.', data });
+});
 
-  const result = await WithdrawService.sendWithdrawRequest(
-    user,
-    formData as IWithdraw,
+const acceptWithdrawRequest = catchAsync(async (req: Request, res: Response) => {
+  const { withdrawalId, status, note } = req.body || {};
+  const data = await WithdrawService.acceptWithdrawRequest(
+    req.user as JwtPayload,
+    String(withdrawalId),
+    status,
+    note,
   );
-
   sendResponse(res, {
     code: StatusCodes.OK,
-    message: 'Withdraw Request Sent successfully',
-    data: result,
+    message: status === 'accept' ? 'Withdrawal marked as paid.' : 'Withdrawal rejected.',
+    data,
   });
 });
 
-const acceptWithdrawRequest = catchAsync(
-  async (req: Request, res: Response) => {
-    const user = req.user as JwtPayload;
-    const { withdrawalId, status } = req.body;
-
-    const result = await WithdrawService.acceptWithdrawRequest(
-      user,
-      withdrawalId as string,
-      status as 'accept' | 'reject',
-    );
-
-    sendResponse(res, {
-      code: StatusCodes.OK,
-      message: 'Withdraw Request Sent successfully',
-      data: result,
-    });
-  },
-);
-
 export const WithdrawController = {
   getAllFromDB,
+  getMyWithdrawals,
   sendWithdrawRequest,
   acceptWithdrawRequest,
 };

@@ -26,7 +26,20 @@ const paymentSchema = new Schema<IPayment>(
     },
     currency: {
       type: String,
-      default: 'USD',
+      default: 'eur',
+    },
+    // what was paid for: the booking itself or a late-return fee
+    purpose: {
+      type: String,
+      enum: ['booking', 'late_fee'],
+      default: 'booking',
+    },
+    refundedAmount: {
+      type: Number,
+      default: 0,
+    },
+    refundedAt: {
+      type: Date,
     },
     paymentMethodType: {
       type: String,

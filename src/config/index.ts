@@ -84,6 +84,11 @@ export const config = {
     publishableKey: process.env.STRIPE_PUBLISHABLE_KEY || '',
     currency: (process.env.STRIPE_CURRENCY || 'eur').toLowerCase(),
   },
+  booking: {
+    // local time of the resort: restaurant slots ("7:00 PM") and date-only
+    // bookings are read in this zone
+    timezone: process.env.BUSINESS_TIMEZONE || 'Europe/Paris',
+  },
   cors: {
     allowedOrigins: process.env.ALLOWED_ORIGINS
       ? process.env.ALLOWED_ORIGINS.split(',').map(origin => origin.trim())

@@ -1,461 +1,229 @@
 import { Types } from 'mongoose';
 import { StatusCodes } from 'http-status-codes';
-import { Request, Response, Express } from 'express';
+import { Request } from 'express';
 import { JwtPayload } from 'jsonwebtoken';
-import { User } from './../user/user.model';
 import AppError from './../../errors/AppErro';
 import { s3Services } from './../../aws/s3Service';
-import { IReview } from './../common/common.interface';
+import { User } from './../user/user.model';
+import {
+  assertListingOwner,
+  idOf,
+  isAdmin,
+  parseSort,
+  toNumberOrUndefined,
+  toPublicUser,
+  toRating,
+} from './../../shared/apiHelpers';
+import {
+  addListingReview,
+  assertSubCategory,
+  buildListingFilter,
+  findListingOr404,
+  getListingReviews,
+  loadSubCategories,
+  paginateListings,
+  setListingActive,
+  softDeleteListing,
+  SubCategory,
+} from './../common/listing.helpers';
 import { Transport } from './transport.model';
 import { USER_UPLOADS_FOLDER } from './transport.constant';
-import { Category } from './../category/category.model';
+import { parseCreateBody, parseUpdateBody } from './transport.validations';
 
-const getAllTransportFromDB = async (user: JwtPayload, query: any) => {
-  const isExistsUser = await User.findOne({ email: user?.email });
-  if (!isExistsUser) {
-    throw new AppError(StatusCodes.NOT_FOUND, 'User not found.');
-  }
+const CATEGORY = 'Transport' as const;
+const LABEL = 'Transport';
 
-  // Pagination
-  const page = Number(query.page) || 1;
-  const limit = Number(query.limit) || 10;
-  const skip = (page - 1) * limit;
-
-  // filter
-  const search = query.search
-    ? { title: { $regex: query.search, $options: 'i' } }
-    : {};
-
-  // Category filter
-  let categoryFilter = {};
-  if (query.category) {
-    const categories = await Category.find(
-      {
-        primaryCategoryName: 'Transport',
-        'subCategory.name': { $regex: query.category, $options: 'i' },
-      },
-      { 'subCategory.$': 1 }
-    );
-
-    const categoryIds = categories.map(c => c.subCategory?.[0]?._id);
-
-    if (categoryIds.length > 0) {
-      categoryFilter = { category: { $in: categoryIds } };
-    } else {
-      return {
-        data: [],
-        pagination: { total: 0, page, limit, totalPages: 0 },
-      };
-    }
-  }
-
-  const filters = {
-    ...search,
-    ...categoryFilter,
-  };
-
-  // Total count after filters
-  const total = await Transport.countDocuments(filters);
-
-  // Fetch paginated data
-  const transportList = await Transport.find(filters)
-    .skip(skip)
-    .limit(limit)
-    .sort({ createdAt: -1 });
-
-  // Attach category data (your original logic)
-  const result = await Promise.all(
-    transportList.map(async item => {
-      const categoryDoc = await Category.findOne(
-        {
-          primaryCategoryName: 'Transport',
-          'subCategory._id': item.category,
-        },
-        { 'subCategory.$': 1 }
-      );
-
-      return {
-        ...item.toObject(),
-        category: categoryDoc?.subCategory?.[0] || null,
-      };
-    })
-  );
-
-  return {
-    pagination: {
-      total,
-      page,
-      limit,
-      totalPages: Math.ceil(total / limit),
-    },
-    result,
-  };
+const SORTS: Record<string, Record<string, 1 | -1>> = {
+  price_asc: { amount: 1, _id: 1 },
+  price_desc: { amount: -1, _id: 1 },
+  rating: { averageRating: -1, _id: 1 },
+  newest: { createdAt: -1, _id: 1 },
 };
 
-const getAllMyTransportFromDB = async (user: JwtPayload, query: any) => {
-  const isExistsUser = await User.findOne({ email: user?.email });
-  if (!isExistsUser) {
-    throw new AppError(StatusCodes.NOT_FOUND, 'User not found.');
-  }
+/* ------------------------------------------------------------------ */
+/* Serializers                                                         */
+/* ------------------------------------------------------------------ */
 
-  // Pagination
-  const page = Number(query.page) || 1;
-  const limit = Number(query.limit) || 10;
-  const skip = (page - 1) * limit;
+/** Number from a stored value (old docs may hold strings), else null */
+const num = (v: unknown) => toNumberOrUndefined(v) ?? null;
 
-  // filter
-  const search = query.search
-    ? { title: { $regex: query.search, $options: 'i' } }
-    : {};
+const toCard = (doc: any, subs: Map<string, SubCategory>) => ({
+  id: idOf(doc),
+  category: CATEGORY,
+  subCategory: subs.get(String(doc.category)) || null,
+  title: doc.title || '',
+  thumbnail: doc.thumbnail || '',
+  serviceArea: doc.serviceArea || '',
+  price: { amount: num(doc.amount) ?? 0, unit: 'per_trip' },
+  rating: toRating(doc),
+  provider: toPublicUser(doc.owner),
+  isActive: doc.isActive !== false,
+});
 
-  // Category filter
-  let categoryFilter = {};
-  if (query.category) {
-    const categories = await Category.find(
-      {
-        primaryCategoryName: 'Transport',
-        'subCategory.name': { $regex: query.category, $options: 'i' },
-      },
-      { 'subCategory.$': 1 }
-    );
+const toDetail = (doc: any, subs: Map<string, SubCategory>) => ({
+  ...toCard(doc, subs),
+  description: doc.description || '',
+  seats: num(doc.personCount),
+  mileage: doc.milage === undefined || doc.milage === null ? '' : String(doc.milage),
+  power: doc.power === undefined || doc.power === null ? '' : String(doc.power),
+  extraChargePerHour: num(doc.extraChargePerHours),
+  insuranceFee: num(doc.insuranceFee),
+  maintenanceFee: num(doc.maintainCharge),
+  createdAt: doc.createdAt,
+});
 
-    const categoryIds = categories.map(c => c.subCategory?.[0]?._id);
-
-    if (categoryIds.length > 0) {
-      categoryFilter = { category: { $in: categoryIds } };
-    } else {
-      return {
-        data: [],
-        pagination: { total: 0, page, limit, totalPages: 0 },
-      };
-    }
-  }
-
-  const filters = {
-    owner: isExistsUser._id,
-    ...search,
-    ...categoryFilter,
-  };
-
-  // Total count after filters
-  const total = await Transport.countDocuments(filters);
-
-  // Fetch paginated data
-  const transportList = await Transport.find(filters)
-    .skip(skip)
-    .limit(limit)
-    .sort({ createdAt: -1 });
-
-  // Attach category data (your original logic)
-  const result = await Promise.all(
-    transportList.map(async item => {
-      const categoryDoc = await Category.findOne(
-        {
-          primaryCategoryName: 'Transport',
-          'subCategory._id': item.category,
-        },
-        { 'subCategory.$': 1 }
-      );
-
-      return {
-        ...item.toObject(),
-        category: categoryDoc?.subCategory?.[0] || null,
-      };
-    })
-  );
-
-  return {
-    pagination: {
-      total,
-      page,
-      limit,
-      totalPages: Math.ceil(total / limit),
-    },
-    result,
-  };
+/** Load one listing (not deleted) as a lean detail object */
+const loadDetail = async (id: string) => {
+  const doc: any = await Transport.findOne({ _id: id, isDeleted: { $ne: true } })
+    .select('-refunds -__v')
+    .populate({ path: 'owner', select: 'fullName profileUrl' })
+    .lean();
+  if (!doc) throw new AppError(StatusCodes.NOT_FOUND, `${LABEL} not found.`);
+  // reviews are loaded only so the rating count is right on old docs
+  // (no reviewCount); they are never sent (toDetail whitelists)
+  const subs = await loadSubCategories(CATEGORY);
+  return toDetail(doc, subs);
 };
 
-const getSingleTransportFromDB = async (id: string, user: JwtPayload) => {
-  const isExistsUser = await User.findOne({ email: user?.email });
-  if (!isExistsUser) {
-    throw new AppError(
-      StatusCodes.NOT_FOUND,
-      'You cannot view this data because your account was not found.'
-    );
-  }
-  const transport = await Transport.findById(id)
-    .populate({
-      path: 'owner',
-      select: '-isDeleted -agreeTermsCondition -__v -createdAt -updatedAt',
-    })
-    .populate({
-      path: 'reviews.userId',
-      select: 'fullName email phoneNumber profileUrl createdAt', // choose what you want
-    })
-    .populate({
-      path: 'refunds.userId',
-      select: 'fullName email phoneNumber profileUrl createdAt',
-    });
-
-  if (!transport)
-    throw new AppError(StatusCodes.NOT_FOUND, 'Transport not found.');
-
-  // manually populate subcategory
-  const categoryDoc = await Category.findOne(
-    {
-      primaryCategoryName: 'Transport',
-      'subCategory._id': transport?.category,
-    },
-    { 'subCategory.$': 1 }
-  );
-
-  const subCategoryData = categoryDoc?.subCategory?.[0] || null;
-
-  return {
-    ...transport.toObject(),
-    category: subCategoryData,
+/** API field -> stored field */
+const toStored = (input: Record<string, any>) => {
+  const map: Record<string, string> = {
+    category: 'category',
+    title: 'title',
+    serviceArea: 'serviceArea',
+    amount: 'amount',
+    seats: 'personCount',
+    mileage: 'milage',
+    power: 'power',
+    extraChargePerHour: 'extraChargePerHours',
+    insuranceFee: 'insuranceFee',
+    maintenanceFee: 'maintainCharge',
+    description: 'description',
   };
+  const out: Record<string, any> = {};
+  for (const [api, stored] of Object.entries(map))
+    if (input[api] !== undefined) out[stored] = input[api];
+  return out;
 };
 
-const addTransportIntoDB = async (req: Request) => {
-  const user = req.user as JwtPayload;
-  // check user
-  const isExistsUser = await User.findOne({ email: user?.email });
-  if (!isExistsUser) {
-    throw new AppError(
-      StatusCodes.NOT_FOUND,
-      'You cannot view this data because your account was not found.'
-    );
-  }
+/** Thumbnail: the app sends it as "file"; "thumbnail" is accepted too */
+const pickThumbnail = (req: Request): Express.Multer.File | undefined => {
+  if (req.file) return req.file;
+  const files: any = req.files;
+  if (!files) return undefined;
+  if (Array.isArray(files))
+    return files.find(f => ['file', 'thumbnail'].includes(f.fieldname));
+  return files.file?.[0] || files.thumbnail?.[0];
+};
 
-  // Validate provider role and type
-  if (isExistsUser?.role !== 'Provider') {
-    throw new AppError(
-      StatusCodes.FORBIDDEN,
-      'You are not authorized to create a trasport service.'
-    );
-  }
+/* ------------------------------------------------------------------ */
+/* Queries                                                             */
+/* ------------------------------------------------------------------ */
 
-  // Now we know user is a Provider — check providerType
-  if (isExistsUser?.providerType !== 'Transport') {
-    throw new AppError(
-      StatusCodes.FORBIDDEN,
-      'Only providers with providerType : Transport can create a transport service.'
-    );
-  }
-
-  const category = await Category.findOne({
-    primaryCategoryName: 'Transport',
+const browse = async (query: Record<string, any>) => {
+  const filter = await buildListingFilter(CATEGORY, query, {
+    priceField: 'amount',
+    publicOnly: true,
   });
-  if (!category) {
-    throw new AppError(StatusCodes.NOT_FOUND, 'Transport Brand not found.');
-  }
-
-  const subCategoryItems = category?.subCategory || [];
-
-  const exists = subCategoryItems.some(
-    (item: any) => item?._id.toString() === req.body?.category.toString()
+  const subs = await loadSubCategories(CATEGORY);
+  return paginateListings(Transport, filter, query, parseSort(query.sort, SORTS, SORTS.newest), doc =>
+    toCard(doc, subs),
   );
-
-  if (!exists) {
-    throw new AppError(
-      StatusCodes.BAD_REQUEST,
-      'Invalid sub-category brand ID for Transport.'
-    );
-  }
-
-  if (req.file) {
-    const fileUrl = await s3Services.uploadSingleFileToS3(
-      req.file,
-      USER_UPLOADS_FOLDER
-    );
-    req.body.thumbnail = fileUrl;
-  } else {
-    throw new Error('File not found');
-  }
-
-  // Prepare transport data
-  const transportData = {
-    ...req.body,
-    owner: isExistsUser?._id,
-  };
-
-  transportData.amount = Number(transportData?.amount || 0);
-  transportData.personCount = Number(transportData?.personCount || 0);
-
-  const result = await Transport.create(transportData);
-  return result;
 };
 
-export const reviewTransport = async (
-  id: string,
-  user: JwtPayload,
-  payload: Partial<IReview>
-) => {
-  // Verify user exists
-  const isExistsUser = await User.findOne({ email: user?.email });
-  if (!isExistsUser) {
-    throw new AppError(
-      StatusCodes.NOT_FOUND,
-      'You cannot view this data because your account was not found.'
-    );
-  }
+/** Provider: own listings (incl. inactive). Admin: all listings, optional ?owner= */
+const myListings = async (user: JwtPayload, query: Record<string, any>) => {
+  let owner: string | undefined = String(user.userId);
+  if (isAdmin(user)) owner = /^[a-f\d]{24}$/i.test(String(query.owner || '')) ? String(query.owner) : undefined;
+  const filter = await buildListingFilter(CATEGORY, query, { priceField: 'amount', owner });
+  const subs = await loadSubCategories(CATEGORY);
+  return paginateListings(Transport, filter, query, parseSort(query.sort, SORTS, SORTS.newest), doc =>
+    toCard(doc, subs),
+  );
+};
 
-  // Ensure user role is 'User'
-  if (isExistsUser?.role !== 'User') {
+const getById = async (id: string) => {
+  if (!Types.ObjectId.isValid(id)) throw new AppError(StatusCodes.BAD_REQUEST, 'Invalid transport id.');
+  return loadDetail(id);
+};
+
+const getReviews = (id: string, query: Record<string, any>) =>
+  getListingReviews(Transport, id, query);
+
+/* ------------------------------------------------------------------ */
+/* Mutations                                                           */
+/* ------------------------------------------------------------------ */
+
+const create = async (req: Request) => {
+  const user = req.user as JwtPayload;
+  const account: any = await User.findById(user?.userId).select('providerType role').lean();
+  if (!account || account.role !== 'Provider' || account.providerType !== CATEGORY)
     throw new AppError(
       StatusCodes.FORBIDDEN,
-      'You cannot add a review because your account is not a user.'
+      'Only Transport providers can create a transport listing.',
     );
-  }
 
-  // Find the SkiPass product
-  const transport = await Transport.findById(id);
-  if (!transport) {
-    throw new AppError(StatusCodes.NOT_FOUND, 'Transport not found');
-  }
+  const input = parseCreateBody(req.body);
+  await assertSubCategory(CATEGORY, input.category);
 
-  //  (Optional) Prevent duplicate reviews by the same user
-  const alreadyReviewed =
-    transport.reviews?.some(
-      (review: any) => review?.userId.toString() === isExistsUser._id.toString()
-    ) || false;
-  if (alreadyReviewed) {
-    throw new AppError(
-      StatusCodes.BAD_REQUEST,
-      'You have already reviewed this transport.'
-    );
-  }
+  const file = pickThumbnail(req);
+  if (!file) throw new AppError(StatusCodes.BAD_REQUEST, 'A thumbnail image is required (field "file").');
+  const thumbnail = await s3Services.uploadSingleFileToS3(file, USER_UPLOADS_FOLDER);
 
-  // Push new review
-  const newReview = {
-    userId: isExistsUser!._id,
-    rating: payload?.rating,
-    comment: payload?.comment,
-    createdAt: new Date(),
-  } as IReview;
-
-  if (!Array.isArray(transport.reviews)) {
-    transport.reviews = [];
-  }
-
-  transport.reviews.push(newReview);
-
-  // Recalculate average rating
-  const total = transport?.reviews.reduce(
-    (sum: number, r: IReview) => sum + (r?.rating || 0),
-    0
-  );
-  transport.averageRating = transport?.reviews.length
-    ? parseFloat((total / transport?.reviews.length).toFixed(1))
-    : 0;
-
-  // Save updated transport
-  await transport.save({ validateModifiedOnly: true });
-
-  return transport;
+  const doc = await Transport.create({
+    ...toStored(input),
+    thumbnail,
+    owner: account._id,
+    isActive: true,
+    isDeleted: false,
+    averageRating: 0,
+    reviewCount: 0,
+  });
+  return loadDetail(String(doc._id));
 };
 
-const updateTransportIntoDB = async (req: Request) => {
-  const id = req?.params?.id;
-  const user = req?.user as JwtPayload;
+const update = async (req: Request) => {
+  const user = req.user as JwtPayload;
+  const id = String(req.params.id);
+  const listing = await findListingOr404(Transport, id, LABEL);
+  assertListingOwner(listing, user);
 
-  const isExistsTransport = await Transport.findById(id);
+  const input = parseUpdateBody(req.body);
+  if (input.category !== undefined) await assertSubCategory(CATEGORY, input.category);
 
-  if (!isExistsTransport) {
-    throw new AppError(StatusCodes.NOT_FOUND, 'Transport not found.');
-  }
-  // check user
-  const existsUser = await User.findById({ _id: user?.userId });
-  if (!existsUser) {
-    throw new AppError(
-      StatusCodes.NOT_FOUND,
-      'You cannot view this data because your account was not found.'
-    );
-  }
+  const set: Record<string, any> = toStored(input);
+  const file = pickThumbnail(req);
+  if (file) set.thumbnail = await s3Services.uploadSingleFileToS3(file, USER_UPLOADS_FOLDER);
 
-  if (req.body?.category) {
-    const category = await Category.findOne({
-      primaryCategoryName: 'Transport',
-    });
-    if (!category) {
-      throw new AppError(
-        StatusCodes.NOT_FOUND,
-        'Transport brand category not found.'
-      );
-    }
-
-    const subCategoryItems = category?.subCategory || [];
-
-    const brandExists = subCategoryItems.some(
-      (item: any) => item?._id.toString() === req.body?.category.toString()
-    );
-
-    if (!brandExists) {
-      throw new AppError(
-        StatusCodes.BAD_REQUEST,
-        'Invalid sub-category brand ID for Transport.'
-      );
-    }
-  }
-
-  if (req.file) {
-    const fileUrl = await s3Services.uploadSingleFileToS3(
-      req.file,
-      USER_UPLOADS_FOLDER
-    );
-    req.body.thumbnail = fileUrl;
-  }
-
-  const updateData: Partial<any> = { ...req.body };
-
-  if (updateData?.amount !== undefined) {
-    updateData.amount = Number(updateData.amount);
-  }
-  if (updateData?.personCount !== undefined) {
-    updateData.personCount = Number(updateData.personCount);
-  }
-
-  const result = await Transport.findByIdAndUpdate(
-    id,
-    { $set: updateData },
-    { new: true }
-  );
-
-  return result;
+  if (Object.keys(set).length)
+    await Transport.updateOne({ _id: listing._id }, { $set: set }, { runValidators: true });
+  return loadDetail(id);
 };
 
-const deleteTransportIntoDB = async (id: string, user: JwtPayload) => {
-  const isExistsUser = await User.findOne({ email: user?.email });
-  if (!isExistsUser) {
-    throw new AppError(
-      StatusCodes.NOT_FOUND,
-      'You cannot view this data because your account was not found.'
-    );
-  }
-
-  const transport = await Transport.findById(id);
-  if (!transport) {
-    throw new AppError(StatusCodes.NOT_FOUND, 'Transport not found.');
-  }
-
-  if (transport?.owner.toString() !== isExistsUser?._id.toString()) {
-    throw new AppError(
-      StatusCodes.FORBIDDEN,
-      'You are not authorized to delete this transport.'
-    );
-  }
-
-  const result = await Transport.findByIdAndDelete(id);
-  return result;
+const setStatus = async (req: Request) => {
+  const user = req.user as JwtPayload;
+  const listing = await findListingOr404(Transport, String(req.params.id), LABEL);
+  assertListingOwner(listing, user);
+  return setListingActive(Transport, listing, req.body?.isActive);
 };
+
+const remove = async (id: string, user: JwtPayload) => {
+  const listing = await findListingOr404(Transport, id, LABEL);
+  assertListingOwner(listing, user);
+  return softDeleteListing(Transport, listing);
+};
+
+const review = (id: string, user: JwtPayload, body: any) =>
+  addListingReview(Transport, id, user, { rating: body?.rating, comment: body?.comment });
 
 export const TransportService = {
-  getAllTransportFromDB,
-  getAllMyTransportFromDB,
-  addTransportIntoDB,
-  reviewTransport,
-  getSingleTransportFromDB,
-  updateTransportIntoDB,
-  deleteTransportIntoDB,
+  browse,
+  myListings,
+  getById,
+  getReviews,
+  create,
+  update,
+  setStatus,
+  remove,
+  review,
 };

@@ -1,139 +1,60 @@
 import { z } from 'zod';
 
-const bookingStatusEnum = z.enum(
-  ['Active', 'Pending', 'Completed', 'Cancelled', 'Delete'],
-  {
-    required_error: 'Booking Status is required',
-    invalid_type_error: 'Booking Status must be one of the allowed strings',
-  },
-);
+const objectId = z.string().regex(/^[a-f\d]{24}$/i, 'must be a valid id');
 
-const categoryEnum = z
-  .enum(['Ski_Pass', 'Ski_Hire', 'Transport', 'Restaurant', 'Massage'])
-  .optional();
-
-const productModelEnum = z
-  .enum(['SkiPass', 'SkiHire', 'Transport', 'Restaurant', 'Massage'])
-  .optional();
-
-const bookingItemSchema = z.object({
-  itemId: z
-    .string({
-      required_error: 'Product ID is required in items',
-      invalid_type_error: 'Product ID must be a string',
-    })
-    .min(1),
-  quantity: z.coerce
-    .number({
-      required_error: 'Quantity is required',
-      invalid_type_error: 'Quantity must be a number',
-    })
-    .positive(),
+const bookingItem = z.object({
+  itemId: objectId,
+  quantity: z.coerce.number().int().min(1),
 });
+
+/**
+ * One request body for every category (fields that don't apply are ignored):
+ *  Ski_Pass   : productId, date, personCount
+ *  Massage    : productId, date, time, duration, personCount
+ *  Restaurant : productId, date, slotId, bookingItems[{itemId (seat type), quantity}]
+ *  Ski_Hire   : productId, startDateAndTime, endDateAndTime, bookingItems[{itemId, quantity}]
+ *  Transport  : productId, startDateAndTime, endDateAndTime, personCount, address, destination
+ */
+const bookingRequest = z.object({
+  productId: objectId,
+  userId: objectId.optional(),
+  date: z.string().optional(),
+  time: z.string().max(20).optional(),
+  duration: z.union([z.string(), z.number()]).optional(),
+  personCount: z.coerce.number().int().min(1).max(100).optional(),
+  startDateAndTime: z.string().optional(),
+  endDateAndTime: z.string().optional(),
+  bookingItems: z.array(bookingItem).max(20).optional(),
+  slotId: objectId.optional(),
+  slots: z.array(objectId).max(1).optional(),
+  phoneNumber: z.string().max(40).optional(),
+  address: z.string().max(300).optional(),
+  destination: z.string().max(300).optional(),
+});
+
+const createPaymentIntentSchema = z.object({ body: bookingRequest });
 
 const createBookingSchema = z.object({
-  body: z.object({
-    userId: z
-      .string({
-        required_error: 'User ID is required',
-        invalid_type_error: 'User ID must be a string',
-      })
-      .min(1),
-
-    productId: z
-      .string({
-        invalid_type_error: 'Product ID must be a string',
-      })
-      .optional(),
-
-    productModel: productModelEnum,
-    category: categoryEnum,
-
-    personCount: z
-      .number({
-        invalid_type_error: 'Person count must be a number',
-      })
-      .optional(),
-
-    date: z
-      .preprocess(arg => (arg ? new Date(arg as string) : undefined), z.date())
-      .optional(),
-
-    time: z.string().optional(),
-
-    startDateAndTime: z
-      .preprocess(arg => (arg ? new Date(arg as string) : undefined), z.date())
-      .optional(),
-
-    endDateAndTime: z
-      .preprocess(arg => (arg ? new Date(arg as string) : undefined), z.date())
-      .optional(),
-
-    bookingItems: z.array(bookingItemSchema).optional(),
-    orderType: z.string().optional(),
-    itemCount: z.number().optional(),
-    duration: z.string().optional(),
-    bookingAgentText: z.string().optional(),
-
-    bookingStatus: bookingStatusEnum.optional().default('Pending'),
-
-    // Stripe PaymentIntent id returned by POST /booking/intent (pi_...)
-    paymentIntentId: z.string().optional(),
-    // legacy name, accepted as an alias of paymentIntentId
+  body: bookingRequest.partial().extend({
+    paymentIntentId: z.string().startsWith('pi_').optional(),
     transactionId: z.string().optional(),
-    totalPrice: z.coerce.number().optional(),
+  }).refine(b => !!(b.paymentIntentId || b.transactionId), {
+    message: 'paymentIntentId is required',
+    path: ['paymentIntentId'],
   }),
 });
 
-// POST /booking/intent — same booking body, but product and price are required
-const createPaymentIntentSchema = z.object({
-  body: createBookingSchema.shape.body.extend({
-    productId: z
-      .string({
-        required_error: 'Product ID is required',
-        invalid_type_error: 'Product ID must be a string',
-      })
-      .min(1),
-    // Ski Pass price is calculated by the server; other categories send it
-    totalPrice: z.coerce
-      .number({
-        invalid_type_error: 'Total price must be a number',
-      })
-      .positive('Total price must be greater than 0')
-      .optional(),
-  }),
+const reasonSchema = z.object({
+  body: z.object({ reason: z.string().trim().max(500).optional() }).optional().default({}),
 });
 
-export const updateBookingSchema = z.object({
-  body: z.object({
-    bookingStatus: bookingStatusEnum.optional(),
-    isPermitted: z.boolean().optional(),
-    // used when bookingStatus is "Cancelled" (= reject with refund)
-    reason: z.string().max(500).optional(),
-  }),
-});
-
-export const updatePermitBookingSchema = z.object({
-  body: z.object({
-    isPermitted: z.boolean({
-      required_error: 'Permitted is required',
-      invalid_type_error: 'Permitted must be a boolean',
-    }),
-  }),
-});
-
-export const rejectBookingSchema = z.object({
-  body: z
-    .object({
-      reason: z.string().max(500, 'Reason is too long').optional(),
-    })
-    .optional(),
+const lateFeeConfirmSchema = z.object({
+  body: z.object({ paymentIntentId: z.string().startsWith('pi_') }),
 });
 
 export const BookingRoutesValidations = {
-  rejectBookingSchema,
-  createBookingSchema,
   createPaymentIntentSchema,
-  updateBookingSchema,
-  updatePermitBookingSchema,
+  createBookingSchema,
+  reasonSchema,
+  lateFeeConfirmSchema,
 };

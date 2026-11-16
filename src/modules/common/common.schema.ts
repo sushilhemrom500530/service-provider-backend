@@ -24,7 +24,9 @@ export const reviewSchema = new Schema<IReview>(
       default: Date.now,
     },
   },
-  { _id: false }
+  // reviews get their own _id so one review can be addressed
+  // (old reviews without _id keep working)
+  { _id: true }
 );
 
 export const refundSchema = new Schema<IRefund>(

@@ -1,71 +1,76 @@
-import { Router } from 'express';
+import { NextFunction, Request, Response, Router } from 'express';
 import auth from '../../middlewares/auth';
 import fileUploadHandler from './../../shared/fileUploadHandler';
 import convertHeicToPngMiddleware from './../../shared/convertHeicToPngMiddleware';
 import validateRequest from './../../shared/validateRequest';
-import { CommonValidations } from './../common/common.validation';
 import { USER_UPLOADS_FOLDER } from './transport.constant';
 import { TransportController } from './transport.controller';
 import { TransportValidations } from './transport.validations';
 
 const uploads = fileUploadHandler(USER_UPLOADS_FOLDER);
-
 const router = Router();
 
-// get all
-router.get(
-  '/all',
-  auth('User', 'Admin', 'Provider'),
-  TransportController.getAllTransportFromDB
-);
-
-// specific provider all
-router.get(
-  '/my-all',
-  auth('User', 'Admin', 'Provider'),
-  TransportController.getAllMyTransportFromDB
-);
-
-// get single
-router.get(
-  '/:id',
-  auth('User', 'Admin', 'Provider'),
-  TransportController.getSingleTransportFromDB
-);
-
-// create
-router.post(
-  '/create',
-  auth('Admin', 'Provider'),
-  uploads.single('file'),
+/**
+ * Thumbnail upload: accepts any file field (multer any()), then exposes the
+ * "file" (or "thumbnail") field as req.file so HEIC conversion applies.
+ */
+const thumbnailUpload = [
+  uploads.fields([{ name: 'file', maxCount: 1 }]),
+  (req: Request, _res: Response, next: NextFunction) => {
+    const files: any = req.files;
+    if (!req.file && files && !Array.isArray(files))
+      (req as any).file = files.file?.[0] || files.thumbnail?.[0];
+    next();
+  },
   convertHeicToPngMiddleware(USER_UPLOADS_FOLDER),
-  validateRequest(TransportValidations.createTransport),
-  TransportController.addTransportIntoDB
-);
+];
 
-// review
+const ANY_ROLE = ['User', 'Provider', 'Admin'];
+const MANAGERS = ['Provider', 'Admin'];
+
+// ---- browse (public) ----
+router.get(['/', '/all'], TransportController.browse);
+
+// ---- own listings (before /:id) ----
+router.get(['/my', '/my-all'], auth(...MANAGERS), TransportController.myListings);
+
+// ---- create (Transport providers; checked in the service) ----
 router.post(
-  '/review/:id',
-  auth('User'),
-  validateRequest(CommonValidations.reviewSchema),
-  TransportController.reviewTransport
+  ['/', '/create'],
+  auth(...ANY_ROLE),
+  ...thumbnailUpload,
+  validateRequest(TransportValidations.createTransport),
+  TransportController.create,
 );
 
-// update
+// ---- legacy aliases with the id at the end ----
 router.patch(
   '/update/:id',
-  auth('User', 'Admin', 'Provider'),
-  uploads.single('file'),
-  convertHeicToPngMiddleware(USER_UPLOADS_FOLDER),
+  auth(...MANAGERS),
+  ...thumbnailUpload,
   validateRequest(TransportValidations.updateTransport),
-  TransportController.updateTransportIntoDB
+  TransportController.update,
 );
+router.delete('/delete/:id', auth(...MANAGERS), TransportController.remove);
+router.post('/review/:id', auth('User'), TransportController.review);
 
-// delete
-router.delete(
-  '/delete/:id',
-  auth('Provider'),
-  TransportController.deleteTransportIntoDB
+// ---- by id ----
+router.get('/:id', TransportController.getById);
+router.get('/:id/reviews', TransportController.getReviews);
+router.post('/:id/review', auth('User'), TransportController.review);
+router.patch(
+  '/:id/status',
+  auth(...MANAGERS),
+  validateRequest(TransportValidations.updateStatus),
+  TransportController.setStatus,
 );
+router.patch(
+  '/:id',
+  auth(...MANAGERS),
+  ...thumbnailUpload,
+  validateRequest(TransportValidations.updateTransport),
+  TransportController.update,
+);
+router.delete('/:id', auth(...MANAGERS), TransportController.remove);
 
 export const TransportRoutes = router;

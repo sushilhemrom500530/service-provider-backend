@@ -1,109 +1,31 @@
+import { Request, Response } from 'express';
 import { StatusCodes } from 'http-status-codes';
+import { JwtPayload } from 'jsonwebtoken';
 import catchAsync from '../../shared/catchAsync';
 import sendResponse from '../../shared/sendResponse';
-import { Request, Response } from 'express';
-import { JwtPayload } from 'jsonwebtoken';
 import { BookingService } from './booking.service';
-import { IBooking, BookingStatus } from './booking.interface';
 
-const getAllBookingFromDB = catchAsync(async (req: Request, res: Response) => {
-  const user = req.user as JwtPayload;
+const me = (req: Request) => req.user as JwtPayload;
+const idParam = (req: Request) => String(req.params.id);
+const viewerOf = (req: Request) =>
+  me(req).role === 'Admin' ? 'admin' : me(req).role === 'Provider' ? 'provider' : 'customer';
 
-  const result = await BookingService.getAllBookingFromDB(
-    user,
-    req.query as any,
-  );
-  sendResponse(res, {
-    code: StatusCodes.OK,
-    message: 'Booking fetched successfully.',
-    data: result,
-  });
+const ok = (res: Response, message: string, data: unknown, meta?: any, code = StatusCodes.OK) =>
+  sendResponse(res, { code, message, data, meta });
+
+/* ---------------- create ---------------- */
+
+const createIntent = catchAsync(async (req, res) => {
+  const data = await BookingService.createBookingIntent(me(req), req.body);
+  ok(res, 'Payment ready. Show the Stripe payment sheet.', data);
 });
 
-const getSingleBookingFromDB = catchAsync(
-  async (req: Request, res: Response) => {
-    const id = req.params.id;
-    const user = req.user as JwtPayload;
-
-    const result = await BookingService.getSingleBookingFromDB(id as string, user);
-    sendResponse(res, {
-      code: StatusCodes.OK,
-      message: 'Booking fetched successfully',
-      data: result,
-    });
-  },
-);
-
-const getMyBookingIntoDB = catchAsync(async (req: Request, res: Response) => {
-  const user = req.user as JwtPayload;
-
-  const result = await BookingService.getMyBooking(user, req.query as any);
-
-  sendResponse(res, {
-    code: StatusCodes.OK,
-    message: 'My Booking fetched successfully',
-    data: result,
-  });
+const createBooking = catchAsync(async (req, res) => {
+  const booking = await BookingService.createBookingFromPayment(me(req), req.body);
+  ok(res, 'Booking created.', await BookingService.detail(booking, 'customer'), undefined, StatusCodes.CREATED);
 });
 
-const getMyAllBookingIntoDB = catchAsync(
-  async (req: Request, res: Response) => {
-    const user = req.user as JwtPayload;
-
-    const result = await BookingService.getMyAllBookingIntoDB(
-      user,
-      req.query as any,
-    );
-
-    sendResponse(res, {
-      code: StatusCodes.OK,
-      message: 'My Booking fetched successfully',
-      data: result,
-    });
-  },
-);
-
-const getMyBookingForHome = catchAsync(async (req: Request, res: Response) => {
-  const user = req.user as JwtPayload;
-
-  // Get selectedDate from query or default to today in YYYY-MM-DD
-  let { date: selectedDate } = req.query;
-  if (!selectedDate) {
-    const today = new Date();
-    const yyyy = today.getFullYear();
-    const mm = String(today.getMonth() + 1).padStart(2, '0');
-    const dd = String(today.getDate()).padStart(2, '0');
-    selectedDate = `${yyyy}-${mm}-${dd}`; // e.g., "2025-11-02"
-  }
-  console.log('req query :', req?.query, user);
-  const result = await BookingService.getMyBookingForHome(
-    user,
-    selectedDate as string,
-  );
-
-  sendResponse(res, {
-    code: StatusCodes.OK,
-    message: 'My Booking fetched successfully',
-    data: result,
-  });
-});
-
-// create Stripe payment intent (step 1 of booking)
-const createPaymentIntent = catchAsync(async (req: Request, res: Response) => {
-  const user = req.user as JwtPayload;
-  const result = await BookingService.createPaymentIntentIntoDB(
-    user,
-    req.body,
-  );
-  sendResponse(res, {
-    code: StatusCodes.OK,
-    message: 'Payment intent created successfully',
-    data: result,
-  });
-});
-
-// Stripe webhook (raw body, no auth; verified by Stripe signature)
-const stripeWebhook = catchAsync(async (req: Request, res: Response) => {
+const stripeWebhook = catchAsync(async (req, res) => {
   const result = await BookingService.handleStripeWebhook(
     req.body as Buffer,
     req.headers['stripe-signature'] as string | undefined,
@@ -111,135 +33,134 @@ const stripeWebhook = catchAsync(async (req: Request, res: Response) => {
   res.status(StatusCodes.OK).json(result);
 });
 
-const addBookingIntoDB = catchAsync(async (req: Request, res: Response) => {
-  const user = req.user as JwtPayload;
-  const formData = req.body;
-  const result = await BookingService.addBookingIntoDB(
-    user,
-    formData as IBooking,
-  );
-  sendResponse(res, {
-    code: StatusCodes.OK,
-    message: 'Booking successfully',
-    data: result,
-  });
+const availability = catchAsync(async (req, res) => {
+  const data = await BookingService.getAvailability(String(req.params.productId), req.query as any);
+  ok(res, 'Availability fetched.', data);
 });
 
-const updateBookingStatus = catchAsync(async (req: Request, res: Response) => {
-  const id = req.params.id;
-  const user = req.user as JwtPayload;
-  const payload = req.body;
-  const result = await BookingService.updateBookingIntoDB(
-    user,
-    payload as any,
-    id as string,
-  );
-  sendResponse(res, {
-    code: StatusCodes.OK,
-    message: 'Booking updated successfully',
-    data: result,
-  });
+/* ---------------- read ---------------- */
+
+const myBookings = catchAsync(async (req, res) => {
+  const { data, meta } = await BookingService.getMyBookings(me(req), req.query as any);
+  ok(res, 'Bookings fetched.', data, meta);
 });
 
-const updatePermitBookingStatus = catchAsync(
-  async (req: Request, res: Response) => {
-    const id = req.params.id;
-    const user = req.user as JwtPayload;
-    const { isPermitted } = req.body;
-    const result = await BookingService.updatePermitBookingIntoDB(
-      user,
-      isPermitted as boolean,
-      id as string,
-    );
-    sendResponse(res, {
-      code: StatusCodes.OK,
-      message: 'Booking Permitted successfully',
-      data: result,
-    });
-  },
+const providerBookings = catchAsync(async (req, res) => {
+  const { data, meta } = await BookingService.getProviderBookings(me(req), req.query as any);
+  ok(res, 'Bookings fetched.', data, meta);
+});
+
+/** Old shared paths: customers get their bookings, providers their listings' bookings */
+const roleBookings = catchAsync(async (req, res) => {
+  const user = me(req);
+  const result =
+    user.role === 'Admin'
+      ? await BookingService.getAllBookingsAdmin(req.query as any)
+      : user.role === 'Provider'
+        ? await BookingService.getProviderBookings(user, req.query as any)
+        : await BookingService.getMyBookings(user, req.query as any);
+  ok(res, 'Bookings fetched.', result.data, result.meta);
+});
+
+const allBookingsAdmin = catchAsync(async (req, res) => {
+  const { data, meta } = await BookingService.getAllBookingsAdmin(req.query as any);
+  ok(res, 'Bookings fetched.', data, meta);
+});
+
+const bookingById = catchAsync(async (req, res) => {
+  ok(res, 'Booking fetched.', await BookingService.getBookingById(idParam(req), me(req)));
+});
+
+/* ---------------- actions ---------------- */
+
+const action =
+  (fn: (id: string, user: JwtPayload, req: Request) => Promise<any>, message: string) =>
+  catchAsync(async (req, res) => {
+    const result = await fn(idParam(req), me(req), req);
+    const booking = result?.booking ?? result;
+    const data = await BookingService.detail(booking, viewerOf(req) as any);
+    ok(res, message, result?.refund ? { ...data, refund: result.refund } : data);
+  });
+
+const approve = action((id, user) => BookingService.approveBooking(id, user), 'Booking confirmed.');
+const reject = action(
+  (id, user, req) => BookingService.rejectBooking(id, user, req.body?.reason),
+  'Booking rejected and refunded.',
+);
+const handOver = action((id, user) => BookingService.handOverBooking(id, user), 'Rental handed over.');
+const returned = action(
+  (id, user) => BookingService.returnRental(id, user),
+  'Rental returned.',
+);
+const complete = action((id, user) => BookingService.completeBooking(id, user), 'Booking completed.');
+const cancel = action(
+  (id, user, req) => BookingService.cancelByCustomer(id, user, req.body?.reason),
+  'Booking cancelled.',
 );
 
-// provider declines a booking: full refund + stock back
-const rejectBooking = catchAsync(async (req: Request, res: Response) => {
-  const user = req.user as JwtPayload;
-  const result = await BookingService.rejectBookingIntoDB(
-    user,
-    req.params.id as string,
-    req.body?.reason,
-  );
-  sendResponse(res, {
-    code: StatusCodes.OK,
-    message: 'Booking rejected and refunded successfully',
-    data: result,
-  });
+/** Old endpoint: PATCH /update-permit/:id { isPermitted: true } */
+const updatePermit = catchAsync(async (req, res) => {
+  if (req.body?.isPermitted === false || req.body?.isPermitted === 'false') {
+    const booking = await BookingService.rejectBooking(idParam(req), me(req), req.body?.reason);
+    return ok(res, 'Booking rejected and refunded.', await BookingService.detail(booking, viewerOf(req) as any));
+  }
+  const booking = await BookingService.approveBooking(idParam(req), me(req));
+  ok(res, 'Booking confirmed.', await BookingService.detail(booking, viewerOf(req) as any));
 });
 
-// provider hands the equipment / vehicle to the customer
-const handOverBooking = catchAsync(async (req: Request, res: Response) => {
-  const user = req.user as JwtPayload;
-  const result = await BookingService.handOverBookingIntoDB(
-    user,
-    req.params.id as string,
-  );
-  sendResponse(res, {
-    code: StatusCodes.OK,
-    message: 'Booking handed over successfully',
-    data: result,
-  });
+/** Old endpoint: PATCH /update-status/:id { bookingStatus } -> mapped to the real actions */
+const updateStatus = catchAsync(async (req, res) => {
+  const status = String(req.body?.bookingStatus || req.body?.status || '');
+  const id = idParam(req);
+  const user = me(req);
+  let booking: any;
+  if (['Cancelled', 'Cancel', 'Rejected'].includes(status))
+    booking = await BookingService.rejectBooking(id, user, req.body?.reason);
+  else if (['Completed', 'Complete'].includes(status)) booking = await BookingService.completeBooking(id, user);
+  else if (['Confirmed', 'Approved', 'Active'].includes(status)) booking = await BookingService.approveBooking(id, user);
+  else
+    return res.status(StatusCodes.BAD_REQUEST).json({
+      success: false,
+      message: 'Use the booking actions: approve, reject, hand-over, return, complete.',
+    });
+  ok(res, 'Booking updated.', await BookingService.detail(booking, viewerOf(req) as any));
 });
 
-const completeBooking = catchAsync(async (req: Request, res: Response) => {
-  const id = req.params.id;
-  const user = req.user as JwtPayload;
-  const result = await BookingService.completeBookingIntoDB(user, id as string);
-  sendResponse(res, {
-    code: StatusCodes.OK,
-    message: 'Booking Permitted successfully',
-    data: result,
-  });
+const adminRefund = action(
+  (id, user, req) => BookingService.adminRefund(id, user, req.body?.amount, req.body?.reason),
+  'Refund issued.',
+);
+
+/* ---------------- late fee ---------------- */
+
+const lateFeeIntent = catchAsync(async (req, res) => {
+  ok(res, 'Payment ready. Show the Stripe payment sheet.', await BookingService.createLateFeeIntent(idParam(req), me(req)));
 });
 
-const refundBookingIntoDB = catchAsync(async (req: Request, res: Response) => {
-  const id = req.params.id;
-  const user = req.user as JwtPayload;
-  const refundData = req.body;
-  const result = await BookingService.refundBookingIntoDB(
-    user,
-    refundData as any,
-    id as string,
-  );
-  sendResponse(res, {
-    code: StatusCodes.OK,
-    message: 'Booking cancelled successfully',
-    data: result,
-  });
-});
-
-const deleteBookingIntoDB = catchAsync(async (req: Request, res: Response) => {
-  const id = req.params.id;
-  const user = req.user as JwtPayload;
-  const result = await BookingService.deleteBookingIntoDB(id as string, user);
-  sendResponse(res, {
-    code: StatusCodes.OK,
-    message: 'Booking deleted successfully',
-    data: result,
-  });
+const lateFeeConfirm = catchAsync(async (req, res) => {
+  const booking = await BookingService.confirmLateFee(String(req.body?.paymentIntentId), me(req));
+  ok(res, 'Late fee paid.', await BookingService.detail(booking, 'customer'));
 });
 
 export const BookingController = {
-  getAllBookingFromDB,
-  getSingleBookingFromDB,
-  addBookingIntoDB,
-  createPaymentIntent,
+  createIntent,
+  createBooking,
   stripeWebhook,
-  rejectBooking,
-  handOverBooking,
-  getMyAllBookingIntoDB,
-  updateBookingStatus,
-  updatePermitBookingStatus,
-  refundBookingIntoDB,
-  deleteBookingIntoDB,
-  getMyBookingIntoDB,
-  completeBooking,
-  getMyBookingForHome,
+  availability,
+  myBookings,
+  providerBookings,
+  roleBookings,
+  allBookingsAdmin,
+  bookingById,
+  approve,
+  reject,
+  handOver,
+  returned,
+  complete,
+  cancel,
+  updatePermit,
+  updateStatus,
+  lateFeeIntent,
+  lateFeeConfirm,
+  adminRefund,
 };

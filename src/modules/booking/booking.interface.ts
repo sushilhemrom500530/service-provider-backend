@@ -73,6 +73,33 @@ export interface IBooking extends Document {
   platformFee?: number;
   providerEarning?: number;
 
+  startAt?: Date;
+  endAt?: Date;
+  slotTime?: { startTime?: string; endTime?: string };
+  noShow?: boolean;
+  refundAmount?: number;
+  refundedAt?: Date;
+  cancelledAt?: Date;
+  completedAt?: Date;
+  lateFee?: {
+    hours?: number;
+    amount?: number;
+    status?: 'none' | 'due' | 'paid';
+    paymentIntentId?: string;
+    paidAt?: Date;
+    platformFee?: number;
+    providerEarning?: number;
+  };
+  dispute?: {
+    status?: 'open' | 'won' | 'lost';
+    amount?: number;
+    reason?: string;
+    openedAt?: Date;
+    closedAt?: Date;
+    recoveredNet?: number;
+    recoveredFee?: number;
+  };
+
   createdAt?: Date;
   updatedAt?: Date;
 }

@@ -1,14 +1,16 @@
-import { Document, Types } from "mongoose";
+import { Document, Types } from 'mongoose';
 
+export type NotificationType = 'booking' | 'payment' | 'withdraw' | 'review' | 'system';
 
-// Define the INotification type
 export interface INotification extends Document {
-  senderId: Types.ObjectId;
+  senderId?: Types.ObjectId;
   receiverId?: Types.ObjectId;
   title: string;
   description: string;
-  type: string;
-  isRead: boolean | false;
+  type: NotificationType | string;
+  booking?: Types.ObjectId;
+  event?: string;
+  isRead: boolean;
   createdAt?: Date;
   updatedAt?: Date;
 }

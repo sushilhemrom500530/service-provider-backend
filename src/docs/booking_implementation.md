@@ -1,3 +1,5 @@
+> **Superseded:** the current, complete API for the mobile app is in [`MOBILE_INTEGRATION_GUIDE.md`](./MOBILE_INTEGRATION_GUIDE.md). This file is kept as implementation history.
+
 # Booking Payment API — Stripe PaymentIntent Flow
 
 _Last updated: 2026-11-15_

@@ -1,185 +1,73 @@
+/**
+ * Payments are a financial record: one per Stripe payment (booking or late
+ * fee). Customers see their own; the admin sees all. They are never deleted.
+ */
 import { Types } from 'mongoose';
-import AppError from '../../errors/AppErro';
 import { StatusCodes } from 'http-status-codes';
-import { User } from '../user/user.model';
+import { JwtPayload } from 'jsonwebtoken';
+import AppError from '../../errors/AppErro';
 import { Payment } from './payment.model';
-import { Booking } from './../booking/booking.model';
+import { User } from '../user/user.model';
+import { buildMeta, escapeRegex, getPagination } from '../../shared/apiHelpers';
 
-const getAllPayment = async (query: any) => {
-  // Pagination setup
-  const page = Math.max(1, Number(query.page) || 1);
-  const limit = Math.max(1, Math.min(100, Number(query.limit) || 10));
-  const skip = (page - 1) * limit;
+const toDto = (p: any, admin: boolean) => ({
+  id: String(p._id),
+  bookingId: p.booking ? String(p.booking?._id ?? p.booking) : null,
+  purpose: p.purpose || 'booking',
+  amount: p.amount,
+  refundedAmount: p.refundedAmount || 0,
+  currency: p.currency,
+  status: p.status,
+  method: p.paymentMethodType,
+  transactionId: p.transactionId,
+  customer:
+    admin && p.user && typeof p.user === 'object' && p.user._id
+      ? { id: String(p.user._id), name: p.user.fullName || '', email: p.user.email || '' }
+      : undefined,
+  createdAt: p.createdAt,
+  refundedAt: p.refundedAt || null,
+});
 
-  // Initialize payment filters
-  const paymentFilters: any = {};
-
-  // Handle user filters (name and role)
-  if (query.name || query.role) {
-    const userFilters: any = {};
-
-    if (query.name) {
-      userFilters.fullName = {
-        $regex: query.name.trim(),
-        $options: 'i',
-      };
-    }
-
-    if (query.role) {
-      userFilters.role = {
-        $regex: query.role.trim(),
-        $options: 'i',
-      };
-    }
-
-    const matchingUsers = await User.find(userFilters).select('_id').lean();
-
-    if (matchingUsers.length === 0) {
-      return {
-        pagination: {
-          total: 0,
-          page,
-          limit,
-          totalPages: 0,
-        },
-        payments: [],
-      };
-    }
-
-    paymentFilters.user = {
-      $in: matchingUsers.map(u => u._id),
-    };
+/** GET /payment/all  ?status=&purpose=&search=(admin)&page=&limit= */
+const getAllPayment = async (user: JwtPayload, query: Record<string, any>) => {
+  const admin = user.role === 'Admin';
+  const { page, limit, skip } = getPagination(query);
+  const filter: Record<string, any> = {};
+  if (!admin) filter.user = new Types.ObjectId(String(user.userId));
+  if (query.status) filter.status = String(query.status);
+  if (['booking', 'late_fee'].includes(String(query.purpose))) filter.purpose = query.purpose;
+  const s = escapeRegex(query.search);
+  if (admin && s) {
+    const users = await User.find({
+      $or: [{ email: { $regex: s, $options: 'i' } }, { fullName: { $regex: s, $options: 'i' } }],
+    })
+      .select('_id')
+      .limit(200)
+      .lean();
+    filter.$or = [{ user: { $in: users.map(u => u._id) } }, { transactionId: { $regex: s, $options: 'i' } }];
   }
-
-  // Handle booking date filter - search across date, startDateAndTime, and endDateAndTime
-  if (query.date) {
-    const parsedDate = new Date(query.date);
-
-    if (!isNaN(parsedDate.getTime())) {
-      // Create date range for the entire day
-      const startOfDay = new Date(parsedDate);
-      startOfDay.setHours(0, 0, 0, 0);
-
-      const endOfDay = new Date(parsedDate);
-      endOfDay.setHours(23, 59, 59, 999);
-
-      paymentFilters.createdAt = {
-        $gte: startOfDay,
-        $lte: endOfDay,
-      };
-
-      // Search in all three date fields using $or
-      const bookingFilters = {
-        $or: [
-          // Match exact date field (for Ski_Pass)
-          {
-            date: {
-              $gte: startOfDay,
-              $lte: endOfDay,
-            },
-          },
-          // Match startDateAndTime field (for Ski_Hire)
-          {
-            startDateAndTime: {
-              $gte: startOfDay,
-              $lte: endOfDay,
-            },
-          },
-          // Match endDateAndTime field (for Ski_Hire)
-          {
-            endDateAndTime: {
-              $gte: startOfDay,
-              $lte: endOfDay,
-            },
-          },
-        ],
-      };
-
-      const matchingBookings = await Booking.find(bookingFilters)
-        .select('_id')
-        .lean();
-
-      if (matchingBookings.length === 0) {
-        return {
-          pagination: {
-            total: 0,
-            page,
-            limit,
-            totalPages: 0,
-          },
-          payments: [],
-        };
-      }
-
-      paymentFilters.booking = {
-        $in: matchingBookings.map(b => b._id),
-      };
-    }
-  }
-
-  // Execute payment queries
-  const [total, payments] = await Promise.all([
-    Payment.countDocuments(paymentFilters),
-    Payment.find(paymentFilters)
-      .populate({
-        path: 'user',
-        select: 'fullName providerType email phoneNumber role',
-      })
-      .populate({
-        path: 'booking',
-        select:
-          'category totalPrice bookingStatus date time startDateAndTime endDateAndTime personCount',
-      })
+  const [docs, total] = await Promise.all([
+    Payment.find(filter)
       .sort({ createdAt: -1 })
       .skip(skip)
       .limit(limit)
+      .populate(admin ? { path: 'user', select: 'fullName email' } : [])
       .lean(),
+    Payment.countDocuments(filter),
   ]);
-
-  return {
-    pagination: {
-      total,
-      page,
-      limit,
-      totalPages: Math.ceil(total / limit),
-    },
-    payments,
-  };
+  return { data: docs.map(p => toDto(p, admin)), meta: buildMeta(page, limit, total) };
 };
 
+/** GET /payment/:id (admin) */
 const paymentFindById = async (paymentId: string) => {
-  const payment = await Payment.findById(paymentId)
-    .populate({ path: 'user', select: 'name email phoneNumber role' })
-    .populate({
-      path: 'booking',
-      select: 'category totalPrice bookingStatus date time personCount',
-    });
-
-  if (!payment) {
-    throw new AppError(StatusCodes.NOT_FOUND, 'Payment Data not found.');
-  }
-  return payment;
-};
-
-const deletePaymentById = async (paymentId: string) => {
-  // Validate ObjectId
-  if (!Types.ObjectId.isValid(paymentId)) {
-    throw new AppError(StatusCodes.BAD_REQUEST, 'Invalid payment ID.');
-  }
-
-  // Check if payment exists
-  const payment = await Payment.findById(paymentId);
-  if (!payment) {
-    throw new AppError(StatusCodes.NOT_FOUND, 'Payment Data not found.');
-  }
-
-  // Delete payment
-  const result = await Payment.deleteOne({ _id: paymentId });
-  return result;
+  if (!Types.ObjectId.isValid(String(paymentId)))
+    throw new AppError(StatusCodes.BAD_REQUEST, 'Invalid payment id.');
+  const doc: any = await Payment.findById(paymentId).populate('user', 'fullName email').lean();
+  if (!doc) throw new AppError(StatusCodes.NOT_FOUND, 'Payment not found.');
+  return toDto(doc, true);
 };
 
 export const PaymentService = {
   getAllPayment,
   paymentFindById,
-  deletePaymentById,
 };

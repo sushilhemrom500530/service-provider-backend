@@ -1,330 +1,211 @@
-import { Types } from 'mongoose';
-import AppError from '../../errors/AppErro';
 import { StatusCodes } from 'http-status-codes';
-import { Request, Response } from 'express';
-import { s3Services } from './../../aws/s3Service';
-import { USER_UPLOADS_FOLDER } from './skipass.constant';
-import { SkiPass } from './skipass.model';
-import { User } from './../user/user.model';
 import { JwtPayload } from 'jsonwebtoken';
-import { IReview } from './../common/common.interface';
+import AppError from '../../errors/AppErro';
+import { s3Services } from './../../aws/s3Service';
+import { User } from './../user/user.model';
+import { USER_UPLOADS_FOLDER, SKI_PASS_CATEGORY, SKI_PASS_PRICE_UNIT } from './skipass.constant';
+import { SkiPass } from './skipass.model';
+import { SKI_PASS_TYPES } from './skipass.interface';
+import {
+  assertListingOwner,
+  idOf,
+  isAdmin,
+  parseSort,
+  pickDefined,
+  toPublicUser,
+  toRating,
+} from '../../shared/apiHelpers';
+import {
+  addListingReview,
+  buildListingFilter,
+  findListingOr404,
+  getListingReviews,
+  paginateListings,
+  setListingActive,
+  softDeleteListing,
+} from '../common/listing.helpers';
 
-const getAllSkiPassFromDB = async (user: JwtPayload, query: any) => {
-  const isExistsUser = await User.findOne({ email: user?.email });
+const LABEL = 'Ski pass';
 
-  if (!isExistsUser) {
-    throw new AppError(
-      StatusCodes.NOT_FOUND,
-      'You cannot view this data because your account was not found.',
-    );
-  }
-
-  // Pagination
-  const page = Number(query.page) || 1;
-  const limit = Number(query.limit) || 10;
-  const skip = (page - 1) * limit;
-
-  // Search
-  const search = query.search || '';
-
-  const filters: any = {};
-
-  if (search) {
-    filters.title = { $regex: search, $options: 'i' };
-  }
-
-  const total = await SkiPass.countDocuments(filters);
-
-  // Fetch paginated result
-  const result = await SkiPass.find(filters)
-    .skip(skip)
-    .limit(limit)
-    .sort({ createdAt: -1 });
-
-  return {
-    pagination: {
-      total,
-      page,
-      limit,
-      totalPages: Math.ceil(total / limit),
-    },
-    result,
-  };
+const SORTS: Record<string, Record<string, 1 | -1>> = {
+  price_asc: { amount: 1, createdAt: -1 },
+  price_desc: { amount: -1, createdAt: -1 },
+  rating: { averageRating: -1, createdAt: -1 },
+  newest: { createdAt: -1 },
 };
 
-const getAllMySkiPassFromDB = async (user: JwtPayload, query: any) => {
-  const isExistsUser = await User.findOne({ email: user?.email });
+const CREATE_FIELDS = ['title', 'skiPassType', 'services', 'serviceArea', 'amount', 'description'];
+/** Stored fields an owner/admin may change (thumbnail only via an uploaded file) */
+const UPDATE_FIELDS = [...CREATE_FIELDS, 'isActive'];
 
-  if (!isExistsUser) {
-    throw new AppError(
-      StatusCodes.NOT_FOUND,
-      'You cannot view this data because your account was not found.',
-    );
-  }
+/* ------------------------------------------------------------------ */
+/* Serializers                                                         */
+/* ------------------------------------------------------------------ */
 
-  // Pagination
-  const page = Number(query.page) || 1;
-  const limit = Number(query.limit) || 10;
-  const skip = (page - 1) * limit;
+export const toSkiPassCard = (doc: any) => ({
+  id: idOf(doc),
+  category: SKI_PASS_CATEGORY,
+  subCategory: null,
+  title: doc.title,
+  thumbnail: doc.thumbnail,
+  serviceArea: doc.serviceArea,
+  passType: doc.skiPassType,
+  price: { amount: Number(doc.amount) || 0, unit: SKI_PASS_PRICE_UNIT },
+  rating: toRating({ averageRating: doc.averageRating, reviewCount: doc.reviewCount }),
+  provider: toPublicUser(doc.owner),
+  isActive: doc.isActive !== false,
+});
 
-  // Search
-  const search = query.search || '';
+export const toSkiPassDetail = (doc: any) => ({
+  ...toSkiPassCard(doc),
+  description: doc.description,
+  services: (doc.services || []).map((s: any) => ({
+    title: s.title,
+    description: s.description,
+  })),
+  createdAt: doc.createdAt,
+  updatedAt: doc.updatedAt,
+});
 
-  const filters: any = { owner: isExistsUser._id };
-
-  if (search) {
-    filters.title = { $regex: search, $options: 'i' };
-  }
-
-  const total = await SkiPass.countDocuments(filters);
-
-  // Fetch paginated result
-  const result = await SkiPass.find(filters)
-    .sort({ createdAt: -1 })
-    .skip(skip)
-    .limit(limit);
-  return {
-    pagination: {
-      total,
-      page,
-      limit,
-      totalPages: Math.ceil(total / limit),
-    },
-    result,
-  };
+const loadDetail = async (id: string) => {
+  const doc = await SkiPass.findOne({ _id: id, isDeleted: { $ne: true } })
+    .select('-reviews -refunds -__v')
+    .populate({ path: 'owner', select: 'fullName profileUrl' })
+    .lean();
+  if (!doc) throw new AppError(StatusCodes.NOT_FOUND, `${LABEL} not found.`);
+  return toSkiPassDetail(doc);
 };
 
-const getSingleSkipPassFromDB = async (id: string, user: JwtPayload) => {
-  const isExistsUser = await User.findOne({ email: user?.email });
-  if (!isExistsUser) {
-    throw new AppError(
-      StatusCodes.NOT_FOUND,
-      'You cannot view this data because your account was not found.',
-    );
-  }
-  const result = await SkiPass.findById(id)
-    .populate('owner', '_id fullName email profileUrl phoneNumber')
-    .populate({
-      path: 'reviews.userId',
-      select: 'fullName email phoneNumber profileUrl createdAt', // choose what you want
-    })
-    .populate({
-      path: 'refunds.userId',
-      select: 'fullName email phoneNumber profileUrl createdAt',
-    });
+const uploadThumbnail = async (file?: Express.Multer.File) =>
+  file ? s3Services.uploadSingleFileToS3(file, USER_UPLOADS_FOLDER) : undefined;
 
-  if (!result) {
-    return {
-      message: ` This ski pass id's ${id} data not found.'`,
-    };
+/* ------------------------------------------------------------------ */
+/* Browse                                                              */
+/* ------------------------------------------------------------------ */
+
+const withPassTypeFilter = (filter: Record<string, any>, query: Record<string, any>) => {
+  const raw = query.passType ?? query.skiPassType;
+  if (raw !== undefined && raw !== '') {
+    const match = SKI_PASS_TYPES.find(t => t.toLowerCase() === String(raw).trim().toLowerCase());
+    filter.skiPassType = match ?? { $in: [] }; // unknown type -> no results
   }
-  return result;
+  return filter;
 };
 
-const addSkiPassIntoDB = async (req: Request) => {
-  const user = req?.user as JwtPayload;
-  // check user
-  const isExistsUser = await User.findOne({ email: user?.email });
-  if (!isExistsUser) {
-    throw new AppError(
-      StatusCodes.NOT_FOUND,
-      'You cannot view this data because your account was not found.',
-    );
-  }
-
-  // Validate provider role and type
-  if (isExistsUser?.role !== 'Provider') {
-    throw new AppError(
-      StatusCodes.FORBIDDEN,
-      'You are not authorized to create a ski pass service.',
-    );
-  }
-
-  // Check providerType
-  if (isExistsUser?.providerType !== 'Ski_Pass') {
-    throw new AppError(
-      StatusCodes.FORBIDDEN,
-      'User is not authorized to create a Ski Pass.',
-    );
-  }
-
-  if (req.file) {
-    const fileUrl = await s3Services.uploadSingleFileToS3(
-      req.file,
-      USER_UPLOADS_FOLDER,
-    );
-    req.body.thumbnail = fileUrl;
-  } else {
-    throw new AppError(StatusCodes.BAD_REQUEST, 'Thumbnail file not found.');
-  }
-
-  const formData = {
-    ...req?.body,
-    owner: isExistsUser?._id,
-  };
-
-  const result = await SkiPass.create(formData);
-
-  return result;
+/** Ski passes have no sub-categories: `?category=` is ignored */
+const withoutCategory = (query: Record<string, any>) => {
+  const { category: _ignored, ...rest } = query || {};
+  return rest;
 };
 
-export const reviewSkiPass = async (
+const browseSkiPasses = async (query: Record<string, any>) => {
+  const filter = withPassTypeFilter(
+    await buildListingFilter(SKI_PASS_CATEGORY, withoutCategory(query), {
+      priceField: 'amount',
+      publicOnly: true,
+    }),
+    query,
+  );
+  return paginateListings(SkiPass, filter, query, parseSort(query.sort, SORTS), toSkiPassCard);
+};
+
+const getMySkiPasses = async (user: JwtPayload, query: Record<string, any>) => {
+  // Admin sees every provider's passes (optionally ?owner=<id>), a provider only theirs
+  const owner = isAdmin(user)
+    ? query.owner
+      ? String(query.owner)
+      : undefined
+    : String(user.userId);
+  if (owner && !/^[a-f\d]{24}$/i.test(owner))
+    throw new AppError(StatusCodes.BAD_REQUEST, 'owner must be a valid id.');
+  const filter = withPassTypeFilter(
+    await buildListingFilter(SKI_PASS_CATEGORY, withoutCategory(query), {
+      priceField: 'amount',
+      owner,
+    }),
+    query,
+  );
+  return paginateListings(SkiPass, filter, query, parseSort(query.sort, SORTS), toSkiPassCard);
+};
+
+const getSkiPass = async (id: string) => {
+  await findListingOr404(SkiPass, id, LABEL); // 400 bad id, 404 missing or deleted
+  return loadDetail(id);
+};
+
+const getSkiPassReviews = (id: string, query: Record<string, any>) =>
+  getListingReviews(SkiPass, id, query);
+
+/* ------------------------------------------------------------------ */
+/* Write                                                               */
+/* ------------------------------------------------------------------ */
+
+const createSkiPass = async (
+  user: JwtPayload,
+  body: Record<string, any>,
+  file?: Express.Multer.File,
+) => {
+  const dbUser: any = await User.findById(user?.userId).select('providerType role').lean();
+  if (!dbUser || dbUser.role !== 'Provider' || dbUser.providerType !== SKI_PASS_CATEGORY)
+    throw new AppError(StatusCodes.FORBIDDEN, 'Only Ski Pass providers can create a ski pass.');
+
+  if (!file)
+    throw new AppError(StatusCodes.BAD_REQUEST, 'A thumbnail image (field "file") is required.');
+
+  const data = pickDefined(body, CREATE_FIELDS);
+  const thumbnail = await uploadThumbnail(file);
+
+  const created = await SkiPass.create({
+    ...data,
+    thumbnail,
+    owner: dbUser._id, // always the caller, never from the body
+    isActive: true,
+    isDeleted: false,
+  });
+  return loadDetail(String(created._id));
+};
+
+const updateSkiPass = async (
   id: string,
   user: JwtPayload,
-  payload: Partial<IReview>,
+  body: Record<string, any>,
+  file?: Express.Multer.File,
 ) => {
-  // Verify user exists
-  const isExistsUser = await User.findOne({ email: user?.email });
-  if (!isExistsUser) {
-    throw new AppError(
-      StatusCodes.NOT_FOUND,
-      'You cannot view this data because your account was not found.',
-    );
-  }
+  const listing = await findListingOr404(SkiPass, id, LABEL);
+  assertListingOwner(listing, user);
 
-  // Ensure user role is 'User'
-  if (isExistsUser?.role !== 'User') {
-    throw new AppError(
-      StatusCodes.FORBIDDEN,
-      'You cannot add a review because your account is not a user.',
-    );
-  }
+  const update = pickDefined(body, UPDATE_FIELDS);
+  const thumbnail = await uploadThumbnail(file);
+  if (thumbnail) update.thumbnail = thumbnail;
 
-  // Find the SkiPass product
-  const skiPass = await SkiPass.findById(id);
-  if (!skiPass) {
-    throw new AppError(StatusCodes.NOT_FOUND, 'Ski pass not found');
-  }
-
-  //  (Optional) Prevent duplicate reviews by the same user
-  const alreadyReviewed =
-    skiPass.reviews?.some(
-      review => review.userId.toString() === isExistsUser._id.toString(),
-    ) || false;
-  if (alreadyReviewed) {
-    throw new AppError(
-      StatusCodes.BAD_REQUEST,
-      'You have already reviewed this ski pass.',
-    );
-  }
-
-  // Push new review
-  const newReview = {
-    userId: isExistsUser?._id,
-    rating: payload?.rating,
-    comment: payload?.comment,
-    createdAt: new Date(),
-  };
-
-  if (!Array.isArray(skiPass.reviews)) {
-    skiPass.reviews = [];
-  }
-
-  skiPass.reviews.push(newReview as IReview);
-
-  // Recalculate average rating
-  const total = skiPass.reviews.reduce(
-    (sum: number, r: IReview) => sum + (r.rating || 0),
-    0,
-  );
-  skiPass.averageRating = skiPass.reviews.length
-    ? parseFloat((total / skiPass.reviews.length).toFixed(1))
-    : 0;
-
-  // Save updated SkiPass
-  await skiPass.save({ validateModifiedOnly: true });
-
-  return skiPass;
+  if (Object.keys(update).length)
+    await SkiPass.updateOne({ _id: listing._id }, { $set: update }, { runValidators: true });
+  return loadDetail(id);
 };
 
-const updateSkiPassIntoDB = async (req: Request) => {
-  const { id: skiPassId } = req.params;
-  const user = req.user as JwtPayload;
-
-  const isExistsSkiPass = await SkiPass.findById(skiPassId);
-  if (!isExistsSkiPass) {
-    throw new AppError(StatusCodes.NOT_FOUND, 'Ski pass not found.');
-  }
-
-  const isExistsUser = await User.findOne({ email: user?.email });
-  if (!isExistsUser) {
-    throw new AppError(
-      StatusCodes.NOT_FOUND,
-      'You cannot view this data because your account was not found.',
-    );
-  }
-
-  // Check provider role & type
-  if (
-    isExistsUser?.role !== 'Provider' ||
-    isExistsUser?.providerType !== 'Ski_Pass'
-  ) {
-    throw new AppError(
-      StatusCodes.FORBIDDEN,
-      'You are not authorized to update this restaurant service.',
-    );
-  }
-
-  if (isExistsSkiPass?.owner?.toString() !== isExistsUser._id.toString()) {
-    throw new AppError(
-      StatusCodes.FORBIDDEN,
-      'You are not the owner of this product. Cannot update booking status.',
-    );
-  }
-
-  if (req.file) {
-    const fileUrl = await s3Services.uploadSingleFileToS3(
-      req.file,
-      USER_UPLOADS_FOLDER,
-    );
-    req.body.thumbnail = fileUrl;
-  }
-  //  else {
-  //   throw new AppError(StatusCodes.BAD_REQUEST, 'Thumbnail file not found.');
-  // }
-
-  const updateData = req?.body;
-
-  const result = await SkiPass.findByIdAndUpdate(
-    skiPassId,
-    { $set: updateData },
-    { new: true },
-  );
-
-  return result;
+const setSkiPassStatus = async (id: string, user: JwtPayload, isActive: unknown) => {
+  const listing = await findListingOr404(SkiPass, id, LABEL);
+  assertListingOwner(listing, user);
+  return setListingActive(SkiPass, listing, isActive);
 };
 
-const deleteSkiPassIntoDB = async (id: string, user: JwtPayload) => {
-  const isExistsUser = await User.findOne({ email: user?.email });
-  if (!isExistsUser) {
-    throw new AppError(
-      StatusCodes.NOT_FOUND,
-      'You cannot view this data because your account was not found.',
-    );
-  }
-
-  const skiPass = await SkiPass.findById(id);
-  if (!skiPass) {
-    throw new AppError(StatusCodes.NOT_FOUND, 'Ski pass not found.');
-  }
-
-  if (skiPass?.owner.toString() !== isExistsUser._id.toString()) {
-    throw new AppError(
-      StatusCodes.FORBIDDEN,
-      'You are not authorized to delete this ski pass.',
-    );
-  }
-
-  const result = await SkiPass.findByIdAndDelete(id);
-  return result;
+const deleteSkiPass = async (id: string, user: JwtPayload) => {
+  const listing = await findListingOr404(SkiPass, id, LABEL);
+  assertListingOwner(listing, user);
+  return softDeleteListing(SkiPass, listing);
 };
+
+const reviewSkiPass = (id: string, user: JwtPayload, body: Record<string, any>) =>
+  addListingReview(SkiPass, id, user, { rating: body?.rating, comment: body?.comment });
 
 export const SkiPassService = {
-  getAllSkiPassFromDB,
-  getAllMySkiPassFromDB,
-  addSkiPassIntoDB,
+  browseSkiPasses,
+  getMySkiPasses,
+  getSkiPass,
+  getSkiPassReviews,
+  createSkiPass,
+  updateSkiPass,
+  setSkiPassStatus,
+  deleteSkiPass,
   reviewSkiPass,
-  getSingleSkipPassFromDB,
-  updateSkiPassIntoDB,
-  deleteSkiPassIntoDB,
 };

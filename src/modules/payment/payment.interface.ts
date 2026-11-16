@@ -5,6 +5,7 @@ export enum TransactionStatus {
   PAID = 'Paid',
   UNPAID = 'Unpaid',
   REFUNDED = 'Refunded',
+  PARTIALLY_REFUNDED = 'Partially_Refunded',
 }
 
 export enum PaymentGateway {
@@ -23,6 +24,9 @@ export interface IPayment {
 
   transactionId: string;
   sessionId?: string;
+  purpose?: 'booking' | 'late_fee';
+  refundedAmount?: number;
+  refundedAt?: Date;
 
   status: TransactionStatus;
 

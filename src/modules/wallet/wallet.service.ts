@@ -1,215 +1,128 @@
-import { Types } from 'mongoose';
-import { Wallet } from './wallet.model';
-import { User } from './../user/user.model';
-import AppError from './../../errors/AppErro';
+/**
+ * Wallet endpoints.
+ *  - Provider wallet: what the platform owes the provider (earnings after the
+ *    platform fee, minus withdrawals).
+ *  - Admin wallet: the platform's fees.
+ *  - profitCharge: platform fee % (set by the admin, stored on admin wallets).
+ * Balance changes for bookings happen only in wallet/ledger.ts.
+ */
 import { StatusCodes } from 'http-status-codes';
-import { config } from './../../config/index';
-import { IWalletAccount } from './wallet.interface';
 import { JwtPayload } from 'jsonwebtoken';
-import { WalletTransactionType } from './wallet.interface';
+import AppError from '../../errors/AppErro';
+import { Wallet } from './wallet.model';
+import { User } from '../user/user.model';
+import { Booking } from '../booking/booking.model';
+import { Withdraw } from '../withdraw/withdraw.model';
+import { getPlatformFeePercent } from '../../utils/platformFee';
 
-export const updateOrCreateWallet = async (
-  ownerId: string, // provider
-  senderId: string, // customer
-  amount: number,
-) => {
-  // Find admin user
-  const admin = await User.findOne({ role: 'Admin' });
-  if (!admin) {
-    throw new AppError(StatusCodes.NOT_FOUND, 'Admin user not found');
-  }
+const round2 = (n: number) => Math.round((Number(n) || 0) * 100) / 100;
+const mask = (card: unknown) => {
+  const last4 = String(card ?? '').slice(-4);
+  return last4 ? `•••• ${last4}` : '';
+};
 
-  // Calculate profit (20%)
-  // const profitPercent = config.adminPayment.profit || 20;
-  // const profitRate = profitPercent / 100;
-  // const profitAmount = amount * profitRate;
-  // const mainAmount = amount - profitAmount;
+const toAccount = (a: any) => ({
+  id: a?._id ? String(a._id) : undefined,
+  accountType: a?.accountType,
+  cardHolderName: a?.cardHolderName,
+  card: mask(a?.cardNumber),
+  createdAt: a?.createdAt,
+});
 
-  //  Update or create admin wallet
-  let adminWallet = await Wallet.findOne({ user: admin._id });
+const walletOf = async (userId: string) => {
+  const wallet: any = await Wallet.findOne({ user: userId }).select('-transactions -__v').lean();
+  if (wallet) return wallet;
+  // every user should have one (created at sign-up); create it if missing
+  return (await Wallet.create({ user: userId, balance: 0 })).toObject();
+};
 
-  await Wallet.findOneAndUpdate(
-    { user: admin._id },
+/** PATCH /wallet/update-profit { profit } (admin): platform fee % */
+const updateProfit = async (_user: JwtPayload, profit: unknown) => {
+  const percent = Number(profit);
+  if (!Number.isFinite(percent) || percent < 0 || percent > 100)
+    throw new AppError(StatusCodes.BAD_REQUEST, 'profit must be a percentage between 0 and 100.');
+  const admins = await User.find({ role: 'Admin' }).select('_id').lean();
+  if (!admins.length) throw new AppError(StatusCodes.NOT_FOUND, 'Admin user not found.');
+  for (const a of admins)
+    await Wallet.updateOne({ user: a._id }, { $set: { profitCharge: percent } }, { upsert: true });
+  return { platformFeePercent: percent };
+};
+
+/** POST /wallet/add: save a payout account (provider) */
+const addWallet = async (user: JwtPayload, payload: any) => {
+  const cardNumber = String(payload?.cardNumber ?? '').replace(/\s+/g, '');
+  if (!/^\d{4,34}$/.test(cardNumber))
+    throw new AppError(StatusCodes.BAD_REQUEST, 'cardNumber must contain digits only.');
+  const wallet: any = await walletOf(String(user.userId));
+  if ((wallet.walletAccounts || []).some((a: any) => String(a.cardNumber) === cardNumber))
+    throw new AppError(StatusCodes.CONFLICT, 'This payout account already exists.');
+  await Wallet.updateOne(
+    { _id: wallet._id },
     {
-      $inc: { balance: amount },
       $push: {
-        transactions: {
-          user: new Types.ObjectId(senderId),
-          balance: amount,
-          type: WalletTransactionType.EARN,
+        walletAccounts: {
+          accountType: String(payload.accountType || 'Card'),
+          cardNumber: Number(cardNumber),
+          cardHolderName: String(payload.cardHolderName || ''),
           createdAt: new Date(),
         },
       },
     },
-    { upsert: true, new: true },
   );
-
-  // if (!adminWallet) {
-  //   adminWallet = await Wallet.create({
-  //     user: admin._id,
-  //     balance: amount,
-  //     transactions: [
-  //       {
-  //         user: new Types.ObjectId(senderId),
-  //         balance: amount,
-  //         createdAt: new Date(),
-  //       },
-  //     ],
-  //   });
-  // } else {
-  //   adminWallet.balance += amount;
-  //   adminWallet.transactions.push({
-  //     user: new Types.ObjectId(senderId),
-  //     balance: amount,
-  //     createdAt: new Date(),
-  //   });
-  //   await adminWallet.save();
-  // }
-
-  // Update or create provider wallet
-  let providerWallet = await Wallet.findOne({ user: ownerId });
-
-  if (!providerWallet) {
-    providerWallet = await Wallet.create({
-      user: new Types.ObjectId(ownerId),
-      balance: amount,
-      transactions: [
-        {
-          user: new Types.ObjectId(senderId),
-          balance: amount,
-          type: WalletTransactionType.EARN,
-          createdAt: new Date(),
-        },
-      ],
-    });
-  } else {
-    providerWallet.balance += amount;
-    providerWallet.transactions.push({
-      user: new Types.ObjectId(senderId),
-      balance: amount,
-      type: WalletTransactionType.EARN,
-      createdAt: new Date(),
-    });
-    await providerWallet.save();
-  }
-
-  return { adminWallet, providerWallet };
+  return getMyWalletAccount(user);
 };
 
-const updateProfit = async (user: JwtPayload, payload: number) => {
-  const isExistsAdmin = await User.findOne({ role: user?.role });
-  if (!isExistsAdmin) {
-    throw new AppError(StatusCodes.NOT_FOUND, 'Admin user not found');
-  }
-
-  const adminWallet = await Wallet.findOne({ user: isExistsAdmin._id });
-  if (!adminWallet) {
-    throw new AppError(StatusCodes.NOT_FOUND, 'Admin wallet not found');
-  }
-
-  await Wallet.updateMany({}, { $set: { profitCharge: payload } });
-
-  return { messaga: 'success' };
-};
-
-const addWallet = async (user: JwtPayload, payload: IWalletAccount) => {
- 
-  const isExistsProvider = await User.findById(user?.userId); 
-  if (!isExistsProvider) {
-    throw new AppError(StatusCodes.NOT_FOUND, 'Provider user not found');
-  }
-
-  // Find the wallet
-  let wallet = await Wallet.findOne({ user: isExistsProvider?._id }).select(
-    '-transactions -__v',
-  );
-  // let wallet = await Wallet.findOne({ user: user._id });
-
-  if (!wallet) {
-    throw new AppError(StatusCodes.NOT_FOUND, 'Wallet not found');
-  }
-  const selectedAccount = wallet?.walletAccounts.find(
-    acc => acc?.cardNumber.toString() === payload?.cardNumber.toString(),
-  );
-
-  if (selectedAccount) {
-    throw new AppError(
-      StatusCodes.BAD_REQUEST,
-      'This Wallet account already exists',
-    );
-  }
-
-  // Add the new wallet account
-  wallet.walletAccounts.push({
-    accountType: payload.accountType,
-    cardNumber: payload.cardNumber,
-    cardHolderName: payload.cardHolderName,
-  });
-
-  // Save the wallet
-  await wallet.save();
-
-  console.log('Updated Wallet:', wallet);
-
-  return wallet;
-};
-
+/** GET /wallet/get-my-account: balance + payout accounts (masked) */
 const getMyWalletAccount = async (user: JwtPayload) => {
-  console.log('User:', user);
-  const isExistsProvider = await User.findById(user?.userId);
-
-  if (!isExistsProvider) {
-    throw new AppError(StatusCodes.NOT_FOUND, 'Provider user not found');
-  }
-
-  const wallet = await Wallet.findOne({ user: new Types.ObjectId(user.userId) })
-    .select('-transactions -__v')
-    .lean();
-
-  if (!wallet) {
-    throw new AppError(StatusCodes.NOT_FOUND, 'Wallet not found');
-  }
-
-  const sortedAccounts = (wallet.walletAccounts || []).sort(
-    (a: any, b: any) =>
-      new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime(),
+  const wallet: any = await walletOf(String(user.userId));
+  const accounts = [...(wallet.walletAccounts || [])].sort(
+    (a: any, b: any) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime(),
   );
-
-  return {
-    ...wallet,
-  };
+  return { balance: round2(wallet.balance), accounts: accounts.map(toAccount) };
 };
 
+/** GET /wallet/get-balance */
 const getBalanceById = async (user: JwtPayload) => {
-  const isExistsUser = await User.findOne({ email: user?.email });
-  if (!isExistsUser) {
-    throw new AppError(StatusCodes.NOT_FOUND, 'User not found');
-  }
-
-  const result = await Wallet.findOne({ user: isExistsUser?._id });
-
-  return result;
+  const wallet: any = await walletOf(String(user.userId));
+  return { balance: round2(wallet.balance) };
 };
 
-const getWalletSummary = async (user: JwtPayload) => {
-  const isExistsUser = await User.findOne({ email: user?.email });
-  if (!isExistsUser) {
-    throw new AppError(StatusCodes.NOT_FOUND, 'User not found');
-  }
-
-  const wallet = await Wallet.findOne({ user: isExistsUser._id }).select(
-    '-transactions -__v',
-  );
-
-  if (!wallet) {
-    throw new AppError(StatusCodes.NOT_FOUND, 'Wallet not found');
-  }
-  const totalIncome = wallet.balance + wallet?.profitCharge;
-
+/** GET /wallet/get-summary (admin): platform money overview */
+const getWalletSummary = async (_user: JwtPayload) => {
+  const admins = await User.find({ role: 'Admin' }).select('_id').lean();
+  const adminIds = admins.map(a => a._id);
+  const [adminWallets, providerOwed, fees, pending, paid] = await Promise.all([
+    Wallet.find({ user: { $in: adminIds } }).select('balance').lean(),
+    Wallet.aggregate([
+      { $match: { user: { $nin: adminIds } } },
+      { $group: { _id: null, total: { $sum: '$balance' } } },
+    ]),
+    Booking.aggregate([
+      {
+        $group: {
+          _id: null,
+          bookingFees: { $sum: { $ifNull: ['$platformFee', 0] } },
+          lateFees: { $sum: { $ifNull: ['$lateFee.platformFee', 0] } },
+          held: {
+            $sum: {
+              $cond: [{ $eq: ['$providerPayout', 'held'] }, { $ifNull: ['$totalPrice', 0] }, 0],
+            },
+          },
+        },
+      },
+    ]),
+    Withdraw.aggregate([{ $match: { status: 'Pending' } }, { $group: { _id: null, total: { $sum: '$amount' } } }]),
+    Withdraw.aggregate([{ $match: { status: 'Paid' } }, { $group: { _id: null, total: { $sum: '$amount' } } }]),
+  ]);
+  const f = fees[0] || {};
   return {
-    totalIncome,
-    totalBalance: wallet?.balance,
-    profit: wallet?.profitCharge,
+    platformFeePercent: await getPlatformFeePercent(),
+    platformBalance: round2(adminWallets.reduce((s: number, w: any) => s + (Number(w.balance) || 0), 0)),
+    platformFeesEarned: round2((f.bookingFees || 0) + (f.lateFees || 0)),
+    providerBalances: round2(providerOwed[0]?.total || 0),
+    heldForUpcomingBookings: round2(f.held || 0),
+    pendingWithdrawals: round2(pending[0]?.total || 0),
+    paidWithdrawals: round2(paid[0]?.total || 0),
   };
 };
 
@@ -220,3 +133,5 @@ export const WalletService = {
   getBalanceById,
   getWalletSummary,
 };
+
+

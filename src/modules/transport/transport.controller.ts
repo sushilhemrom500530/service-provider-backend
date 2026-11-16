@@ -1,97 +1,63 @@
-import { StatusCodes } from 'http-status-codes'; 
-import { Request, Response } from 'express'; 
-import { JwtPayload } from 'jsonwebtoken'; 
+import { StatusCodes } from 'http-status-codes';
+import { Request, Response } from 'express';
+import { JwtPayload } from 'jsonwebtoken';
 import catchAsync from './../../shared/catchAsync';
-import sendResponse from './../../shared/sendResponse';  
-import { IReview } from './../common/common.interface'; 
+import sendResponse from './../../shared/sendResponse';
 import { TransportService } from './transport.service';
 
-
-const getAllTransportFromDB = catchAsync(async (req: Request, res: Response) => {
-  const user = req.user as JwtPayload;
-  const result = await TransportService.getAllTransportFromDB(user, req.query as any)
-  sendResponse(res, {
-    code: StatusCodes.OK,
-    message: 'Transport fetched successfully.',
-    data: result,
-  });
+const browse = catchAsync(async (req: Request, res: Response) => {
+  const { data, meta } = await TransportService.browse(req.query as any);
+  sendResponse(res, { code: StatusCodes.OK, message: 'Transport listings fetched.', data, meta });
 });
 
-
-const getAllMyTransportFromDB = catchAsync(async (req: Request, res: Response) => {
-  const user = req.user as JwtPayload;
-  const result = await TransportService.getAllMyTransportFromDB(user, req.query as any)
-  sendResponse(res, {
-    code: StatusCodes.OK,
-    message: 'Transport fetched successfully.',
-    data: result,
-  });
-});
- 
-const getSingleTransportFromDB = catchAsync(async (req: Request, res: Response) => {
-  const id = req.params.id;
-  const user = req.user as JwtPayload;
-  
-  const result = await TransportService.getSingleTransportFromDB(id, user)
-  sendResponse(res, {
-    code: StatusCodes.OK,
-    message: 'Transport fetched successfully',
-    data: result,
-  });
-});
- 
- 
-const addTransportIntoDB = catchAsync(async (req: Request, res: Response) => {
-  const result = await TransportService.addTransportIntoDB(req)
-  sendResponse(res, {
-    code: 201,
-    message: 'Transport added successfully',
-    data: result,
-  });
+const myListings = catchAsync(async (req: Request, res: Response) => {
+  const { data, meta } = await TransportService.myListings(req.user as JwtPayload, req.query as any);
+  sendResponse(res, { code: StatusCodes.OK, message: 'Your transport listings fetched.', data, meta });
 });
 
-
-const reviewTransport = catchAsync(async (req: Request, res: Response) => {
-  const user = req.user as JwtPayload;
-  const id = req.params.id;
-  const reviewData = req.body;
-  const result = await TransportService.reviewTransport(id as string, user, reviewData as IReview)
-  sendResponse(res, {
-    code: StatusCodes.OK,
-    message: 'Review successfully',
-    data: result,
-  });
-});
- 
-const updateTransportIntoDB = catchAsync(async (req: Request, res: Response) => {
-  const result = await TransportService.updateTransportIntoDB(req)
-  sendResponse(res, {
-    code: StatusCodes.OK,
-    message: 'Transport updated successfully',
-    data: result,
-  });
+const getById = catchAsync(async (req: Request, res: Response) => {
+  const data = await TransportService.getById(String(req.params.id));
+  sendResponse(res, { code: StatusCodes.OK, message: 'Transport fetched.', data });
 });
 
-
-const deleteTransportIntoDB = catchAsync(async (req: Request, res: Response) => {
-  const id = req.params.id;
-  const user = req.user as JwtPayload;
-  const result = await TransportService.deleteTransportIntoDB(id, user)
-  sendResponse(res, {
-    code: StatusCodes.OK,
-    message: 'Transport added successfully',
-    data: result,
-  });
+const getReviews = catchAsync(async (req: Request, res: Response) => {
+  const { data, meta, rating } = await TransportService.getReviews(String(req.params.id), req.query as any);
+  res.status(StatusCodes.OK).json({ success: true, message: 'Reviews fetched.', data, meta, rating });
 });
 
- 
+const create = catchAsync(async (req: Request, res: Response) => {
+  const data = await TransportService.create(req);
+  sendResponse(res, { code: StatusCodes.CREATED, message: 'Transport created.', data });
+});
+
+const update = catchAsync(async (req: Request, res: Response) => {
+  const data = await TransportService.update(req);
+  sendResponse(res, { code: StatusCodes.OK, message: 'Transport updated.', data });
+});
+
+const setStatus = catchAsync(async (req: Request, res: Response) => {
+  const data = await TransportService.setStatus(req);
+  sendResponse(res, { code: StatusCodes.OK, message: 'Transport status updated.', data });
+});
+
+const remove = catchAsync(async (req: Request, res: Response) => {
+  const data = await TransportService.remove(String(req.params.id), req.user as JwtPayload);
+  sendResponse(res, { code: StatusCodes.OK, message: 'Transport deleted.', data });
+});
+
+const review = catchAsync(async (req: Request, res: Response) => {
+  const data = await TransportService.review(String(req.params.id), req.user as JwtPayload, req.body);
+  sendResponse(res, { code: StatusCodes.CREATED, message: 'Review added.', data });
+});
 
 export const TransportController = {
-  getAllTransportFromDB,
-  getAllMyTransportFromDB,
-  getSingleTransportFromDB,
-  addTransportIntoDB,
-  reviewTransport,
-  updateTransportIntoDB,
-  deleteTransportIntoDB, 
+  browse,
+  myListings,
+  getById,
+  getReviews,
+  create,
+  update,
+  setStatus,
+  remove,
+  review,
 };
