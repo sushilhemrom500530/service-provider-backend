@@ -782,13 +782,36 @@ export const updateSkiHireIntoDB = async (req: Request) => {
           );
         }
 
+        // ---- QUANTITY: keep units that are already booked ----
+        // existing item: available = old available + (new total - old total)
+        // e.g. total 10, 3 booked (available 7), edited to 12 -> available 9
+        const existing: any = item?._id
+          ? isExistsSkiHire.items?.find(
+              (i: any) => i._id?.toString() === item._id?.toString(),
+            )
+          : null;
+
+        const newTotalQty =
+          item.quantity !== undefined && item.quantity !== null && item.quantity !== ''
+            ? Number(item.quantity)
+            : Number(existing?.totalQty ?? 0);
+
+        let newAvailableQty = newTotalQty;
+        if (existing) {
+          const oldTotalQty = Number(existing.totalQty) || 0;
+          const oldAvailableQty = Number(existing.availableQty ?? oldTotalQty);
+          newAvailableQty = oldAvailableQty + (newTotalQty - oldTotalQty);
+        }
+        // never below 0 or above the total
+        newAvailableQty = Math.min(Math.max(newAvailableQty, 0), newTotalQty);
+
         return {
           _id: item._id,
           productName: item.productName,
           productPhoto,
           price: Number(item.price),
-          totalQty: Number(item.quantity),
-          availableQty: Number(item.quantity),
+          totalQty: newTotalQty,
+          availableQty: newAvailableQty,
         };
       }),
     );

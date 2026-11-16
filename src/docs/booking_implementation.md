@@ -483,3 +483,34 @@ Some user records have `fullName: "N/A"` and the real name in a field called `" 
 | Roll the leaked Stripe secret key; put the new `sk_test_` only in the server `.env`, and `pk_test_` in `STRIPE_PUBLISHABLE_KEY` | Stripe account owner |
 | Run `npm run fix:owner-names -- --apply` and `npm run fix:phone-numbers -- --apply` on the database | Backend, after a dry run |
 | Correct existing restaurant slots (e.g. Durbin) | Restaurant owner / admin |
+
+## Editing a Ski Hire listing keeps booked stock
+
+> **Update:** `PATCH` Ski Hire update used to set `availableQty` back to the full `quantity` on every edit, so equipment already booked could be booked again.
+
+Now, for an item that already exists (matched by its `_id`):
+
+```
+new availableQty = old availableQty + (new quantity - old quantity)
+```
+
+kept between 0 and the new total. Example: total 10, 3 booked (available 7). Edit to 12 → available 9. Edit to 5 → available 2. Edit to 2 → available 0.
+
+A new item (no `_id`) starts with `availableQty = quantity`. If `quantity` is not sent for an item, its old total is kept. **Send each existing item's `_id` when editing**; an item without `_id` is treated as new.
+
+## Platform fee (profitCharge)
+
+> **Update:** the fee was only taken when an admin approved a withdrawal, so the provider wallet always showed the full booking price.
+
+The fee percentage is the admin wallet's `profitCharge` (set from the admin panel; currently 20%). It is now taken **when the provider earns the money**:
+
+| When | Provider wallet gets | Saved on the booking |
+| --- | --- | --- |
+| Booking completed (payout released) | price − fee (€175 at 20% → €140) | `platformFee: 35`, `providerEarning: 140` |
+| Customer cancels a held booking | 10% kept − fee (€17.50 → €14) | `platformFee`, `providerEarning` |
+| Paid at payment (only if `HOLD_PROVIDER_PAYOUT_UNTIL_COMPLETION = false`) | price − fee | `platformFee`, `providerEarning` |
+| Reject / expiry of an already-paid booking | `providerEarning` is taken back (not the full price) | |
+
+**Withdrawals no longer take the fee again**: the admin pays out the full requested amount. Code: `src/utils/platformFee.ts` (`PLATFORM_FEE_ON_EARNING = true`). Setting it to `false` goes back to the old rule (fee only at withdrawal).
+
+> Money already in provider wallets from before this change was credited without the fee, and is now withdrawn without it.

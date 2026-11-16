@@ -120,6 +120,10 @@ const bookingSchema = new Schema<IBooking>(
       type: String,
       enum: ['held', 'paid', 'reversed'],
     },
+    // platform fee (admin profitCharge %) taken when the provider was paid,
+    // and what the provider actually received
+    platformFee: { type: Number },
+    providerEarning: { type: Number },
   },
   {
     timestamps: true,

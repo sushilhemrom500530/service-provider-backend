@@ -70,6 +70,8 @@ export interface IBooking extends Document {
   cancelledBy?: 'user' | 'provider' | 'admin' | 'system';
   cancelReason?: string;
   providerPayout?: 'held' | 'paid' | 'reversed';
+  platformFee?: number;
+  providerEarning?: number;
 
   createdAt?: Date;
   updatedAt?: Date;

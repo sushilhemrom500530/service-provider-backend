@@ -9,6 +9,7 @@ import { WalletTransactionType } from './../wallet/wallet.interface';
 import { Withdraw } from './withdraw.model';
 import { IWithdraw } from './withdraw.inteface';
 import { Notification } from './../notification/notification.model';
+import { PLATFORM_FEE_ON_EARNING } from './../../utils/platformFee';
 
 const getAllFromDB = async (query: any) => {
   const page = Number(query.page) || 1;
@@ -175,7 +176,11 @@ const acceptWithdrawRequest = async (
     throw new AppError(StatusCodes.NOT_FOUND, 'Provider wallet not found');
   }
   // Calculate profit and withdrawal amount
-  const profitRate: number = (adminWallet?.profitCharge || 0) / 100;
+  // the platform fee is now taken when the provider earns the money
+  // (utils/platformFee), so it is not taken again here
+  const profitRate: number = PLATFORM_FEE_ON_EARNING
+    ? 0
+    : (adminWallet?.profitCharge || 0) / 100;
   const profitAmount: number = withdraw.amount * profitRate;
   const withdrawalAmount: number = withdraw.amount - profitAmount;
 

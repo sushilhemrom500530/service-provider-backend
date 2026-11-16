@@ -25,6 +25,7 @@ import { IRefund } from '../common/common.interface';
 import { isPastDate } from './../../utils/isPassTimeCheck';
 import { Payment } from './../payment/payment.model';
 import { generateTransactionId } from './../../utils/generateTransactionId';
+import { splitPlatformFee } from './../../utils/platformFee';
 import { Notification } from './../notification/notification.model';
 import { Category } from './../category/category.model';
 import {
@@ -1989,13 +1990,19 @@ const createBookingAfterPayment = async (user: JwtPayload, payload: any) => {
     ? null
     : await Wallet.findOne({ user: productOwner?._id });
   if (wallet) {
-    wallet.balance += totalPrice;
+    // provider gets the price minus the platform fee (admin profitCharge %)
+    const { fee, net } = await splitPlatformFee(totalPrice);
+    wallet.balance += net;
     wallet.transactions.push({
       user: productOwner._id,
-      balance: totalPrice,
+      balance: net,
       type: WalletTransactionType.EARN,
     });
     await wallet.save();
+    await Booking.updateOne(
+      { _id: newBooking._id },
+      { $set: { platformFee: fee, providerEarning: net } },
+    );
   }
 
   // IPayment
@@ -2182,7 +2189,11 @@ const reverseProviderPayout = async (booking: any, ownerId?: string) => {
 
   if (booking.providerPayout !== 'held' && ownerId) {
     const ownerWallet = await Wallet.findOne({ user: ownerId });
-    const amount = Number(booking.totalPrice) || 0;
+    // take back only what the provider actually received (after the fee)
+    const amount =
+      booking.providerEarning !== undefined && booking.providerEarning !== null
+        ? Number(booking.providerEarning) || 0
+        : Number(booking.totalPrice) || 0;
     if (ownerWallet && amount > 0) {
       ownerWallet.balance -= amount;
       ownerWallet.transactions.push({
@@ -2299,13 +2310,19 @@ const releaseProviderPayout = async (bookingId: any) => {
     return;
   }
 
-  wallet.balance += amount;
+  // provider gets the price minus the platform fee (admin profitCharge %)
+  const { fee, net } = await splitPlatformFee(amount);
+  wallet.balance += net;
   wallet.transactions.push({
     user: ownerId,
-    balance: amount,
+    balance: net,
     type: WalletTransactionType.EARN,
   });
   await wallet.save();
+  await Booking.updateOne(
+    { _id: booking._id },
+    { $set: { platformFee: fee, providerEarning: net } },
+  );
 };
 
 // PATCH /booking/reject/:id — provider declines a booking
@@ -2731,9 +2748,12 @@ const refundBookingIntoDB = async (
   if (existsBooking.providerPayout === 'held') {
     // provider was never credited (payout held until completion):
     // give the provider only the kept 10% instead of taking 90% back
-    const providerShare = Number(
+    const keptShare = Number(
       (existsBooking.totalPrice - finalRefund).toFixed(2),
     );
+    // platform fee applies to the kept 10% as well
+    const { fee: keptFee, net: providerShare } =
+      await splitPlatformFee(keptShare);
     ownerWallet.balance += providerShare;
     ownerWallet.transactions.push({
       user: isExistsUser._id,
@@ -2743,7 +2763,15 @@ const refundBookingIntoDB = async (
     await ownerWallet.save();
     await Booking.updateOne(
       { _id: existsBooking._id },
-      { $set: { providerPayout: 'paid', cancelledBy: 'user', cancelReason: payload?.reason } },
+      {
+        $set: {
+          providerPayout: 'paid',
+          cancelledBy: 'user',
+          cancelReason: payload?.reason,
+          platformFee: keptFee,
+          providerEarning: providerShare,
+        },
+      },
     );
   } else {
     // decrease balance
