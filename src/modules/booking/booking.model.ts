@@ -77,6 +77,9 @@ const bookingSchema = new Schema<IBooking>(
       type: Number,
       required: true,
     },
+    // platform service fee included in totalPrice (Restaurant). It is
+    // platform money: never part of the provider's earning.
+    serviceFee: { type: Number, min: 0 },
 
     phoneNumber: {
       type: String,
@@ -114,6 +117,24 @@ const bookingSchema = new Schema<IBooking>(
       enum: ['user', 'provider', 'admin', 'system'],
     },
     cancelReason: { type: String },
+    // a cancellation whose refund is not finished yet: written in the same
+    // update that cancels, cleared when the refund and payout are settled.
+    // If the server stops in between, the job finishes it (settleCancellation)
+    pendingRefund: {
+      type: new Schema(
+        {
+          amount: { type: Number, required: true }, // refund for this cancellation
+          target: { type: Number, required: true }, // payment.refundedAmount when done
+          kept: { type: Number, default: 0 }, // part the provider keeps (late customer cancel)
+          percent: { type: Number, default: 100 }, // shown in the notification
+          kind: { type: String, enum: ['customer', 'full'], required: true },
+          startedAt: { type: Date, required: true },
+          claimedAt: { type: Date },
+        },
+        { _id: false },
+      ),
+      default: undefined,
+    },
     // provider money: held until the booking is completed
     // (empty on old bookings = paid to the provider at payment time)
     providerPayout: {

@@ -4,6 +4,7 @@ import { IUser, UserStatus, IUpdateData, UserModel } from './user.interface';
 import { User } from './user.model';
 import { IPaginationOptions, IPaginationResult } from '../../types/pagination';
 import { JwtPayload } from 'jsonwebtoken';
+import { deleteMyAccount } from './accountDeletion.service';
 
 const getAllUsers = async (
   filters: Record<string, any>,
@@ -105,14 +106,8 @@ const updateMyProfile = async (
 };
 
 //  Delete My Profile
-const deleteMyProfile = async (userId: string): Promise<IUser | null> => {
-  const user = await User.findById(userId);
-  if (!user) {
-    throw new AppError(StatusCodes.NOT_FOUND, 'User not found.');
-  }
-  const result = await User.findByIdAndDelete(userId);
-  return result;
-};
+// the logged-in user deletes their own account (see accountDeletion.service.ts)
+const deleteMyProfile = (userId: string) => deleteMyAccount(userId);
 
 export const UserService = {
   getAllUsers,

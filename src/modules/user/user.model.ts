@@ -62,6 +62,8 @@ const userSchema = new Schema<IUser>(
       default: 'Provider',
     },
     isDeleted: { type: Boolean, default: false },
+    // set when the user deleted their account (the record is anonymised)
+    deletedAt: { type: Date },
     isAgreedTermsConditions: { type: Boolean, default: false },
     isResetPassword: { type: Boolean, default: false },
     banExpiresAt: { type: Date },

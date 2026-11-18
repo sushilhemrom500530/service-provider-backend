@@ -21,6 +21,8 @@ export const POLICY = {
   LATE_FEE_GRACE_MINUTES: 15,
   /** rentals handed over and never returned: auto-closed after this */
   OVERDUE_AUTO_RETURN_HOURS: 48,
+  /** most people on one Ski Pass booking (the app shows "Up to 10 per booking") */
+  SKI_PASS_MAX_PEOPLE: 10,
 };
 
 export const RENTAL_CATEGORIES = ['Ski_Hire', 'Transport'];
@@ -63,6 +65,39 @@ export const atLocal = (dayKey: string, minutes: number) =>
 export const startOfLocalDay = (dayKey: string) => atLocal(dayKey, 0);
 export const endOfLocalDay = (dayKey: string) =>
   moment.tz(dayKey, 'YYYY-MM-DD', TZ()).endOf('day').toDate();
+
+/** Date -> "Tue 17 Nov, 4:13 AM CET" in the resort zone (for notification texts) */
+export const formatLocalDateTime = (value: unknown): string | null => {
+  if (!value) return null;
+  const d = new Date(value as any);
+  if (isNaN(d.getTime())) return null;
+  return moment(d).tz(TZ()).format('ddd D MMM, h:mm A z');
+};
+
+/** Money for texts in the booking currency: 45 -> "€45.00", 378.5 -> "€378.50" */
+export const formatMoney = (amount: unknown, currency: string = config.stripe?.currency || 'eur'): string => {
+  const n = round2(Number(amount) || 0);
+  const code = String(currency || 'eur').toUpperCase();
+  try {
+    return new Intl.NumberFormat('en-GB', {
+      style: 'currency',
+      currency: code,
+      minimumFractionDigits: 2,
+      maximumFractionDigits: 2,
+    }).format(n);
+  } catch {
+    return `${n.toFixed(2)} ${code}`; // unknown currency code
+  }
+};
+
+/** A delay for texts: 15 -> "15 min", 60 -> "1 h", 75 -> "1 h 15 min" */
+export const formatMinutes = (minutes: unknown): string => {
+  const total = Math.max(0, Math.round(Number(minutes) || 0));
+  const h = Math.floor(total / 60);
+  const m = total % 60;
+  if (!h) return `${m} min`;
+  return m ? `${h} h ${m} min` : `${h} h`;
+};
 
 /** "60 min", "60", "1h", "1 hour 30 min", "90min" -> minutes (or null) */
 export const durationToMinutes = (value: unknown): number | null => {
@@ -175,6 +210,19 @@ export const computeApprovalDeadline = (startAt: Date | null, now = new Date()) 
   return limit;
 };
 
+/**
+ * When a booking takes place, for notification texts (resort time zone):
+ *  Ski Pass (whole day)      -> "Tue 17 Nov"
+ *  others (a start time)     -> "Tue 17 Nov, 12:00 PM CET"
+ * null when the booking has no readable date.
+ */
+export const formatBookingWhen = (b: any): string | null => {
+  const { startAt } = computeSchedule(b);
+  if (!startAt) return null;
+  if (String(b?.category) === 'Ski_Pass') return moment(startAt).tz(TZ()).format('ddd D MMM');
+  return formatLocalDateTime(startAt);
+};
+
 /* ------------------------------------------------------------------ */
 /* Status                                                              */
 /* ------------------------------------------------------------------ */
@@ -188,10 +236,48 @@ export type ApiStatus = 'Pending' | 'Confirmed' | 'InProgress' | 'Completed' | '
  *  Completed  finished
  *  Cancelled  cancelled / rejected / expired / refunded
  */
+/**
+ * A booking of the current flow (payout `held`) marked Completed WITHOUT
+ * `completedAt` was closed by something outside this lifecycle, e.g. an old
+ * server version still running its timer against the same database (it
+ * completes rentals at their end time, ignoring hand-over/return). Every
+ * completion in this code writes `completedAt`, so such a status is not
+ * trusted: the booking is treated as still open and gets reopened by the jobs.
+ */
+export const isForeignCompletion = (b: any) =>
+  String(b?.bookingStatus) === 'Completed' &&
+  !b?.completedAt &&
+  !b?.cancelledAt &&
+  b?.providerPayout === 'held';
+
+/** Mongo filter for the same condition */
+export const FOREIGN_COMPLETION_FILTER = {
+  bookingStatus: 'Completed',
+  completedAt: { $exists: false },
+  cancelledAt: { $exists: false },
+  providerPayout: 'held',
+};
+
+/**
+ * A CANCELLED booking that something outside this lifecycle (the same old
+ * timer) later overwrote to Completed: it still has `cancelledAt` and never got
+ * `completedAt`. The cancellation (and its refund) is the truth: it is shown as
+ * Cancelled and put back to Cancelled by the jobs.
+ */
+export const isOverwrittenCancel = (b: any) =>
+  String(b?.bookingStatus) === 'Completed' && !b?.completedAt && !!b?.cancelledAt;
+
+/** Mongo filter for the same condition */
+export const OVERWRITTEN_CANCEL_FILTER = {
+  bookingStatus: 'Completed',
+  completedAt: { $exists: false },
+  cancelledAt: { $exists: true },
+};
+
 export const deriveStatus = (b: any, now = new Date()): ApiStatus => {
   const stored = String(b?.bookingStatus);
-  if (CLOSED_CANCELLED.includes(stored)) return 'Cancelled';
-  if (stored === 'Completed') return 'Completed';
+  if (CLOSED_CANCELLED.includes(stored) || isOverwrittenCancel(b)) return 'Cancelled';
+  if (stored === 'Completed' && !isForeignCompletion(b)) return 'Completed';
   if (!b?.isPermitted) return 'Pending';
   if (isRental(b?.category)) return b?.isHandOver ? 'InProgress' : 'Confirmed';
   const { startAt } = computeSchedule(b);
@@ -253,6 +339,39 @@ export const customerCancelRefund = (b: any, now = new Date()) => {
   const percent = full ? 100 : POLICY.LATE_CANCEL_REFUND_PERCENT;
   const refund = round2((total * percent) / 100);
   return { percent, refund, kept: round2(total - refund), total };
+};
+
+/**
+ * Service fee of a booking (Restaurant): platform money, included in
+ * totalPrice. Stored on the booking at creation; a Restaurant booking made
+ * before it was stored falls back to its listing's fee. Never more than
+ * the price.
+ */
+export const serviceFeeOf = (b: any, listing?: any): number => {
+  const total = round2(Number(b?.totalPrice) || 0);
+  const stored = b?.serviceFee;
+  const fee =
+    stored !== undefined && stored !== null
+      ? Number(stored) || 0
+      : String(b?.category) === 'Restaurant'
+        ? Number(listing?.serviceFee) || 0
+        : 0;
+  return round2(Math.min(Math.max(fee, 0), total));
+};
+
+/**
+ * Split money the platform keeps from a booking (all of it, or the part
+ * not refunded) into the platform service fee and the provider's gross
+ * (on which the platform commission is taken). A partial amount carries
+ * the service fee pro rata: 10 % kept of a 65 booking with a 5 fee ->
+ * 0.50 service fee + 6.00 provider gross.
+ */
+export const splitServiceFee = (b: any, amount: number, listing?: any) => {
+  const total = round2(Number(b?.totalPrice) || 0);
+  const value = round2(Math.max(0, Number(amount) || 0));
+  const fee = serviceFeeOf(b, listing);
+  const serviceFee = total > 0 ? round2(Math.min(value, (value * fee) / total)) : 0;
+  return { serviceFee, providerGross: round2(value - serviceFee) };
 };
 
 /**

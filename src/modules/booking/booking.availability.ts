@@ -5,7 +5,11 @@
  * counters stored on the listing), so it is correct per date:
  *  - Ski Hire  : per item, units booked by overlapping open rentals
  *  - Transport : one vehicle/service, no overlapping open booking
+ *  Rentals: an item handed over and not returned after its end is still
+ *  out, so it stays busy until it comes back (see `occupyingFilter`).
  *  - Restaurant: per day + slot, seats booked per seat type
+ *  - Massage   : per listing, guests treated at the same time (the
+ *                listing's `capacity` = therapists) at any moment of the session
  */
 import { Types } from 'mongoose';
 import { StatusCodes } from 'http-status-codes';
@@ -18,7 +22,14 @@ import { Restaurant } from '../restaurant/restaurant.model';
 import { Massage } from '../massage/massage.model';
 import {
   OPEN_STATUSES,
+  POLICY,
+  atLocal,
   computeSchedule,
+  durationToMinutes,
+  fitsOpeningHours,
+  formatDuration,
+  formatTime,
+  openWindowMinutes,
   endOfLocalDay,
   startOfLocalDay,
   timeToMinutes,
@@ -75,6 +86,34 @@ export const hourlyRateOf = (listing: any, category: string) =>
 const sameId = (a: unknown, b: unknown) => String(a ?? '') === String(b ?? '');
 
 /* ------------------------------------------------------------------ */
+/* Rentals: what keeps an item / vehicle busy                          */
+/* ------------------------------------------------------------------ */
+/**
+ * Handed over, past its end and not returned yet (still Active): the item is
+ * still with the previous customer. It keeps the item busy for any booking
+ * starting before the rental is closed for sure, which is when the provider
+ * marks it returned or, at the latest, the automatic close
+ * OVERDUE_AUTO_RETURN_HOURS after the end.
+ */
+export const stillOutFilter = (start: Date, now: Date = new Date()) => ({
+  isHandOver: true,
+  endDateAndTime: {
+    $lte: now,
+    $gt: new Date(start.getTime() - POLICY.OVERDUE_AUTO_RETURN_HOURS * 3600000),
+  },
+});
+
+/** Open bookings of a rental that use it during [start, end) */
+export const occupyingFilter = (productId: any, start: Date, end: Date, now: Date = new Date()) => ({
+  product: productId,
+  bookingStatus: { $in: OPEN_STATUSES },
+  $or: [
+    { startDateAndTime: { $lt: end }, endDateAndTime: { $gt: start } },
+    stillOutFilter(start, now),
+  ],
+});
+
+/* ------------------------------------------------------------------ */
 /* Ski Hire                                                            */
 /* ------------------------------------------------------------------ */
 export const skiHireBookedUnits = async (
@@ -84,10 +123,7 @@ export const skiHireBookedUnits = async (
   excludeBookingId?: any,
 ) => {
   const overlapping: any[] = await Booking.find({
-    product: productId,
-    bookingStatus: { $in: OPEN_STATUSES },
-    startDateAndTime: { $lt: end },
-    endDateAndTime: { $gt: start },
+    ...occupyingFilter(productId, start, end),
     ...(excludeBookingId && { _id: { $ne: excludeBookingId } }),
   })
     .select('bookingItems')
@@ -132,14 +168,169 @@ export const assertSkiHireAvailable = async (
 /* ------------------------------------------------------------------ */
 /* Transport                                                           */
 /* ------------------------------------------------------------------ */
-export const transportIsFree = async (productId: any, start: Date, end: Date) => {
-  const clash = await Booking.exists({
+export type TransportBlock = 'booked' | 'not_returned' | null;
+
+export const TRANSPORT_BLOCK_MESSAGES: Record<Exclude<TransportBlock, null>, string> = {
+  booked: 'This transport is already booked for that time.',
+  not_returned:
+    'This vehicle has not been returned by the previous customer yet. Please choose a later time or another vehicle.',
+};
+
+/** Why the vehicle can't be booked for [start, end), or null when it is free */
+export const transportBlocker = async (productId: any, start: Date, end: Date): Promise<TransportBlock> => {
+  const open = { product: productId, bookingStatus: { $in: OPEN_STATUSES } };
+  if (await Booking.exists({ ...open, startDateAndTime: { $lt: end }, endDateAndTime: { $gt: start } }))
+    return 'booked';
+  if (await Booking.exists({ ...open, ...stillOutFilter(start) })) return 'not_returned';
+  return null;
+};
+
+export const transportIsFree = async (productId: any, start: Date, end: Date) =>
+  (await transportBlocker(productId, start, end)) === null;
+
+/* ------------------------------------------------------------------ */
+/* Massage                                                             */
+/* ------------------------------------------------------------------ */
+/**
+ * A massage listing treats up to `capacity` guests at the same time (one
+ * per therapist, default 1). A booking of N people takes N places for its
+ * whole session. A time is full when, at some moment of the requested
+ * session, the open bookings (waiting, confirmed, in progress) already use
+ * every place. Sessions that only touch (11:00-12:00 and 12:00-13:00) don't
+ * overlap.
+ */
+export const massageCapacityOf = (listing: any) =>
+  Math.max(1, Math.floor(Number(listing?.capacity) || 1));
+
+export const MASSAGE_FULL_MESSAGE = 'This time is already booked. Choose another time.';
+
+/** open bookings of the listing overlapping [start, end) */
+const massageBookingsBetween = (productId: any, start: Date, end: Date, extra: Record<string, any> = {}) =>
+  Booking.find({
     product: productId,
     bookingStatus: { $in: OPEN_STATUSES },
-    startDateAndTime: { $lt: end },
-    endDateAndTime: { $gt: start },
-  });
-  return !clash;
+    startAt: { $lt: end },
+    endAt: { $gt: start },
+    ...extra,
+  })
+    .select('startAt endAt personCount')
+    .lean();
+
+/** Most guests in session at the same moment within [start, end) */
+export const peakGuests = (bookings: any[], start: Date, end: Date) => {
+  const events: [number, number][] = [];
+  for (const b of bookings) {
+    const s = Math.max(new Date(b.startAt).getTime(), start.getTime());
+    const e = Math.min(new Date(b.endAt).getTime(), end.getTime());
+    if (!(e > s)) continue;
+    const guests = Math.max(1, Number(b.personCount) || 1);
+    events.push([s, guests], [e, -guests]);
+  }
+  // at the same instant, a session ending frees its place before the next starts
+  events.sort((a, b) => a[0] - b[0] || a[1] - b[1]);
+  let current = 0;
+  let peak = 0;
+  for (const [, delta] of events) {
+    current += delta;
+    peak = Math.max(peak, current);
+  }
+  return peak;
+};
+
+/** Places still free for the whole of [start, end) */
+export const massagePlacesLeft = async (listing: any, start: Date, end: Date) => {
+  const booked = await massageBookingsBetween(listing._id, start, end);
+  return Math.max(0, massageCapacityOf(listing) - peakGuests(booked, start, end));
+};
+
+/** 400 when more guests than places at all; 409 when the time is (too) full */
+export const assertMassageAvailable = async (listing: any, start: Date, end: Date, guests: number) => {
+  const capacity = massageCapacityOf(listing);
+  if (guests > capacity)
+    throw new AppError(
+      StatusCodes.BAD_REQUEST,
+      `This massage takes up to ${capacity} guest${capacity === 1 ? '' : 's'} at the same time.`,
+    );
+  const left = await massagePlacesLeft(listing, start, end);
+  if (guests > left)
+    throw new AppError(
+      StatusCodes.CONFLICT,
+      left > 0
+        ? `Only ${left} place${left === 1 ? '' : 's'} left at this time. Choose another time or fewer guests.`
+        : MASSAGE_FULL_MESSAGE,
+    );
+};
+
+/** The listing's duration option (minutes + "60 min"); 400 when it isn't offered */
+export const massageDurationOf = (listing: any, duration: unknown) => {
+  const options: any[] = listing.priceByDuration || [];
+  if (!options.length) {
+    const minutes = durationToMinutes(duration) ?? 60;
+    return { minutes, duration: formatDuration(minutes) ?? `${minutes} min` };
+  }
+  const wanted = durationToMinutes(duration);
+  const option = options.find(o => durationToMinutes(o.duration) === wanted);
+  if (!wanted || !option)
+    throw new AppError(
+      StatusCodes.BAD_REQUEST,
+      `duration is required: one of ${options.map(o => o.duration).join(', ')}.`,
+    );
+  return { minutes: wanted, duration: formatDuration(option.duration) ?? String(option.duration) };
+};
+
+const SLOT_STEPS = [15, 30, 60];
+
+/** minutes after midnight -> "9:30 AM" */
+const clock = (minutes: number) => formatTime(`${Math.floor((minutes % 1440) / 60)}:${String(minutes % 60).padStart(2, '0')}`);
+
+/**
+ * Every start time of a day for one duration, every `step` minutes inside
+ * the opening hours, with the places left. One query for the whole day.
+ */
+export const massageDaySlots = async (listing: any, day: string, minutes: number, guests = 1, step = 30) => {
+  const capacity = massageCapacityOf(listing);
+  const open = timeToMinutes(listing.openTime);
+  const window = openWindowMinutes(listing.openTime, listing.closeTime);
+  if (open === null || window === null || minutes > window) return { capacity, slots: [] as any[] };
+
+  const booked = await massageBookingsBetween(listing._id, atLocal(day, open), atLocal(day, open + window));
+  const now = Date.now();
+  const slots: any[] = [];
+  for (let offset = 0; offset + minutes <= window; offset += step) {
+    const start = atLocal(day, open + offset);
+    const end = atLocal(day, open + offset + minutes);
+    const left = Math.max(0, capacity - peakGuests(booked, start, end));
+    const isPast = start.getTime() <= now;
+    slots.push({ time: clock(open + offset), startAt: start, endAt: end, left, available: !isPast && left >= guests, isPast });
+  }
+  return { capacity, slots };
+};
+
+/** GET /booking/availability for a massage (see getAvailability) */
+const massageAvailability = async (listing: any, query: Record<string, any>) => {
+  const capacity = massageCapacityOf(listing);
+  const day = toDayKey(query.date);
+  if (!day) return { category: 'Massage', capacity, available: true }; // old app call, no date
+  const { minutes, duration } = massageDurationOf(listing, query.duration);
+  const guests = Math.max(1, Math.floor(Number(query.personCount ?? query.guests) || 1));
+
+  if (query.time === undefined || query.time === '') {
+    const step = SLOT_STEPS.includes(Number(query.step)) ? Number(query.step) : 30;
+    const { slots } = await massageDaySlots(listing, day, minutes, guests, step);
+    return { category: 'Massage', date: day, duration, personCount: guests, capacity, step, slots };
+  }
+
+  const t = timeToMinutes(query.time);
+  if (t === null) throw new AppError(StatusCodes.BAD_REQUEST, 'time must be like "10:30 AM" or "14:00".');
+  const start = atLocal(day, t);
+  const end = atLocal(day, t + minutes);
+  const base = { category: 'Massage', date: day, time: formatTime(query.time), duration, personCount: guests, capacity };
+  if (!fitsOpeningHours(query.time, minutes, listing.openTime, listing.closeTime))
+    return { ...base, available: false, left: 0, reason: 'closed' };
+  if (start.getTime() <= Date.now()) return { ...base, available: false, left: 0, reason: 'past' };
+  const left = await massagePlacesLeft(listing, start, end);
+  if (guests > capacity) return { ...base, available: false, left, reason: 'too_many_guests' };
+  return { ...base, available: left >= guests, left, reason: left >= guests ? null : 'booked' };
 };
 
 /* ------------------------------------------------------------------ */
@@ -242,10 +433,7 @@ export const assertNoOverbooking = async (booking: any, listing: any) => {
   if (category === 'Transport') {
     const earlier = await Booking.exists({
       _id: { $lt: booking._id },
-      product: booking.product,
-      bookingStatus: { $in: OPEN_STATUSES },
-      startDateAndTime: { $lt: booking.endDateAndTime },
-      endDateAndTime: { $gt: booking.startDateAndTime },
+      ...occupyingFilter(booking.product, booking.startDateAndTime, booking.endDateAndTime),
     });
     if (earlier)
       throw new AppError(StatusCodes.CONFLICT, 'This transport was just booked by someone else for that time.');
@@ -255,10 +443,7 @@ export const assertNoOverbooking = async (booking: any, listing: any) => {
   if (category === 'Ski_Hire') {
     const overlapping: any[] = await Booking.find({
       ...notLater,
-      product: booking.product,
-      bookingStatus: { $in: OPEN_STATUSES },
-      startDateAndTime: { $lt: booking.endDateAndTime },
-      endDateAndTime: { $gt: booking.startDateAndTime },
+      ...occupyingFilter(booking.product, booking.startDateAndTime, booking.endDateAndTime),
     })
       .select('bookingItems')
       .lean();
@@ -271,6 +456,16 @@ export const assertNoOverbooking = async (booking: any, listing: any) => {
       if (item && used > (Number(item.totalQty) || 0))
         throw new AppError(StatusCodes.CONFLICT, `${item.productName} was just booked by someone else for these dates.`);
     }
+    return;
+  }
+
+  if (category === 'Massage') {
+    // bookings saved no later than this one (it included): over capacity -> this later one loses
+    const start = new Date(booking.startAt);
+    const end = new Date(booking.endAt);
+    const booked = await massageBookingsBetween(booking.product, start, end, notLater);
+    if (peakGuests(booked, start, end) > massageCapacityOf(listing))
+      throw new AppError(StatusCodes.CONFLICT, 'This time was just booked by someone else. Choose another time.');
     return;
   }
 
@@ -309,8 +504,12 @@ export const assertNoOverbooking = async (booking: any, listing: any) => {
  * GET /booking/availability/:productId
  *   Restaurant: ?date=YYYY-MM-DD        -> slots with seats left
  *   Ski Hire  : ?start=ISO&end=ISO       -> items with units left
- *   Transport : ?start=ISO&end=ISO       -> { available }
- *   Massage / Ski Pass: always bookable on a future date -> { available: true }
+ *   Transport : ?start=ISO&end=ISO       -> { available, reason: null | 'booked' | 'not_returned' }
+ *   Massage   : ?date=YYYY-MM-DD&duration=60 min[&personCount=2][&step=30]
+ *                 -> { capacity, slots: [{ time, startAt, endAt, left, available, isPast }] }
+ *               ?date=...&time=11:00 AM&duration=60 min[&personCount=2]
+ *                 -> { available, left, reason: null | 'booked' | 'closed' | 'past' | 'too_many_guests' }
+ *   Ski Pass  : always bookable on a future date -> { available: true }
  */
 export const getAvailability = async (productId: string, query: Record<string, any>) => {
   const { listing, category } = await findListingAnyCategory(productId);
@@ -341,10 +540,14 @@ export const getAvailability = async (productId: string, query: Record<string, a
     const end = new Date(query.end ?? query.endDateAndTime);
     if (isNaN(start.getTime()) || isNaN(end.getTime()) || end <= start)
       throw new AppError(StatusCodes.BAD_REQUEST, 'start and end (ISO date-time) are required, end after start.');
-    if (category === 'Transport')
-      return { category, start, end, available: await transportIsFree(listing._id, start, end) };
+    if (category === 'Transport') {
+      const reason = await transportBlocker(listing._id, start, end);
+      return { category, start, end, available: reason === null, reason };
+    }
     return { category, start, end, items: await skiHireAvailability(listing, start, end) };
   }
+
+  if (category === 'Massage') return massageAvailability(listing, query);
 
   return { category, available: true };
 };

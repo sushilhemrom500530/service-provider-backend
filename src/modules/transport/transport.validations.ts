@@ -4,14 +4,20 @@ import { z } from 'zod';
  * Multipart sends everything as strings: numbers are coerced, empty strings
  * count as "not sent". Old field names are mapped to the API names first:
  *   personCount -> seats, milage -> mileage,
- *   extraChargePerHours -> extraChargePerHour, maintainCharge -> maintenanceFee
+ *   extraChargePerHours -> extraChargePerHour
+ *
+ * `insuranceFee` / `maintenanceFee` (old: `maintainCharge`) no longer exist:
+ * the trip price is all-inclusive. Older app versions still send them, so
+ * they are accepted and ignored (never stored, never charged).
  */
 const ALIASES: Record<string, string> = {
   personCount: 'seats',
   milage: 'mileage',
   extraChargePerHours: 'extraChargePerHour',
-  maintainCharge: 'maintenanceFee',
 };
+
+/** Removed fields: dropped silently (older app versions still send them) */
+const REMOVED = ['insuranceFee', 'maintenanceFee', 'maintainCharge'];
 
 const normalizeBody = (raw: unknown) => {
   if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return raw;
@@ -20,6 +26,7 @@ const normalizeBody = (raw: unknown) => {
     if (isBlank(body[apiName]) && !isBlank(body[oldName])) body[apiName] = body[oldName];
     delete body[oldName];
   }
+  for (const k of REMOVED) delete body[k];
   for (const k of Object.keys(body)) if (isBlank(body[k])) delete body[k];
   return body;
 };
@@ -57,8 +64,6 @@ const fields = {
   mileage: text('mileage', 50),
   power: z.preprocess(asString, z.string({ invalid_type_error: 'power must be text' }).trim().max(50)),
   extraChargePerHour: money('extraChargePerHour'),
-  insuranceFee: money('insuranceFee'),
-  maintenanceFee: money('maintenanceFee'),
   description: z.string().trim().max(5000),
 };
 
@@ -77,8 +82,6 @@ const updateBody = z.object({
   mileage: fields.mileage.optional(),
   power: fields.power.optional(),
   extraChargePerHour: fields.extraChargePerHour.optional(),
-  insuranceFee: fields.insuranceFee.optional(),
-  maintenanceFee: fields.maintenanceFee.optional(),
   description: fields.description.optional(),
 });
 

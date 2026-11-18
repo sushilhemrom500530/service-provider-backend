@@ -241,9 +241,10 @@ describe('Ski Pass listings', () => {
       expect(Object.keys(d).sort()).toEqual(
         [
           'id', 'category', 'subCategory', 'title', 'thumbnail', 'serviceArea', 'passType', 'price',
-          'rating', 'provider', 'isActive', 'description', 'services', 'createdAt', 'updatedAt',
+          'rating', 'provider', 'isActive', 'description', 'services', 'maxPeoplePerBooking', 'createdAt', 'updatedAt',
         ].sort(),
       );
+      expect(d.maxPeoplePerBooking).toBe(10);
       expect(d.rating).toEqual({ average: 4, count: 1 });
       expect(d.provider).toEqual({ id: provider.id, name: provider.doc.fullName, photo: expect.any(String) });
       const json = JSON.stringify(res.body);

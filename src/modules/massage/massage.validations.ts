@@ -5,7 +5,7 @@ import {
   isValidTime,
   parseDurationMinutes,
 } from './massage.utils';
-import { MAX_DURATION_MINUTES, MIN_DURATION_MINUTES } from './massage.constant';
+import { MAX_CAPACITY, MAX_DURATION_MINUTES, MIN_DURATION_MINUTES } from './massage.constant';
 
 /** '' / null / undefined -> undefined, so optional numbers don't become 0 or NaN */
 const blankToUndefined = (v: unknown) =>
@@ -19,6 +19,18 @@ const positivePrice = (label: string) =>
 
 const optionalPrice = (label: string) =>
   z.preprocess(blankToUndefined, positivePrice(label).optional());
+
+/** guests at the same time (therapists), 1..MAX_CAPACITY; multipart sends a string */
+const capacityField = (label: string) =>
+  z.preprocess(
+    blankToUndefined,
+    z.coerce
+      .number({ invalid_type_error: `${label} must be a number` })
+      .int(`${label} must be a whole number`)
+      .min(1, `${label} must be at least 1`)
+      .max(MAX_CAPACITY, `${label} can be at most ${MAX_CAPACITY}`)
+      .optional(),
+  );
 
 const text = (label: string) =>
   z
@@ -104,6 +116,8 @@ const bodyFields = {
   recommendations: text('recommendations').optional(),
   priceByDuration: durationList.optional(),
   durations: durationList.optional(),
+  capacity: capacityField('capacity'),
+  therapists: capacityField('therapists'), // alias of capacity
 };
 
 /** Map API aliases to stored names */
@@ -111,8 +125,10 @@ const toStored = (b: any) => {
   const out: Record<string, any> = { ...b };
   if (b.durations !== undefined) out.priceByDuration = b.durations;
   if (b.recommendations !== undefined) out.ourRecommendations = b.recommendations;
+  if (b.capacity === undefined && b.therapists !== undefined) out.capacity = b.therapists;
   delete out.durations;
   delete out.recommendations;
+  delete out.therapists;
   return out;
 };
 

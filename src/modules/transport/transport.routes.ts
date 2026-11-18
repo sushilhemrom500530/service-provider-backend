@@ -1,3 +1,4 @@
+import { acceptListingDetailShape } from '../common/listing.helpers';
 import { NextFunction, Request, Response, Router } from 'express';
 import auth from '../../middlewares/auth';
 import fileUploadHandler from './../../shared/fileUploadHandler';
@@ -39,6 +40,7 @@ router.post(
   ['/', '/create'],
   auth(...ANY_ROLE),
   ...thumbnailUpload,
+  acceptListingDetailShape,
   validateRequest(TransportValidations.createTransport),
   TransportController.create,
 );
@@ -48,6 +50,7 @@ router.patch(
   '/update/:id',
   auth(...MANAGERS),
   ...thumbnailUpload,
+  acceptListingDetailShape,
   validateRequest(TransportValidations.updateTransport),
   TransportController.update,
 );
@@ -68,6 +71,7 @@ router.patch(
   '/:id',
   auth(...MANAGERS),
   ...thumbnailUpload,
+  acceptListingDetailShape,
   validateRequest(TransportValidations.updateTransport),
   TransportController.update,
 );

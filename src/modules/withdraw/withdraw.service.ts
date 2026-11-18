@@ -20,6 +20,7 @@ import { changeBalance } from '../wallet/ledger';
 import { generateTransactionId } from '../../utils/generateTransactionId';
 import { Withdraw } from './withdraw.model';
 import { notify } from '../notification/notify';
+import { formatMoney } from '../booking/booking.rules';
 import { buildMeta, getPagination, escapeRegex } from '../../shared/apiHelpers';
 
 const round2 = (n: number) => Math.round(n * 100) / 100;
@@ -89,7 +90,7 @@ const sendWithdrawRequest = async (user: JwtPayload, payload: any) => {
   for (const a of admins)
     await notify(a._id, {
       title: 'Withdrawal request',
-      description: `A provider requested a withdrawal of ${amount}.`,
+      description: `A provider requested a withdrawal of ${formatMoney(amount)}.`,
       type: 'withdraw',
       senderId: user.userId,
       event: 'withdraw.requested',
@@ -135,8 +136,8 @@ const acceptWithdrawRequest = async (
     title: decision === 'accept' ? 'Withdrawal paid' : 'Withdrawal rejected',
     description:
       decision === 'accept'
-        ? `Your withdrawal of ${updated.amount} has been paid.`
-        : `Your withdrawal of ${updated.amount} was rejected and returned to your balance.${note ? ` ${note}` : ''}`,
+        ? `Your withdrawal of ${formatMoney(updated.amount)} has been paid.`
+        : `Your withdrawal of ${formatMoney(updated.amount)} was rejected and returned to your balance.${note ? ` ${note}` : ''}`,
     type: 'withdraw',
     senderId: user.userId,
     event: decision === 'accept' ? 'withdraw.paid' : 'withdraw.rejected',

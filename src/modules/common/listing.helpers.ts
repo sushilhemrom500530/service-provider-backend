@@ -296,3 +296,37 @@ export const findListingOr404 = async (model: Model<any>, id: string, label = 'L
 };
 
 export const ownerCard = toPublicUser;
+
+/* ------------------------------------------------------------------ */
+/* Editor forms: accept the detail shape back                          */
+/* ------------------------------------------------------------------ */
+
+const OBJECT_ID = /^[a-f\d]{24}$/i;
+
+/**
+ * Middleware for listing create/update (before validation). A listing detail
+ * returns `category: "<service>"` (e.g. "Massage") and `subCategory: { id, name }`.
+ * An editor that sends the loaded object back must not get a 400:
+ *  - `subCategory` ({ id } object, JSON string or id) or `subCategoryId` -> the sub-category
+ *  - `category` equal to the service name (or any non-id text) is read-only -> ignored
+ *  - `category: "<sub-category id>"` keeps working as before
+ */
+export const acceptListingDetailShape = (req: any, _res: any, next: any) => {
+  const body = req.body;
+  if (!body || typeof body !== 'object') return next();
+  let sub: any = body.subCategoryId ?? body.subCategory;
+  if (typeof sub === 'string' && sub.trim().startsWith('{')) {
+    try {
+      sub = JSON.parse(sub);
+    } catch {
+      /* leave it: validation reports it */
+    }
+  }
+  const subId = sub && typeof sub === 'object' ? (sub.id ?? sub._id) : sub;
+  const category = typeof body.category === 'string' ? body.category.trim() : body.category;
+  if (category !== undefined && !(typeof category === 'string' && OBJECT_ID.test(category))) delete body.category;
+  if (body.category === undefined && typeof subId === 'string' && OBJECT_ID.test(subId)) body.category = subId;
+  delete body.subCategory;
+  delete body.subCategoryId;
+  next();
+};

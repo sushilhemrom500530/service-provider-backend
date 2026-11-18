@@ -9,7 +9,7 @@ import AppError from '../../errors/AppErro';
 import { Booking } from './booking.model';
 import { buildMeta, getPagination } from '../../shared/apiHelpers';
 import { listingIdsOfOwner } from './booking.availability';
-import { listingOfBooking } from './booking.lifecycle';
+import { listingOfBooking, reopenForeignCompletions } from './booking.lifecycle';
 import { loadContext, toBookingCard, toBookingDetail } from './booking.serializer';
 import { OPEN_STATUSES, Viewer, startOfLocalDay, endOfLocalDay, toDayKey } from './booking.rules';
 
@@ -77,6 +77,9 @@ const page = async (filter: Record<string, any>, query: Record<string, any>, vie
 
 /** GET /booking/my?tab=&category=&date=  (customer) */
 export const getMyBookings = async (user: JwtPayload, query: Record<string, any>) => {
+  // statuses overwritten by something outside the lifecycle are repaired
+  // first, so every tab is right (see reopenForeignCompletions)
+  await reopenForeignCompletions({ user: new Types.ObjectId(String(user.userId)) });
   const filter = and({ user: new Types.ObjectId(String(user.userId)) }, tabFilter(query.tab), commonFilter(query));
   return page(filter, query, 'customer');
 };
@@ -84,12 +87,14 @@ export const getMyBookings = async (user: JwtPayload, query: Record<string, any>
 /** GET /booking/provider?tab=&category=&date=  (provider: bookings of my listings) */
 export const getProviderBookings = async (user: JwtPayload, query: Record<string, any>) => {
   const ids = await listingIdsOfOwner(user.userId);
+  await reopenForeignCompletions({ product: { $in: ids } });
   const filter = and({ product: { $in: ids } }, tabFilter(query.tab), commonFilter(query));
   return page(filter, query, 'provider');
 };
 
 /** GET /booking/all  (admin) ?tab=&category=&userId=&productId= */
 export const getAllBookingsAdmin = async (query: Record<string, any>) => {
+  await reopenForeignCompletions();
   const filter: Record<string, any> = {};
   if (query.userId && Types.ObjectId.isValid(String(query.userId)))
     filter.user = new Types.ObjectId(String(query.userId));
@@ -108,6 +113,7 @@ const and = (...parts: Record<string, any>[]) => {
 export const getBookingById = async (bookingId: string, user: JwtPayload) => {
   if (!Types.ObjectId.isValid(String(bookingId)))
     throw new AppError(StatusCodes.BAD_REQUEST, 'Invalid booking id.');
+  await reopenForeignCompletions({ _id: new Types.ObjectId(String(bookingId)) });
   const booking: any = await Booking.findById(bookingId).lean();
   if (!booking) throw new AppError(StatusCodes.NOT_FOUND, 'Booking not found.');
 

@@ -92,6 +92,19 @@ const slotOf = (b: any, listing: any) => {
   return s ? { startTime: s.startTime, endTime: s.endTime } : null;
 };
 
+/** Provider side of a late fee: due -> pending, paid -> split into fee/net */
+const lateFeeEarning = (b: any) => {
+  const lf = b.lateFee;
+  if (!lf || !(Number(lf.amount) > 0) || (lf.status !== 'due' && lf.status !== 'paid')) return null;
+  const paid = lf.status === 'paid';
+  return {
+    gross: Number(lf.amount) || 0,
+    platformFee: paid ? (lf.platformFee ?? null) : null,
+    net: paid ? (lf.providerEarning ?? null) : null,
+    status: paid ? 'paid' : 'pending',
+  };
+};
+
 /** Booking card (lists) */
 export const toBookingCard = (b: any, viewer: Viewer, ctx: Ctx, now = new Date()) => {
   const category = categoryOf(b);
@@ -175,6 +188,9 @@ export const toBookingDetail = (b: any, viewer: Viewer, ctx: Ctx, now = new Date
         ? undefined
         : {
             gross: Number(b.totalPrice) || 0,
+            // platform money the customer paid on top (restaurant service fee);
+            // included in platformFee once paid out, never in net
+            serviceFee: Number(b.serviceFee) || 0,
             platformFee: b.platformFee ?? null,
             net: b.providerEarning ?? null,
             status:
@@ -185,6 +201,9 @@ export const toBookingDetail = (b: any, viewer: Viewer, ctx: Ctx, now = new Date
                   : b.providerPayout === 'held'
                     ? 'pending'
                     : 'paid',
+            // late return fee (rentals): earned on top of the booking once the
+            // customer pays it; gross/net above are the booking price only
+            lateFee: lateFeeEarning(b),
           },
   };
 };

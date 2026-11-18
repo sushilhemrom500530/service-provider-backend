@@ -42,11 +42,13 @@ Envelope: `{ success, message, data, meta? }`. Error: `{ success:false, message,
 {
   "description": "One day, all lifts",
   "services": [{ "title": "Lift access", "description": "All lifts, all day" }],
+  "maxPeoplePerBooking": 10,
   "createdAt": "2026-11-16T10:00:00.000Z",
   "updatedAt": "2026-11-16T10:00:00.000Z"
 }
 ```
-Reviews are never inside the detail; use `GET /:id/reviews`.
+- `maxPeoplePerBooking`: most people on one booking (10). The server refuses more with **400** "A ski pass booking is for up to 10 people. Make a second booking for more." Use it for the people picker instead of a fixed number.
+- Reviews are never inside the detail; use `GET /:id/reviews`.
 
 ## GET `/` : browse (public)
 Only active, non-deleted passes.

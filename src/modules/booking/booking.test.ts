@@ -294,7 +294,7 @@ describe('Restaurant', () => {
 
     const cancelled = await api().patch(`${B}/${id}/cancel`).set(...customer.auth).send({ reason: 'Plans changed' });
     expect(cancelled.status).toBe(200);
-    expect(cancelled.body.data.refund).toEqual({ amount: 85, percent: 100 });
+    expect(cancelled.body.data.refund).toEqual({ amount: 85, percent: 100, status: 'refunded' });
     expect(await balance(provider)).toBe(0);
 
     // seats are free again
@@ -331,7 +331,7 @@ describe('Massage', () => {
 
     const res = await api().patch(`${B}/${id}/cancel`).set(...customer.auth);
     expect(res.status).toBe(200);
-    expect(res.body.data.refund).toEqual({ amount: 72, percent: 90 });
+    expect(res.body.data.refund).toEqual({ amount: 72, percent: 90, status: 'refunded' });
     expect(getRefunds()[0].amount).toBe(7200); // partial refund in cents
     expect((await Payment.findOne({ booking: id }).lean() as any).status).toBe('Partially_Refunded');
     expect(await balance(provider)).toBe(6.4); // 8 kept - 20 %

@@ -10,6 +10,8 @@ export interface INotification extends Document {
   type: NotificationType | string;
   booking?: Types.ObjectId;
   event?: string;
+  /** machine-readable values for the app, e.g. { returnBy: ISO date } */
+  data?: Record<string, any>;
   isRead: boolean;
   createdAt?: Date;
   updatedAt?: Date;

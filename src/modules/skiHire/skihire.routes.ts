@@ -1,3 +1,4 @@
+import { acceptListingDetailShape } from '../common/listing.helpers';
 import { Router } from 'express';
 import fileUploadHandler from './../../shared/fileUploadHandler';
 import auth from './../../middlewares/auth';
@@ -31,6 +32,7 @@ router.post(
   ['/', '/create'],
   auth('Provider', 'Admin', 'User'), // role + providerType checked in the service (403)
   ...withUploads,
+  acceptListingDetailShape,
   validateRequest(SkiHireValidations.createSkiHireSchema),
   SkiHireController.create,
 );
@@ -40,6 +42,7 @@ router.patch(
   '/update/:id',
   auth('Provider', 'Admin'),
   ...withUploads,
+  acceptListingDetailShape,
   validateRequest(SkiHireValidations.updateSkiHireSchema),
   SkiHireController.update,
 );
@@ -59,6 +62,7 @@ router.patch(
   '/:id',
   auth('Provider', 'Admin'),
   ...withUploads,
+  acceptListingDetailShape,
   validateRequest(SkiHireValidations.updateSkiHireSchema),
   SkiHireController.update,
 );

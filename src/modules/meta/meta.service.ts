@@ -74,7 +74,16 @@ const getProviderDashboard = async (user: JwtPayload, query: Record<string, any>
           _id: null,
           earned: { $sum: { $add: [{ $ifNull: ['$providerEarning', 0] }, { $ifNull: ['$lateFee.providerEarning', 0] }] } },
           fees: { $sum: { $add: [{ $ifNull: ['$platformFee', 0] }, { $ifNull: ['$lateFee.platformFee', 0] }] } },
-          pending: { $sum: { $cond: [{ $eq: ['$providerPayout', 'held'] }, { $ifNull: ['$totalPrice', 0] }, 0] } },
+          // money still to be paid out for these bookings (before commission), service fee excluded
+          pending: {
+            $sum: {
+              $cond: [
+                { $eq: ['$providerPayout', 'held'] },
+                { $subtract: [{ $ifNull: ['$totalPrice', 0] }, { $ifNull: ['$serviceFee', 0] }] },
+                0,
+              ],
+            },
+          },
           lateFeesDue: { $sum: { $cond: [{ $eq: ['$lateFee.status', 'due'] }, { $ifNull: ['$lateFee.amount', 0] }, 0] } },
         },
       },

@@ -498,11 +498,42 @@ export class ChatService {
     return chats;
   }
 
+  /**
+   * Unread messages per chat for one user: messages from the other person
+   * that this user has not read (and not deleted). The ONE source of the
+   * unread badge, used by REST (GET /chat/chat-users) and the socket
+   * ("chat-list"), so both always show the same number.
+   */
+  static async unreadCounts(
+    chatIds: (Types.ObjectId | string)[],
+    userId: Types.ObjectId | string,
+  ): Promise<Map<string, number>> {
+    const counts = new Map<string, number>();
+    if (!chatIds.length) return counts;
+    const me = new Types.ObjectId(String(userId));
+    const rows = await Message.aggregate([
+      {
+        $match: {
+          chatId: { $in: chatIds.map(id => new Types.ObjectId(String(id))) },
+          sender: { $ne: me },
+          readBy: { $ne: me },
+          deletedBy: { $ne: me },
+        },
+      },
+      { $group: { _id: '$chatId', count: { $sum: 1 } } },
+    ]);
+    for (const r of rows) counts.set(String(r._id), r.count);
+    return counts;
+  }
+
   static async getChatUsers(currentUserId: string) {
     const currentObjId = new Types.ObjectId(currentUserId);
 
+    // same chats as the socket "chat-list": not deleted by me, active
     const chats = await Chat.find({
       participants: currentObjId,
+      deletedBy: { $ne: currentObjId },
+      isActive: true,
     })
       .populate({
         path: 'participants',
@@ -518,18 +549,17 @@ export class ChatService {
       })
       .sort({ lastMessageAt: -1 });
 
+    const unread = await ChatService.unreadCounts(
+      chats.map(c => c._id as Types.ObjectId),
+      currentObjId,
+    );
     const results = await Promise.all(
       chats.map(async chat => {
         const otherUser = chat.participants.find(
           (u: any) => u._id.toString() !== currentUserId,
         );
 
-        // Count unread messages for this chat
-        const unreadCount = await Message.countDocuments({
-          chatId: chat._id,
-          sender: { $ne: currentObjId }, // message from other user
-          readBy: { $ne: currentObjId }, // current user has NOT read
-        });
+        const unreadCount = unread.get(String(chat._id)) || 0;
 
         const lastMessageTime = chat.lastMessageAt
           ? dayjs(chat.lastMessageAt).fromNow()

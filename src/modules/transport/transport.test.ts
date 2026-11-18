@@ -22,8 +22,6 @@ const validFields = (category: string) => ({
   mileage: '15 km/l',
   power: '190 hp',
   extraChargePerHour: '25',
-  insuranceFee: '0',
-  maintenanceFee: '10',
   description: 'Airport transfer',
 });
 
@@ -44,8 +42,6 @@ const insert = (owner: string, category: string, extra: Record<string, any> = {}
     personCount: 4,
     milage: '10',
     extraChargePerHours: 5,
-    insuranceFee: 1,
-    maintainCharge: 1,
     serviceArea: 'Val Thorens',
     amount: 100,
     ...extra,
@@ -86,8 +82,6 @@ describe('Transport listings', () => {
         mileage: '15 km/l',
         power: '190 hp',
         extraChargePerHour: 25,
-        insuranceFee: 0,
-        maintenanceFee: 10,
         rating: { average: 0, count: 0 },
         provider: { id: provider.id },
         isActive: true,
@@ -96,20 +90,21 @@ describe('Transport listings', () => {
       const stored: any = await Transport.findById(d.id).lean();
       expect(String(stored.owner)).toBe(provider.id);
       expect(stored.averageRating).toBe(0);
-      expect(stored).toMatchObject({ personCount: 7, milage: '15 km/l', extraChargePerHours: 25, maintainCharge: 10 });
+      expect(stored).toMatchObject({ personCount: 7, milage: '15 km/l', extraChargePerHours: 25 });
+      expect(d).not.toHaveProperty('insuranceFee');
+      expect(d).not.toHaveProperty('maintenanceFee');
     });
 
     it('accepts the old field names on the old /create path', async () => {
-      const { seats, mileage, extraChargePerHour, maintenanceFee, ...rest } = validFields(sub);
+      const { seats, mileage, extraChargePerHour, ...rest } = validFields(sub);
       const res = await createViaApi(provider, {
         ...rest,
         personCount: seats,
         milage: mileage,
         extraChargePerHours: extraChargePerHour,
-        maintainCharge: maintenanceFee,
       }).then(r => r);
       expect(res.status).toBe(201);
-      expect(res.body.data).toMatchObject({ seats: 7, mileage: '15 km/l', extraChargePerHour: 25, maintenanceFee: 10 });
+      expect(res.body.data).toMatchObject({ seats: 7, mileage: '15 km/l', extraChargePerHour: 25 });
 
       const alias = await api()
         .post(`${BASE}/create`)
@@ -142,8 +137,6 @@ describe('Transport listings', () => {
         { seats: '0' },
         { seats: undefined },
         { mileage: undefined },
-        { insuranceFee: undefined },
-        { maintenanceFee: '-1' },
         { extraChargePerHour: 'abc' },
         { amount: '0' },
         { serviceArea: '' },
@@ -240,8 +233,10 @@ describe('Transport listings', () => {
       expect(JSON.stringify(d)).not.toContain('@test.dev');
       expect(JSON.stringify(d)).not.toContain('availableQty');
       expect(Object.keys(d)).toEqual(
-        expect.arrayContaining(['description', 'createdAt', 'mileage', 'power', 'extraChargePerHour', 'insuranceFee', 'maintenanceFee']),
+        expect.arrayContaining(['description', 'createdAt', 'mileage', 'power', 'extraChargePerHour']),
       );
+      expect(d).not.toHaveProperty('insuranceFee');
+      expect(d).not.toHaveProperty('maintenanceFee');
 
       await Transport.updateOne({ _id: t._id }, { isDeleted: true });
       expect((await api().get(`${BASE}/${t._id}`)).status).toBe(404);
@@ -260,9 +255,9 @@ describe('Transport listings', () => {
       const own = await api()
         .patch(`${BASE}/${t._id}`)
         .set(...provider.auth)
-        .send({ title: 'New title', seats: 8, maintenanceFee: 0, owner: intruder.id, averageRating: 5, reviewCount: 99, isDeleted: true });
+        .send({ title: 'New title', seats: 8, owner: intruder.id, averageRating: 5, reviewCount: 99, isDeleted: true });
       expect(own.status).toBe(200);
-      expect(own.body.data).toMatchObject({ title: 'New title', seats: 8, maintenanceFee: 0 });
+      expect(own.body.data).toMatchObject({ title: 'New title', seats: 8 });
       const stored: any = await Transport.findById(t._id).lean();
       expect(String(stored.owner)).toBe(provider.id);
       expect(stored.averageRating).toBe(0);
@@ -286,7 +281,7 @@ describe('Transport listings', () => {
 
     it('400 on invalid values and bad category', async () => {
       const t = await insert(provider.id, sub);
-      for (const body of [{ seats: 0 }, { amount: -5 }, { insuranceFee: 'x' }, { category: oid() }]) {
+      for (const body of [{ seats: 0 }, { amount: -5 }, { extraChargePerHour: 'x' }, { category: oid() }]) {
         const res = await api().patch(`${BASE}/${t._id}`).set(...provider.auth).send(body);
         expect([body, res.status]).toEqual([body, 400]);
       }
@@ -348,5 +343,78 @@ describe('Transport listings', () => {
 
     const card = (await api().get(BASE)).body.data[0];
     expect(card.rating).toEqual({ average: 5, count: 1 });
+  });
+});
+
+/* ------------------------------------------------------------------ */
+/* All-inclusive price: no insurance / maintenance fee (17 Nov 2026)   */
+/* ------------------------------------------------------------------ */
+describe('Transport: all-inclusive price (insurance / maintenance fees removed)', () => {
+  let provider: TestUser;
+  let sub: string;
+
+  beforeEach(async () => {
+    provider = await makeProvider('Transport');
+    sub = await makeSubCategory('Transport', 'Van');
+  });
+
+  it('create works without the fees (no more "insuranceFee is required")', async () => {
+    const res = await createViaApi(provider, validFields(sub));
+    expect(res.status).toBe(201);
+    const stored: any = await Transport.findById(res.body.data.id).lean();
+    expect(stored).not.toHaveProperty('insuranceFee');
+    expect(stored).not.toHaveProperty('maintainCharge');
+  });
+
+  it('older apps still sending the fees (new or old names, even invalid values): accepted, ignored, never stored', async () => {
+    const olderApps: Record<string, string>[] = [
+      { insuranceFee: '0', maintenanceFee: '0' },
+      { insuranceFee: '20', maintainCharge: '10' },
+      { insuranceFee: 'abc', maintenanceFee: '-1' },
+    ];
+    for (const extra of olderApps) {
+      const res = await createViaApi(provider, { ...validFields(sub), ...extra });
+      expect([extra, res.status]).toEqual([extra, 201]);
+      expect(res.body.data).not.toHaveProperty('insuranceFee');
+      expect(res.body.data).not.toHaveProperty('maintenanceFee');
+      const stored: any = await Transport.findById(res.body.data.id).lean();
+      expect(stored.insuranceFee).toBeUndefined();
+      expect(stored.maintainCharge).toBeUndefined();
+    }
+  });
+
+  it('edit ignores the fees; an old stored value is never returned', async () => {
+    const t = await insert(provider.id, sub);
+    // a listing saved before the change still holds the old values
+    await Transport.collection.updateOne({ _id: t._id }, { $set: { insuranceFee: 20, maintainCharge: 10 } });
+    const res = await api().patch(`${BASE}/${t._id}`).set(...provider.auth)
+      .send({ title: 'Edited', insuranceFee: 50, maintenanceFee: 5 });
+    expect(res.status).toBe(200);
+    expect(res.body.data).not.toHaveProperty('insuranceFee');
+    expect(res.body.data).not.toHaveProperty('maintenanceFee');
+    const stored: any = await Transport.collection.findOne({ _id: t._id });
+    expect(stored).toMatchObject({ title: 'Edited', insuranceFee: 20, maintainCharge: 10 }); // untouched until the cleanup script
+
+    const pub = await api().get(`${BASE}/${t._id}`);
+    expect(pub.body.data).not.toHaveProperty('insuranceFee');
+    expect(pub.body.data).not.toHaveProperty('maintenanceFee');
+    const list = await api().get(`${BASE}`);
+    expect(JSON.stringify(list.body.data)).not.toMatch(/insuranceFee|maintenanceFee|maintainCharge/);
+  });
+
+  it('the customer pays the trip price only, even if an old listing still holds fees', async () => {
+    const t = await insert(provider.id, sub, { amount: 150 });
+    await Transport.collection.updateOne({ _id: t._id }, { $set: { insuranceFee: 20, maintainCharge: 10 } });
+    const customer = await makeCustomer();
+    const start = new Date(Date.now() + 3 * 86400000);
+    const intent = await api().post('/api/v1/booking/intent').set(...customer.auth).send({
+      productId: String(t._id),
+      startDateAndTime: start.toISOString(),
+      endDateAndTime: new Date(start.getTime() + 2 * 3600000).toISOString(),
+      personCount: 2,
+    });
+    expect(intent.status).toBe(200);
+    expect(intent.body.data.amount).toBe(150);
+    expect(JSON.stringify(intent.body.data)).not.toMatch(/insurance|maintenance|maintainCharge/i);
   });
 });

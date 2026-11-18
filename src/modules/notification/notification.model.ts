@@ -33,6 +33,11 @@ const NotificationSchema: Schema = new Schema(
     event: {
       type: String,
     },
+    // machine-readable values the text mentions (exact times as ISO dates),
+    // so apps can show them in the device's own format and time zone
+    data: {
+      type: Schema.Types.Mixed,
+    },
     isRead: {
       type: Boolean,
       default: false,

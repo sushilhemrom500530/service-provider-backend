@@ -24,13 +24,13 @@ Every response: `{ success, message, data, meta? }`. Errors: `{ success: false, 
   "id": "6650…", "category": "Massage",
   "subCategory": { "id": "6640…", "name": "Thai", "photo": "https://…" },
   "title": "Deep tissue", "thumbnail": "https://…", "serviceArea": "Chamonix",
-  "price": { "amount": 80, "unit": "per_session" },
+  "price": { "amount": 80, "unit": "per_person" },
   "rating": { "average": 4.5, "count": 12 },
   "provider": { "id": "6630…", "name": "Anna Spa", "photo": "https://…" },
   "isActive": true
 }
 ```
-`price.amount` = the cheapest duration price (or the listing `amount` when there are no durations).
+`price.amount` = the cheapest duration price (or the listing `amount` when there are no durations). It is **per person**: a booking costs the duration price × `personCount` (`unit: "per_person"`, was `"per_session"`).
 
 **Detail** = card + :
 ```json
@@ -41,6 +41,7 @@ Every response: `{ success, message, data, meta? }`. Errors: `{ success: false, 
     { "id": "6651…", "duration": "60 min", "minutes": 60, "price": 80 },
     { "id": "6652…", "duration": "90 min", "minutes": 90, "price": 120 }
   ],
+  "capacity": 1,
   "benefits": "Relaxes muscles",
   "recommendations": "Drink water",
   "createdAt": "2026-11-16T10:00:00.000Z"
@@ -48,6 +49,7 @@ Every response: `{ success, message, data, meta? }`. Errors: `{ success: false, 
 ```
 - `durations` are sorted shortest first. `minutes` is `null` only for a legacy value that can't be read.
 - **Booking:** send `duration` exactly as the `duration` string from this list (e.g. `"60 min"`).
+- `capacity`: guests that can be booked **at the same time** (number of therapists). `1` on listings saved before it existed. A time is full when the overlapping bookings already use every place; see availability in the booking section.
 - Reviews are never in the detail: use `GET /:id/reviews`.
 
 ## GET `/` (browse, public)
@@ -87,6 +89,7 @@ Query `page`, `limit`.
 | `serviceArea` | string | yes | |
 | `benefits` | string | yes | |
 | `recommendations` (or old `ourRecommendations`) | string | yes | |
+| `capacity` (or `therapists`) | integer | no | guests at the same time, 1-50, default 1. A booking of N people takes N places. |
 | `amount` | number | no | fallback price; defaults to the cheapest duration |
 | `description` | string | no | |
 

@@ -27,6 +27,7 @@ export interface IPayment {
   purpose?: 'booking' | 'late_fee';
   refundedAmount?: number;
   refundedAt?: Date;
+  refundIds?: string[];
 
   status: TransactionStatus;
 

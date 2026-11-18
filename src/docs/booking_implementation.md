@@ -364,7 +364,7 @@ Overtime (`timeLabel` "Over Time…" and `overTimeAmount` in `GET /booking/:id`)
 
 - A Massage `duration` that is not in the listing is rejected with the list of valid durations. This also stops wrong durations ("23 hr 19 min") and €0 massage bookings.
 - A listing without a valid price (0 or missing) can't be booked.
-- **To confirm with the business:** Transport is charged `amount` once; `insuranceFee` and `maintainCharge` are **not** added, and the length of the rental doesn't change the price. Restaurant `serviceFee` is added once as a flat amount. If either rule is different, it is a one-line change in `calculateServerPrice` (`booking.service.ts`).
+- **Decided (17 Nov 2026):** Transport is charged `amount` once, an all-inclusive trip price. The insurance and maintenance fees were removed from listings, and the length of the rental doesn't change the price. Restaurant `serviceFee` is added once as a flat amount. If either rule is different, it is a one-line change in `calculateServerPrice` (`booking.service.ts`).
 
 ## Stripe webhook (paid but app closed)
 

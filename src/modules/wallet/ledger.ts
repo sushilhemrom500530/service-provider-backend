@@ -57,21 +57,27 @@ export const getAdminUserId = async (): Promise<Types.ObjectId | null> => {
 };
 
 /**
- * Pay a provider for a booking (or a late fee): net to the provider,
- * platform fee to the admin wallet. Returns the split.
+ * Pay a provider for a booking (or a late fee): net to the provider; the
+ * platform commission (a % of `gross`) plus any `serviceFee` (platform
+ * money the customer paid on top, e.g. the restaurant service fee) to the
+ * admin wallet.
+ * Returns { net, fee: everything the platform keeps, commission, serviceFee, percent }.
  */
 export const payProvider = async (
   providerId: any,
   gross: number,
   customerId: any,
+  serviceFee = 0,
 ) => {
   const split = await splitPlatformFee(gross);
-  await changeBalance(providerId, split.net, WalletTransactionType.EARN, customerId);
-  if (split.fee > 0) {
+  const extra = Math.max(0, Math.round((Number(serviceFee) || 0) * 100) / 100);
+  if (split.net > 0) await changeBalance(providerId, split.net, WalletTransactionType.EARN, customerId);
+  const platform = Math.round((split.fee + extra) * 100) / 100;
+  if (platform > 0) {
     const adminId = await getAdminUserId();
-    if (adminId) await changeBalance(adminId, split.fee, WalletTransactionType.EARN, providerId);
+    if (adminId) await changeBalance(adminId, platform, WalletTransactionType.EARN, providerId);
   }
-  return split;
+  return { net: split.net, fee: platform, commission: split.fee, serviceFee: extra, percent: split.percent };
 };
 
 /** Undo payProvider (booking cancelled after the provider was paid) */

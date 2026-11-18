@@ -53,6 +53,9 @@ router.patch(
   UserController.updateMyProfile
 );
 
+// delete the logged-in user's own account
+router.delete('/me', auth('Admin', 'Provider', 'User'), UserController.deleteMyProfile);
+// old path (the :id is ignored: only the caller's own account is deleted)
 router.delete(
   '/delete/:id',
   auth('Admin', 'Provider', 'User'),

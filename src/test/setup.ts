@@ -42,6 +42,12 @@ jest.mock('../socket/socketEmitter', () => ({
   SOCKET_NOTIFICATION_NEW: 'notification:new',
 }));
 
+// tests must not write into the real log files (winston/)
+jest.mock('../shared/logger', () => {
+  const quiet = { info: jest.fn(), error: jest.fn(), warn: jest.fn(), debug: jest.fn() };
+  return { __esModule: true, logger: quiet, errorLogger: quiet };
+});
+
 // quiet request logging in test output
 jest.spyOn(console, 'log').mockImplementation(() => undefined);
 
@@ -53,8 +59,25 @@ const assertLocal = (uri: string) => {
     throw new Error(`Refusing to connect tests to a non-local database: ${uri.split('@').pop()}`);
 };
 
+/**
+ * Windows (Hyper-V / WinNAT) reserves random TCP ranges; a random port can
+ * fail with "listen EACCES". Use a port from a range those don't use, retry.
+ */
+const startMongo = async () => {
+  let lastError: any;
+  for (let attempt = 0; attempt < 8; attempt++) {
+    const port = 27100 + Math.floor(Math.random() * 800);
+    try {
+      return await MongoMemoryServer.create({ instance: { port, ip: '127.0.0.1' } });
+    } catch (error) {
+      lastError = error;
+    }
+  }
+  throw lastError;
+};
+
 beforeAll(async () => {
-  mongo = await MongoMemoryServer.create();
+  mongo = await startMongo();
   const uri = mongo.getUri();
   assertLocal(uri);
   await mongoose.connect(uri);

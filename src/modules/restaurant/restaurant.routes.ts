@@ -1,3 +1,4 @@
+import { acceptListingDetailShape } from '../common/listing.helpers';
 import { Router } from 'express';
 import fileUploadHandler from './../../shared/fileUploadHandler';
 import { USER_UPLOADS_FOLDER } from './restaurant.constant';
@@ -44,6 +45,7 @@ router.post(
   ['/', '/create'],
   auth('Provider', 'Admin'),
   ...listingUpload,
+  acceptListingDetailShape,
   validateRequest(RestaurantValidations.createRestaurant),
   RestaurantController.create,
 );
@@ -65,6 +67,7 @@ router.patch(
   ['/:id', '/update/:id'],
   auth('Provider', 'Admin'),
   ...listingUpload,
+  acceptListingDetailShape,
   validateRequest(RestaurantValidations.updateRestaurant),
   RestaurantController.update,
 );

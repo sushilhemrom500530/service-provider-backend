@@ -67,8 +67,6 @@ const toDetail = (doc: any, subs: Map<string, SubCategory>) => ({
   mileage: doc.milage === undefined || doc.milage === null ? '' : String(doc.milage),
   power: doc.power === undefined || doc.power === null ? '' : String(doc.power),
   extraChargePerHour: num(doc.extraChargePerHours),
-  insuranceFee: num(doc.insuranceFee),
-  maintenanceFee: num(doc.maintainCharge),
   createdAt: doc.createdAt,
 });
 
@@ -96,8 +94,6 @@ const toStored = (input: Record<string, any>) => {
     mileage: 'milage',
     power: 'power',
     extraChargePerHour: 'extraChargePerHours',
-    insuranceFee: 'insuranceFee',
-    maintenanceFee: 'maintainCharge',
     description: 'description',
   };
   const out: Record<string, any> = {};

@@ -24,11 +24,15 @@ import { Booking } from './booking.model';
 import { BookingDraft } from './bookingDraft.model';
 import { notify, emitBookingUpdated } from '../notification/notify';
 import {
+  POLICY,
   computeApprovalDeadline,
   computeSchedule,
+  formatBookingWhen,
+  FOREIGN_COMPLETION_FILTER,
   durationToMinutes,
   fitsOpeningHours,
   formatDuration,
+  formatLocalDateTime,
   formatTime,
   isRental,
   timeToMinutes,
@@ -37,10 +41,12 @@ import {
 } from './booking.rules';
 import {
   assertRestaurantAvailable,
+  assertMassageAvailable,
   assertNoOverbooking,
   assertSkiHireAvailable,
   findListingAnyCategory,
-  transportIsFree,
+  transportBlocker,
+  TRANSPORT_BLOCK_MESSAGES,
 } from './booking.availability';
 
 const round2 = (n: number) => Math.round(n * 100) / 100;
@@ -92,9 +98,11 @@ const parseDay = (value: unknown) => {
   return day;
 };
 
-const parseGuests = (value: unknown, fallback = 1) => {
+/** personCount: whole number, at least 1, and at most `max` when the service has a limit */
+const parseGuests = (value: unknown, fallback = 1, max?: { limit: number; message: string }) => {
   const n = value === undefined || value === null || value === '' ? fallback : Number(value);
   if (!Number.isInteger(n) || n < 1) throw bad('personCount must be a whole number of at least 1.');
+  if (max && n > max.limit) throw bad(max.message);
   return n;
 };
 
@@ -121,6 +129,8 @@ export type NormalizedBooking = {
   startAt: Date;
   endAt: Date;
   totalPrice: number;
+  /** platform service fee included in totalPrice (Restaurant) */
+  serviceFee?: number;
   priceBreakdown: Record<string, any>;
 };
 
@@ -155,6 +165,12 @@ export const prepareBooking = async (user: JwtPayload, payload: any) => {
     throw new AppError(StatusCodes.NOT_FOUND, 'This listing is not available.');
   if (String(listing.owner) === String(dbUser._id))
     throw bad('You cannot book your own listing.');
+  // bookings of this listing closed early by something outside the lifecycle
+  // still hold their dates/units (see reopenForeignCompletions)
+  await Booking.updateMany(
+    { ...FOREIGN_COMPLETION_FILTER, product: listing._id },
+    { $set: { bookingStatus: 'Active' } },
+  );
   const owner: any = await User.findById(listing.owner).select('fullName email providerType status');
   if (!owner) throw new AppError(StatusCodes.NOT_FOUND, 'Provider not found.');
 
@@ -173,7 +189,10 @@ export const prepareBooking = async (user: JwtPayload, payload: any) => {
   switch (category) {
     case 'Ski_Pass': {
       const day = parseDay(payload.date);
-      const guests = parseGuests(payload.personCount);
+      const guests = parseGuests(payload.personCount, 1, {
+        limit: POLICY.SKI_PASS_MAX_PEOPLE,
+        message: `A ski pass booking is for up to ${POLICY.SKI_PASS_MAX_PEOPLE} people. Make a second booking for more.`,
+      });
       const unit = Number(listing.amount);
       if (!(unit > 0)) throw bad('This ski pass has no valid price.');
       n = { ...base, date: startOfLocalDay(day), personCount: guests };
@@ -240,6 +259,8 @@ export const prepareBooking = async (user: JwtPayload, payload: any) => {
         slotTime: { startTime: slot.startTime, endTime: slot.endTime },
         bookingItems: items.map(i => ({ itemId: new Types.ObjectId(i.itemId), quantity: i.quantity })),
         personCount: items.reduce((s, i) => s + i.quantity, 0),
+        // stored: the platform keeps it, the provider is paid on the seats only
+        serviceFee: round2(serviceFee),
       };
       totalPrice = round2(seatsTotal + serviceFee);
       priceBreakdown = { seats: lines, serviceFee };
@@ -283,8 +304,8 @@ export const prepareBooking = async (user: JwtPayload, payload: any) => {
       const guests = parseGuests(payload.personCount);
       const seats = Number(listing.personCount) || 0;
       if (seats && guests > seats) throw bad(`This vehicle takes up to ${seats} passengers.`);
-      if (!(await transportIsFree(listing._id, start, end)))
-        throw new AppError(StatusCodes.CONFLICT, 'This transport is already booked for that time.');
+      const blocked = await transportBlocker(listing._id, start, end);
+      if (blocked) throw new AppError(StatusCodes.CONFLICT, TRANSPORT_BLOCK_MESSAGES[blocked]);
       const amount = Number(listing.amount);
       if (!(amount > 0)) throw bad('This transport has no valid price.');
       n = {
@@ -311,6 +332,9 @@ export const prepareBooking = async (user: JwtPayload, payload: any) => {
     throw bad('This time slot has already started. Choose a later one.');
   if (!isRental(category) && category === 'Massage' && schedule.startAt.getTime() <= Date.now())
     throw bad('This time has already passed. Choose a later one.');
+  // one therapist (or `capacity`) per time: refuse a full time before payment
+  if (category === 'Massage')
+    await assertMassageAvailable(listing, schedule.startAt, schedule.endAt, Number(n.personCount) || 1);
 
   const normalized: NormalizedBooking = {
     ...(n as any),
@@ -433,7 +457,11 @@ const retrievePaidIntent = async (paymentIntentId: string) => {
 
 const refundQuietly = async (paymentIntentId: string) => {
   try {
-    await stripe.refunds.create({ payment_intent: paymentIntentId, metadata: { source: 'app' } });
+    await stripe.refunds.create(
+      { payment_intent: paymentIntentId, metadata: { source: 'app' } },
+      // a retry (job / webhook / app) never refunds this payment twice
+      { idempotencyKey: `refund-unbooked-${paymentIntentId}` },
+    );
     return true;
   } catch {
     return false;
@@ -518,11 +546,19 @@ const bookPaidIntent = async (user: JwtPayload, payload: any, intent: Stripe.Pay
         { $set: { status: 'completed', booking: booking._id } },
       );
 
+    // every text names the listing and when it takes place
+    // ("6-Day 3 Valleys Pass on Fri 20 Nov"), exact values in `data`
+    const what = `${listing.title || 'your booking'}${(w => (w ? ` on ${w}` : ''))(formatBookingWhen(booking))}`;
+    const customerName = dbUser.fullName || 'A customer';
     await notify(dbUser._id, {
       title: autoApprove ? 'Booking confirmed' : 'Booking requested',
       description: autoApprove
-        ? `Your booking is confirmed. Ticket ${booking.ticketNumber}.`
-        : 'Payment received. The provider will confirm your booking soon.',
+        ? `${what} is confirmed. Ticket ${booking.ticketNumber}.`
+        : `Payment received for ${what}. The provider will confirm your booking soon.`,
+      data: {
+        startAt: booking.startAt ?? null,
+        ...(autoApprove ? { ticketNumber: booking.ticketNumber } : { approveBy: booking.approvalDeadline ?? null }),
+      },
       booking,
       senderId: owner._id,
       event: autoApprove ? 'booking.confirmed' : 'booking.requested',
@@ -530,11 +566,15 @@ const bookPaidIntent = async (user: JwtPayload, payload: any, intent: Stripe.Pay
     await notify(owner._id, {
       title: autoApprove ? 'New booking' : 'New booking request',
       description: autoApprove
-        ? `${dbUser.fullName || 'A customer'} booked your listing.`
-        : `${dbUser.fullName || 'A customer'} requested a booking. Approve or reject it before ${booking.approvalDeadline?.toISOString?.()}.`,
+        ? `${customerName} booked ${what}.`
+        : `${customerName} requested ${what}. Approve or reject it before ${formatLocalDateTime(booking.approvalDeadline)}.`,
       booking,
       senderId: dbUser._id,
       event: 'booking.new',
+      data: {
+        startAt: booking.startAt ?? null,
+        ...(autoApprove ? { ticketNumber: booking.ticketNumber } : { approveBy: booking.approvalDeadline ?? null }),
+      },
     });
     emitBookingUpdated([dbUser._id, owner._id], booking, autoApprove ? 'Confirmed' : 'Pending');
 

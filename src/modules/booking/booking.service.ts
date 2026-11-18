@@ -28,6 +28,8 @@ import {
   expireUnapproved,
   completeFinished,
   releaseHeldPayouts,
+  reopenForeignCompletions,
+  settlePendingRefunds,
   backfillSchedule,
 } from './booking.lifecycle';
 import {
@@ -97,6 +99,8 @@ export const BookingService = {
   expireUnapproved,
   completeFinished,
   releaseHeldPayouts,
+  reopenForeignCompletions,
+  settlePendingRefunds,
   backfillSchedule,
   reconcileDrafts,
   adminRefund,

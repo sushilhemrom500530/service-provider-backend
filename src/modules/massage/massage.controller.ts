@@ -34,12 +34,8 @@ const getDetail = catchAsync(async (req: Request, res: Response) => {
 
 const getReviews = catchAsync(async (req: Request, res: Response) => {
   const { data, meta, rating } = await MassageService.getReviews(idParam(req), req.query as any);
-  sendResponse(res, {
-    code: StatusCodes.OK,
-    message: 'Reviews fetched.',
-    data: { reviews: data, rating },
-    meta,
-  });
+  // same shape as every other service: data = reviews, rating next to meta
+  res.status(StatusCodes.OK).json({ success: true, message: 'Reviews fetched.', data, meta, rating });
 });
 
 const create = catchAsync(async (req: Request, res: Response) => {

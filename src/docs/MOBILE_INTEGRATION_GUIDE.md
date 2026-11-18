@@ -1,9 +1,11 @@
 # Peak Privee: Mobile Integration Guide
 
+> Status of the issues QA reported (fixed / still open): see `BACKEND_ISSUES_STATUS.md` in this folder.
+
 This guide covers everything the mobile app (customer and provider) needs: the five services (Ski Pass, Ski Hire, Transport, Restaurant, Massage), payments, bookings, notifications, live updates, wallet and dashboards.
 
 - Base URL: `https://<server>/api/v1`
-- Socket: `wss://<server>` (Socket.IO)
+- Socket: the **same host as the API**, without `/api/v1`: `https://<server>` (Socket.IO upgrades to `wss://`; default path `/socket.io`)
 
 ---
 
@@ -51,7 +53,7 @@ This guide covers everything the mobile app (customer and provider) needs: the f
 | Service | Customer picks | Price | Needs provider approval | Rental flow |
 |---|---|---|---|---|
 | Ski Pass | day + persons | `amount × persons` | No (confirmed at payment, ticket number) | – |
-| Massage | day + time + duration + persons | duration price × persons | Yes | – |
+| Massage | day + time + duration + persons | duration price × persons | Yes | – (409 when the time is full: at most `capacity` guests at once) |
 | Restaurant | day + slot + seats per type | Σ seat price × seats + service fee | Yes | – |
 | Ski Hire | start/end date-time + items × qty | Σ item price × qty × rental units (`per_day`/`per_hour`/`per_rental`) | Yes | hand-over, then return (late fee) |
 | Transport | start/end date-time + passengers | listing `amount` (per trip) | Yes | hand-over, then return (late fee) |
@@ -74,8 +76,15 @@ Customer: choose → POST /booking/intent → Stripe Payment Sheet → POST /boo
 |---|---|---|
 | Restaurant | `date=2026-12-20` | `{ slots: [{ slotId, startTime, endTime, isPast, seats: [{ itemId, type, price, available }] }] }` |
 | Ski Hire | `start=ISO&end=ISO` | `{ items: [{ itemId, name, price, quantity, available }] }` |
-| Transport | `start=ISO&end=ISO` | `{ available: true }` |
-| Ski Pass / Massage | – | `{ available: true }` |
+| Transport | `start=ISO&end=ISO` | `{ available, reason }`, where `reason` is `null`, `"booked"` (another booking at that time) or `"not_returned"` (the previous customer still has the vehicle) |
+| Massage (a day) | `date=2026-12-20&duration=60 min[&personCount=2][&step=30]` | `{ capacity, step, slots: [{ time: "11:00 AM", startAt, endAt, left, available, isPast }] }`: every start time inside the opening hours (`step` 15, 30 or 60 min). Grey out `available: false`. |
+| Massage (one time) | `date=…&time=11:00 AM&duration=60 min[&personCount=2]` | `{ available, left, capacity, reason }`, where `reason` is `null`, `"booked"`, `"closed"` (outside opening hours), `"past"` or `"too_many_guests"` (more people than `capacity`) |
+| Ski Pass | – | `{ available: true }` |
+
+**Rentals not returned yet (Ski Hire, Transport).** A rental that was handed over and is past its end without a return is still with the previous customer. The vehicle (or Ski Hire unit) stays unavailable for any booking that starts before it is returned, at the latest 48 h after its end, when the server closes it. Once the provider presses `return`, it is bookable again.
+- `POST /booking/intent` answers **409**: "This vehicle has not been returned by the previous customer yet. Please choose a later time or another vehicle."
+- Ski Hire answers "… is not available for these dates".
+- The provider can't hand a vehicle to the next customer while the previous rental is still out (409 on `hand-over`: "Mark that rental as returned first").
 
 ### 3.2 `POST /booking/intent` (customer)
 One body for all services; fields that don't apply are ignored.
@@ -84,7 +93,7 @@ One body for all services; fields that don't apply are ignored.
 |---|---|---|---|---|---|
 | `productId` | ✔ | ✔ | ✔ | ✔ | ✔ |
 | `date` (`YYYY-MM-DD`) | ✔ | ✔ | ✔ | | |
-| `personCount` | ✔ (default 1) | ✔ (default 1) | | | ✔ (≤ seats) |
+| `personCount` | ✔ (default 1, ≤ 10) | ✔ (default 1, ≤ `capacity`) | | | ✔ (≤ seats) |
 | `time` (`"10:30 AM"` or `"14:00"`; the whole session must fit in the opening hours, which may cross midnight) | | ✔ | | | |
 | `duration` (`"60 min"`, one of the listing's durations) | | ✔ | | | |
 | `slotId` | | | ✔ | | |
@@ -162,7 +171,13 @@ Lists return **cards**; `GET /booking/:id` returns the **detail** (card + more).
   - `timeline {bookedAt, approvedAt, handedOverAt, returnedAt, completedAt, cancelledAt}`
   - `cancellation {by: user|provider|admin|system, reason, refundAmount}`
   - `noShow`
-  - for the provider: `earning {gross, platformFee, net, status: pending|paid|none}`
+  - for the provider: `earning {gross, serviceFee, platformFee, net, status: pending|paid|none, lateFee}`
+    - `gross` = what the customer paid for the booking; `net` = what the provider receives.
+    - `serviceFee` = the restaurant service fee inside `gross` (0 for other services). It is **platform money**: never part of `net`.
+    - `platformFee` = everything the platform keeps once paid out: the commission (a % of `gross − serviceFee`) **plus** the service fee. So `gross = platformFee + net` once paid.
+    - Example (Restaurant, 20 % commission): `{ gross: 65, serviceFee: 5, platformFee: 17, net: 48 }` (60 × 80 % = 48; 12 + 5 = 17). Show e.g. "Booking €65.00 · Service fee (platform) €5.00 · Commission €12.00 · You earn €48.00".
+    - `lateFee` (rentals, else `null`): `{gross, platformFee, net, status}`. While the customer owes it: `{gross: 20, platformFee: null, net: null, status: "pending"}`. Once paid: `{gross: 20, platformFee: 4, net: 16, status: "paid"}`.
+    - Total the provider earns = `net + (lateFee?.net ?? 0)`.
 - `slot` (Restaurant): `{ startTime, endTime }`. `time`/`duration`: Massage. `ticketNumber`: Ski Pass. `people`: persons/passengers/seats.
 
 ### 4.1 `status`
@@ -198,7 +213,7 @@ Lists return **cards**; `GET /booking/:id` returns the **detail** (card + more).
 | `starts_in` | "Pick-up in {minutes}" |
 | `pickup_due` | "Pick-up time passed {minutes} ago" (provider: hand over) |
 | `return_in` | "Return in {minutes}" |
-| `overdue` | "Late by {minutes} · €{lateFee} so far" |
+| `overdue` | "Late by {minutes} · €{lateFee} so far" (status stays `InProgress` until the return; see §6) |
 
 - `minutes` is computed when the response is built. Count down locally and refresh every few minutes.
 
@@ -213,7 +228,11 @@ Lists return **cards**; `GET /booking/:id` returns the **detail** (card + more).
 - **Cancel:** `PATCH /booking/:id/cancel` (only before the start and before hand-over). The refund goes **to the card**:
   - still `Pending`, or more than **24 h** before the start → **100 %**
   - within 24 h of the start → **90 %**; the provider keeps 10 %
-  - Response detail includes `refund: { amount, percent }`.
+  - Response detail includes `refund: { amount, percent, status }`:
+    - `status: "refunded"`: sent to the card. Show "€{amount} refunded to your card (5-10 days to appear)".
+    - `status: "pending"`: the booking is cancelled, but Stripe could not be reached. The server sends the refund automatically within a few minutes, never twice. Show "Refund of €{amount} is being processed".
+  - A **502** means the card refund was refused: nothing changed and the booking is still active. Show the message and let the customer try again or contact support.
+  - The booking detail `refundedAmount` and the Payments screen (`status: "Refunded"` / `"Partially_Refunded"`, `refundedAmount`) always match what Stripe refunded.
 - **After completion:** the `review` action, which opens the service's review endpoint. After a successful review, refresh the booking: `review` is gone.
 
 ### Provider app
@@ -234,23 +253,67 @@ Lists return **cards**; `GET /booking/:id` returns the **detail** (card + more).
 |---|---|
 | Not approved within **24 h** (or before the start, if sooner) | `Cancelled` (`by: system`), **100 % refund**, both notified |
 | Ski Pass / Massage / Restaurant past the end time | `Completed`, provider paid |
-| Rental approved but never handed over, past the end | `Completed` with `noShow: true` (not refunded) |
+| Rental approved but never handed over, past the end | `Completed` with `noShow: true` (not refunded); both sides get `booking.no_show` |
+| Rental handed over and not returned | Stays `InProgress` after its end (overdue timer). Never completed at the end time |
 | Rental handed over, not returned **48 h** after the end | Closed automatically; late fee counted up to then |
 
 ---
 
 ## 6. Late fee (Ski Hire, Transport)
 
-- **Rule:**
-  - 15 minutes free.
-  - Then **every started hour × the listing's `extraChargePerHour`**.
-  - Never more than the booking price.
-- **Where it shows:** `lateFee: { hours, amount, status: "due" | "paid" }`. The customer gets a notification and the `pay_late_fee` action.
+### 6.1 Rule (server)
+- 15 minutes free after the rental's end time.
+- Then **every started hour × the listing's `extraChargePerHour`** (Ski Hire: the item's hourly rate).
+- Never more than the booking price.
+- A handed-over rental is **never** completed at its end time. It stays `InProgress` until:
+  - the provider presses `return`: the fee is counted up to that moment, or
+  - **48 h** after the end without a return: the server closes it, with the fee counted up to then.
+- The provider is paid for the rental only after that completion. The late fee is paid to the provider separately when the customer pays it, minus the platform fee.
 
-Pay it (customer):
-1. `POST /booking/:id/late-fee/intent` → `{ paymentIntentId, clientSecret, publishableKey, amount, currency }`
-2. Present the Stripe Payment Sheet.
-3. `POST /booking/:id/late-fee/confirm` `{ "paymentIntentId": "pi_…" }` → booking with `lateFee.status: "paid"`. Idempotent; the webhook also confirms it.
+### 6.2 What the app receives
+| Moment | `status` | `timer` | `lateFee` | `actions` (customer) | `actions` (provider) |
+|---|---|---|---|---|---|
+| Handed over, before the end | `InProgress` | `{ state: "return_in", minutes }` | `null` | — | `["return"]` |
+| End time passed, not returned | `InProgress` | `{ state: "overdue", minutes, lateFee }` (fee so far) | `null` | — | `["return"]` |
+| Returned late (or auto-closed after 48 h) | `Completed` | `null` | `{ hours, amount, status: "due" }` | `["pay_late_fee", "review"]` | — |
+| Fee paid | `Completed` | `null` | `{ hours, amount, status: "paid" }` | `["review"]` (once) | — |
+| Returned within 15 min | `Completed` | `null` | `null` | `["review"]` | — |
+
+Notifications (plus the socket event `booking:updated` to both sides on every change):
+- `booking.late_fee_due`: to the customer at the return (or the 48 h auto-close). The text gives the real delay and the charged hours, e.g. "Car was returned 15 min late. Late fee: €45.00 (1 started hour). Please pay it in the app." `data: { lateMinutes, chargedHours, lateFee, currency }`. A return within 15 min sends `booking.completed` instead.
+- `booking.late_fee_paid`: to the customer and the provider when it is paid.
+
+### 6.3 Customer app: implement
+1. **Booking detail / active rental card:** when `timer` is not null, show a banner:
+   - `return_in`: "Return in {minutes}".
+   - `overdue`: "Late by {minutes} min · €{timer.lateFee} so far" (red).
+   - Count `minutes` locally every minute. Refetch `GET /booking/:id` every few minutes and on `booking:updated` for this id.
+2. **When `actions` contains `pay_late_fee`:**
+   - Show a red "Late fee due: €{lateFee.amount} ({lateFee.hours} h)" card with a **Pay late fee** button.
+   - Also show it on the home screen / My bookings (`tab=past`): any booking with `lateFee.status == "due"`.
+3. **Pay late fee button:**
+   1. `POST /booking/:id/late-fee/intent` → `{ paymentIntentId, clientSecret, publishableKey, amount, currency }`.
+   2. Present the Stripe Payment Sheet with `clientSecret` (same setup as the booking payment).
+   3. On success: `POST /booking/:id/late-fee/confirm` `{ "paymentIntentId": "pi_…" }` → the booking with `lateFee.status: "paid"`.
+   4. If the app closes before step 3, nothing is lost: the Stripe webhook confirms it. On reopen, refetch the booking.
+   5. Errors: `409` no fee due / already paid (refetch the booking); `402` payment not completed (the sheet was closed); `403` not your booking.
+4. **New bookings are blocked while a fee is due:** `POST /booking/intent` returns **402** "Please pay your outstanding late fee…". Show the message with a button that opens the booking with `pay_late_fee`. Use `GET /booking/my?tab=past` and find `lateFee.status == "due"`.
+
+### 6.4 Provider app: implement
+1. **Active rentals** (`GET /booking/provider?tab=active`): show the same `timer` banner. When `overdue`, show "Customer is late · €{timer.lateFee} so far".
+2. **Return button** (`actions` contains `return`): `PATCH /booking/:id/return` when the equipment / vehicle is back.
+   - The response is the completed booking with `lateFee` (if late) and `earning`.
+   - Show "Late fee €{lateFee.amount} charged to the customer" when `lateFee.status == "due"`.
+3. **Do not** show "Completed" for a rental just because its end time passed. Always use `status` from the server.
+4. **Earnings:** the rental earning appears after the return. The late fee earning appears in `earning.lateFee` when the customer pays (`status: "paid"`, `net` = what the wallet received; `booking.late_fee_paid` notification; wallet history `Earn`). Show for example "Your earning €20.00 + late fee €16.00".
+
+### 6.5 Testing the late fee (QA)
+1. Book a Ski Hire or Transport rental that ends a few minutes from now; approve and `hand_over`.
+2. Wait past the end + 15 min: the `timer.state` is `overdue` and `timer.lateFee` > 0. The status is still `InProgress`.
+3. Provider `return` → customer gets `pay_late_fee` → pay with a Stripe test card → `lateFee.status: "paid"`.
+4. Before step 3, try a new booking as that customer: **402**.
+
+> Server note: only the current backend version may run against the database. An older server version still running would close rentals at their end time. The current version detects this, reopens those bookings and pays nothing for them (it logs "marked Completed outside the booking lifecycle"), but the old server must be stopped.
 
 ---
 
@@ -281,16 +344,36 @@ Pay it (customer):
 ### REST
 | | Endpoint |
 |---|---|
-| List | `GET /notifications?page=&unread=true` → `[{ id, title, description, type, event, bookingId, isRead, createdAt }]`, `meta.unread` |
+| List | `GET /notifications?page=&unread=true` → `[{ id, title, description, type, event, bookingId, data, isRead, createdAt }]`, `meta.unread` |
 | Badge | `GET /notifications/unread-count` → `{ unread }` |
 | Mark one read | `PATCH /notifications/:id/read` |
 | Mark all read | `PATCH /notifications/read-all` |
 
 - Tapping a notification with `bookingId` opens `GET /booking/:bookingId`.
-- `event` values: `booking.requested`, `booking.confirmed`, `booking.new`, `booking.approved`, `booking.rejected`, `booking.expired`, `booking.cancelled`, `booking.handed_over`, `booking.completed`, `booking.late_fee_due`, `booking.late_fee_paid`, `withdraw.requested`, `withdraw.paid`, `withdraw.rejected`.
+- Times inside `description` are readable resort time, e.g. "Please return it by Wed 18 Nov, 5:00 PM CET". The exact value is in `data` (ISO), so the app can show it in the phone's own format and zone:
+  - `booking.handed_over`: `data.returnBy`
+  - `booking.new` (approval needed): `data.approveBy`
+  - `booking.confirmed` (Ski Pass, at payment), `booking.requested`, `booking.new`, `booking.approved`: `data.startAt`, plus `ticketNumber` (Ski Pass) or `approveBy` (needs approval)
+  - `booking.completed` (to the customer): `data.canReview`. The text says "You can now leave a review." only when it is `true` (no review of this listing by the customer yet, not a no-show), the same rule as the booking's `review` action. Show a "Review" button on the notification only when `canReview` is `true`.
+  - `booking.late_fee_due`: `data: { lateMinutes, chargedHours, lateFee, currency }`
+  - `booking.no_show`: customer `data: { noShow: true, kept, currency }`; provider `data: { noShow: true, earning, currency }` (`earning` is `null` while a card dispute holds it)
+  - `booking.cancelled`, `booking.rejected`, `booking.expired`, `booking.refunded`: `data.startAt` (session start), plus `refunded` (and `percent`) for the customer
+  - other notifications: `data: null`
+- Amounts inside `description` are formatted like "€45.00".
+- Every booking text names the listing and when it takes place, e.g.:
+  - Ski Pass: "6-Day 3 Valleys Pass on Fri 20 Nov is confirmed. Ticket TKT-935691." (day only)
+  - Request: "Payment received for Après-Ski Sports Massage on Tue 17 Nov, 12:00 PM CET. The provider will confirm your booking soon."
+  - Provider: "Anna Smith requested Après-Ski Sports Massage on Tue 17 Nov, 12:00 PM CET. Approve or reject it before …" / "Anna Smith booked 6-Day 3 Valleys Pass on Fri 20 Nov."
+  - Approval: "Après-Ski Sports Massage on Tue 17 Nov, 12:00 PM CET has been confirmed by the provider." 
+- Cancellation and refund texts name the booking, e.g. customer: "Après-Ski Sports Massage on Tue 17 Nov, 12:00 PM CET was cancelled. €90.00 (90%) is refunded to your card."; provider: "A booking for Après-Ski Sports Massage on Tue 17 Nov, 12:00 PM CET was cancelled by the customer." (Ski Pass shows the day only: "on Tue 17 Nov".)
+- `event` values: `booking.requested`, `booking.confirmed`, `booking.new`, `booking.approved`, `booking.rejected`, `booking.expired`, `booking.cancelled`, `booking.handed_over`, `booking.completed`, `booking.no_show`, `booking.late_fee_due`, `booking.late_fee_paid`, `withdraw.requested`, `withdraw.paid`, `withdraw.rejected`.
+- **Chat badge:** `unreadCount` is the same in the socket `chat-list` event and in `GET /chat/chat-users`. It is the number of messages from the other person that you have not read. Both lists leave out chats you deleted.
 
 ### Socket.IO
-- Connect with `auth: { token: <accessToken> }`. The server puts each device in the user's room.
+- **URL:** the API host without `/api/v1`. Example: API `https://api.example.com/api/v1` → socket `https://api.example.com`. Socket.IO runs on the same server and port as the API (path `/socket.io`), in development and in production. Don't hard-code a separate socket host.
+- Connect with `auth: { token: <accessToken> }` (a header `Authorization: Bearer <token>` also works). The server puts each device in the user's room.
+- Reconnect after a token refresh with the new token. On every (re)connect, refetch the screen: events sent while offline are not replayed.
+- Server note: the reverse proxy (nginx etc.) in front of the API must forward WebSocket upgrades (`Upgrade` / `Connection` headers) for `/socket.io/`.
 
 | Event | Payload | Do |
 |---|---|---|
@@ -306,6 +389,8 @@ Pay it (customer):
 {
   "bookings": { "total": 12, "requests": 2, "upcoming": 3, "inProgress": 1, "completed": 5, "cancelled": 1 },
   "earnings": { "balance": 480, "earned": 520, "platformFees": 130, "pending": 300, "lateFeesDue": 40 },
+  // pending: money of open bookings still to be paid out, before commission, service fee excluded
+  // platformFees: commission + service fees the platform kept
   "listings": 3,
   "today": [ "booking cards running today" ],
   "recent": [ "5 newest booking cards" ]
@@ -352,12 +437,51 @@ Pay it (customer):
 | Support refunds a customer (complaint) | Admin `PATCH /booking/:id/admin-refund { amount?, reason }`: full or partial, to the card. The provider's share of the refunded part is taken back proportionally | Detail `refundedAmount`; both sides notified (`booking.refunded`) |
 | Refund made directly in the Stripe dashboard | Webhook `refund.created` records it the same way as an admin refund | Same as above |
 | Card dispute / chargeback | Webhook `charge.dispute.created`: the provider payout is frozen, or taken back if already paid. Closed **won** → given back; **lost** → the money stays with the customer | Provider/admin detail `dispute { status, amount, reason }`; notifications `booking.disputed`, `booking.dispute_won`, `booking.dispute_lost` |
+| Server restarts or crashes in the middle of a cancel, or Stripe is unreachable | The refund owed is saved with the cancel. A job finishes it within minutes; refunds already sent to Stripe are found and recorded, never sent twice | `refund.status = "pending"`, then the booking and payment show the refund |
 | Double tap or two devices on any action | Every state change is atomic; the second gets 409 | Refresh the booking |
 | Provider deletes a listing with open bookings | Refused (409). They can set it inactive instead (hidden from browse; existing bookings continue) | Show the message |
+| Something outside the booking flow (e.g. an old server version on the same database) marks a booking Completed | Not trusted: a cancelled booking stays `Cancelled` (refund kept, no review); an open one stays open (late fee still applies, no payout). The stored status is repaired on the next read or job run | Always use `status` and `actions` from the server |
 
 **Server setup required:**
 - In the Stripe dashboard, add the webhook `https://<server>/api/v1/booking/webhook` with these events: `payment_intent.succeeded`, `refund.created`, `charge.dispute.created`, `charge.dispute.closed`.
 - Put its signing secret in `STRIPE_WEBHOOK_SECRET`.
+
+## 12. Account
+
+### Delete account (App Store requirement)
+`DELETE /users/me` (any logged-in customer or provider; the old `DELETE /users/delete/:id` does the same and ignores the id).
+
+- **200** `{ message: "Your account has been deleted.", data: { deletedAt } }`. Then clear the stored tokens and go to the welcome screen. The old token now gets 401.
+- **409** with every reason in `message`, when something still needs the account:
+  - customer: an upcoming or active booking ("Cancel them or wait until they are finished"), an unpaid late fee
+  - provider: an upcoming or active booking on their listings, money in the wallet ("Withdraw it first"), a withdrawal still being processed
+- **403**: admin accounts are not deleted from the app.
+- **What is removed:** name, email, phone, address, photo, bank accounts, notifications, sessions. Provider listings are taken down. The email can be used to sign up again.
+- **What stays (anonymised):** bookings, payments and reviews, shown as "Deleted user". They are financial and public history.
+- Ask for confirmation first ("This can't be undone").
+
+### Auth errors (show `message`, don't log out)
+| Request | Case | Response |
+|---|---|---|
+| `POST /auth/change-password` | wrong current password | **400** "Current password is incorrect." (not 401: the session is still valid) |
+| `POST /auth/login` | wrong password | **400** "Password is incorrect." |
+| `POST /auth/register` | email already registered | **400** "User already exists." The existing account is never changed |
+
+Only **401** means the session is over (log out / refresh the token).
+
+---
+
+# Listing editor screens (all services)
+
+The same rules apply to all five listing editors (Ski Pass, Ski Hire, Transport, Restaurant, Massage):
+
+1. **Load the form:** `GET /<service>/:id` (or the item from `GET /<service>/my`).
+2. **Save:** `PATCH /<service>/:id`, as JSON, or as form-data when a photo is attached.
+   - You may send **only the changed fields**, or the **whole loaded object back** with your changes. Both work: read-only fields (`id`, `rating`, `provider`, `isOpenNow`, `createdAt`, `price` summary…) are ignored, and fields you don't send are kept.
+   - **Sub-category:** send `subCategory: { "id": "<id>" }` (as loaded), `subCategoryId`, or `category: "<sub-category id>"`. The `category` text in the detail (e.g. `"Massage"`) is read-only and ignored. In form-data, `subCategory` may be the JSON string.
+   - Lists inside a listing (Ski Hire `items`, Restaurant `seats` / `slots`, Massage `durations`): send each existing entry **with its `id`** so it is updated in place and keeps its bookings. An entry without `id` is new. Removing entries is described in each appendix.
+3. The response is the updated detail: use it to refresh the form; no second GET needed.
+4. **Errors:** `400` validation, with `errors[]` per field (show it next to the field); `403` not your listing; `409` the change conflicts with open bookings (e.g. removing a booked slot).
 
 ---
 
@@ -405,11 +529,13 @@ Envelope: `{ success, message, data, meta? }`. Error: `{ success:false, message,
 {
   "description": "One day, all lifts",
   "services": [{ "title": "Lift access", "description": "All lifts, all day" }],
+  "maxPeoplePerBooking": 10,
   "createdAt": "2026-11-16T10:00:00.000Z",
   "updatedAt": "2026-11-16T10:00:00.000Z"
 }
 ```
-Reviews are never inside the detail; use `GET /:id/reviews`.
+- `maxPeoplePerBooking`: most people on one booking (10). The server refuses more with **400** "A ski pass booking is for up to 10 people. Make a second booking for more." Use it for the people picker instead of a fixed number.
+- Reviews are never inside the detail; use `GET /:id/reviews`.
 
 ### GET `/` : browse (public)
 Only active, non-deleted passes.
@@ -701,7 +827,7 @@ Error envelope: `{ "success": false, "message": "...", "errors"?: [{ "field", "m
   "isActive": true
 }
 ```
-`price.amount` is charged once per booking.
+`price.amount` is the **all-inclusive** trip price, charged once per booking. There is no separate insurance or maintenance fee: providers include those costs in the price.
 
 **Detail** = card fields plus:
 ```json
@@ -711,12 +837,10 @@ Error envelope: `{ "success": false, "message": "...", "errors"?: [{ "field", "m
   "mileage": "15 km/l",
   "power": "190 hp",
   "extraChargePerHour": 25,
-  "insuranceFee": 0,
-  "maintenanceFee": 10,
   "createdAt": "2026-11-16T10:00:00.000Z"
 }
 ```
-`seats`, `extraChargePerHour`, `insuranceFee`, `maintenanceFee` may be `null` on very old listings.
+`seats` and `extraChargePerHour` may be `null` on very old listings.
 
 ### GET `/` — browse
 Query (all optional): `search` (title), `category` (sub-category name or id), `serviceArea`, `minPrice`, `maxPrice`, `sort` = `price_asc | price_desc | rating | newest` (default newest), `page` (default 1), `limit` (default 10, max 50).
@@ -759,16 +883,14 @@ Query: `page`, `limit`. Newest first.
 | `mileage` (old: `milage`) | string | yes | e.g. `"15 km/l"` |
 | `power` | string | no | e.g. `"190 hp"` |
 | `extraChargePerHour` (old: `extraChargePerHours`) | number | yes | ≥ 0, late-return rate |
-| `insuranceFee` | number | yes | ≥ 0 |
-| `maintenanceFee` (old: `maintainCharge`) | number | yes | ≥ 0 |
 | `description` | string | no | |
 
-The owner is always the caller (any `owner` field is ignored). No defaults are invented for the fees.
+The owner is always the caller (any `owner` field is ignored). `insuranceFee` / `maintenanceFee` / `maintainCharge` no longer exist (17 Nov 2026). Older app versions that still send them get no error; the values are ignored and never stored. Stop sending them.
 ```
 curl -X POST $BASE/api/v1/transport -H "Authorization: Bearer $T" \
   -F file=@van.png -F category=665a... -F title="Mercedes V-Class" -F serviceArea=Courchevel \
   -F amount=120 -F seats=7 -F mileage="15 km/l" -F power="190 hp" \
-  -F extraChargePerHour=25 -F insuranceFee=0 -F maintenanceFee=10 -F description="Airport transfer"
+  -F extraChargePerHour=25 -F description="Airport transfer"
 ```
 `201` → `{ "success": true, "message": "Transport created.", "data": { /* detail */ } }`
 Errors: 400 validation (message like `"seats: seats must be at least 1"`, plus `errors[]`), 400 missing thumbnail, 400 category not a Transport sub-category, 401, 403 not a Transport provider.
@@ -799,7 +921,7 @@ Errors: 400 bad rating/comment, 403 not a customer or no completed booking of th
 
 Base URL: `/api/v1/restaurant`. Auth header: `Authorization: Bearer <accessToken>`.
 
-A restaurant listing has **seat types** (`VIP` and/or `Normal`, 1 or 2 of them, each type once), each with a price per seat and a seat count, plus **time slots** inside the opening hours. The card price is the **cheapest seat** (`per_seat`). A platform-wide **service fee** (set by Admin) is added to each booking.
+A restaurant listing has **seat types** (`VIP` and/or `Normal`, 1 or 2 of them, each type once), each with a price per seat and a seat count, plus **time slots** inside the opening hours. The card price is the **cheapest seat** (`per_seat`). A platform-wide **service fee** (set by Admin) is added to each booking. The service fee is **platform money**: the provider is paid on the seats only (minus the commission), the platform keeps the fee. A refund returns it to the customer pro rata (e.g. a 90 % refund returns 90 % of it).
 
 Envelope: `{ success, message, data, meta? }`. Error: `{ success:false, message, errors? }`.
 
@@ -1000,13 +1122,13 @@ Every response: `{ success, message, data, meta? }`. Errors: `{ success: false, 
   "id": "6650…", "category": "Massage",
   "subCategory": { "id": "6640…", "name": "Thai", "photo": "https://…" },
   "title": "Deep tissue", "thumbnail": "https://…", "serviceArea": "Chamonix",
-  "price": { "amount": 80, "unit": "per_session" },
+  "price": { "amount": 80, "unit": "per_person" },
   "rating": { "average": 4.5, "count": 12 },
   "provider": { "id": "6630…", "name": "Anna Spa", "photo": "https://…" },
   "isActive": true
 }
 ```
-`price.amount` = the cheapest duration price (or the listing `amount` when there are no durations).
+`price.amount` = the cheapest duration price (or the listing `amount` when there are no durations). It is **per person**: a booking costs the duration price × `personCount` (`unit: "per_person"`, was `"per_session"`).
 
 **Detail** = card + :
 ```json
@@ -1017,6 +1139,7 @@ Every response: `{ success, message, data, meta? }`. Errors: `{ success: false, 
     { "id": "6651…", "duration": "60 min", "minutes": 60, "price": 80 },
     { "id": "6652…", "duration": "90 min", "minutes": 90, "price": 120 }
   ],
+  "capacity": 1,
   "benefits": "Relaxes muscles",
   "recommendations": "Drink water",
   "createdAt": "2026-11-16T10:00:00.000Z"
@@ -1024,6 +1147,7 @@ Every response: `{ success, message, data, meta? }`. Errors: `{ success: false, 
 ```
 - `durations` are sorted shortest first. `minutes` is `null` only for a legacy value that can't be read.
 - **Booking:** send `duration` exactly as the `duration` string from this list (e.g. `"60 min"`).
+- `capacity`: guests that can be booked **at the same time** (number of therapists). `1` on listings saved before it existed. A time is full when the overlapping bookings already use every place; see availability in the booking section.
 - Reviews are never in the detail: use `GET /:id/reviews`.
 
 ### GET `/` (browse, public)
@@ -1046,11 +1170,12 @@ Detail. 400 invalid id, 404 unknown or deleted.
 ### GET `/:id/reviews`
 Query `page`, `limit`.
 ```json
-{ "success": true, "data": {
-    "reviews": [{ "id": "…", "rating": 5, "comment": "Great", "user": { "id": "…", "name": "…", "photo": "…" }, "createdAt": "…" }],
-    "rating": { "average": 5, "count": 1 } },
-  "meta": { "page": 1, "limit": 10, "total": 1, "totalPages": 1 } }
+{ "success": true,
+  "data": [{ "id": "…", "rating": 5, "comment": "Great", "user": { "id": "…", "name": "…", "photo": "…" }, "createdAt": "…" }],
+  "meta": { "page": 1, "limit": 10, "total": 1, "totalPages": 1 },
+  "rating": { "average": 5, "count": 1 } }
 ```
+Same shape as every other service (changed on 17 Nov: before, Massage returned `data: { reviews, rating }`).
 
 ### POST `/` (create): `multipart/form-data`
 | Field | Type | Required | Notes |
@@ -1063,6 +1188,7 @@ Query `page`, `limit`.
 | `serviceArea` | string | yes | |
 | `benefits` | string | yes | |
 | `recommendations` (or old `ourRecommendations`) | string | yes | |
+| `capacity` (or `therapists`) | integer | no | guests at the same time, 1-50, default 1. A booking of N people takes N places. |
 | `amount` | number | no | fallback price; defaults to the cheapest duration |
 | `description` | string | no | |
 

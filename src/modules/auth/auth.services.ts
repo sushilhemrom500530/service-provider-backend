@@ -251,8 +251,10 @@ const changePassword = async (
   // Verify current password
   const isPasswordValid = await bcrypt.compare(currentPassword, user.password);
   if (!isPasswordValid) {
+    // 400, not 401: the session is valid, only the typed password is wrong
+    // (clients treat 401 as "session expired" and log the user out)
     throw new AppError(
-      StatusCodes.UNAUTHORIZED,
+      StatusCodes.BAD_REQUEST,
       'Current password is incorrect.'
     );
   }

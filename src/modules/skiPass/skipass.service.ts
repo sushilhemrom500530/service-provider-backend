@@ -6,6 +6,7 @@ import { User } from './../user/user.model';
 import { USER_UPLOADS_FOLDER, SKI_PASS_CATEGORY, SKI_PASS_PRICE_UNIT } from './skipass.constant';
 import { SkiPass } from './skipass.model';
 import { SKI_PASS_TYPES } from './skipass.interface';
+import { POLICY } from '../booking/booking.rules';
 import {
   assertListingOwner,
   idOf,
@@ -63,6 +64,8 @@ export const toSkiPassDetail = (doc: any) => ({
     title: s.title,
     description: s.description,
   })),
+  // most people on one booking (the server refuses more)
+  maxPeoplePerBooking: POLICY.SKI_PASS_MAX_PEOPLE,
   createdAt: doc.createdAt,
   updatedAt: doc.updatedAt,
 });

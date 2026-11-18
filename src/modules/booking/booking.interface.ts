@@ -57,6 +57,8 @@ export interface IBooking extends Document {
   address?: string;
   destination?: string;
   totalPrice: number;
+  /** platform service fee included in totalPrice (Restaurant), 100 % platform money */
+  serviceFee?: number;
 
   isPermitted: boolean | false;
   isHandOver: boolean | false;
@@ -69,6 +71,15 @@ export interface IBooking extends Document {
   overTimeCharge?: number;
   cancelledBy?: 'user' | 'provider' | 'admin' | 'system';
   cancelReason?: string;
+  pendingRefund?: {
+    amount: number;
+    target: number;
+    kept?: number;
+    percent?: number;
+    kind: 'customer' | 'full';
+    startedAt: Date;
+    claimedAt?: Date;
+  };
   providerPayout?: 'held' | 'paid' | 'reversed';
   platformFee?: number;
   providerEarning?: number;

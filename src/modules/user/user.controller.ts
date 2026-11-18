@@ -91,11 +91,11 @@ const deleteMyProfile = catchAsync(async (req, res) => {
   if(!userId){
     throw new Error('User id not found');
   }
-  await UserService.deleteMyProfile(userId);
+  const data = await UserService.deleteMyProfile(userId);
   sendResponse(res, {
     code: StatusCodes.OK,
-    message: 'User deleted successfully.',
-    data: {},
+    message: 'Your account has been deleted.',
+    data,
   });
 });
 

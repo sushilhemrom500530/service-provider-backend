@@ -20,6 +20,7 @@ export type NotifyInput = {
   event?: string;
   booking?: any;
   senderId?: any;
+  data?: Record<string, any>;
 };
 
 const idOrUndefined = (v: any) => (v ? String(v?._id ?? v) : undefined);
@@ -35,6 +36,7 @@ export const notify = async (receiverId: any, input: NotifyInput) => {
       type: input.type || (input.booking ? 'booking' : 'system'),
       event: input.event,
       booking: idOrUndefined(input.booking),
+      ...(input.data ? { data: input.data } : {}),
     });
     emitToUserId(receiverId, SOCKET_NOTIFICATION_NEW, toNotificationDto(doc));
   } catch (error: any) {
@@ -59,6 +61,7 @@ export const toNotificationDto = (n: any) => ({
   type: n.type,
   event: n.event || null,
   bookingId: n.booking ? String(n.booking?._id ?? n.booking) : null,
+  data: n.data ?? null,
   isRead: !!n.isRead,
   createdAt: n.createdAt,
 });

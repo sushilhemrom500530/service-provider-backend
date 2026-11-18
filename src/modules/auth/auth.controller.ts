@@ -80,7 +80,7 @@ const login = catchAsync(async (req: Request, res: Response) => {
 
   const isPasswordValid = await bcrypt.compare(password, user.password);
   if (!isPasswordValid) {
-    throw new AppError(StatusCodes.BAD_REQUEST, 'password is incorrect.');
+    throw new AppError(StatusCodes.BAD_REQUEST, 'Password is incorrect.');
   }
 
   if (user?.status === UserStatus.Unverified) {

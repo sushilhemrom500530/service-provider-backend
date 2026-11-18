@@ -47,8 +47,6 @@ export const makeTransportListing = async (ownerId: string, amount = 100) =>
     milage: '10 km/l',
     power: '150hp',
     extraChargePerHours: 20,
-    insuranceFee: 0,
-    maintainCharge: 0,
     serviceArea: 'Geneva',
     amount,
     description: 'Van',

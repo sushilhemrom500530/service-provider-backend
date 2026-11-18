@@ -41,6 +41,11 @@ const paymentSchema = new Schema<IPayment>(
     refundedAt: {
       type: Date,
     },
+    // Stripe refund ids already counted in refundedAmount (never counted twice)
+    refundIds: {
+      type: [String],
+      default: undefined,
+    },
     paymentMethodType: {
       type: String,
       enum: ['Card'],

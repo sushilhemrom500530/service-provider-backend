@@ -14,71 +14,85 @@ import { User } from '../modules/user/user.model';
 const onlineUsers = new Map<string, string>();
 const typingUsers = new Map<string, Set<string>>();
 
+/**
+ * The "chat-list" payload of one user. Exported for tests: its unreadCount
+ * must equal GET /chat/chat-users (both use ChatService.unreadCounts).
+ */
+export const buildChatList = async (userId: string) => {
+  const userChats = await Chat.find({
+    participants: userId,
+    deletedBy: { $ne: userId },
+    isActive: true,
+  })
+    .populate('participants', 'email fullName profileUrl lastLoginAt')
+    .populate({
+      path: 'lastMessage',
+      select: 'content type createdAt sender',
+      populate: {
+        path: 'sender',
+        select: 'fullName email profileUrl',
+      },
+    })
+    .sort({ lastMessageAt: -1 })
+    .lean();
+
+  // same unread numbers as GET /chat/chat-users
+  const unread = await ChatService.unreadCounts(
+    userChats.map(c => c._id as Types.ObjectId),
+    userId,
+  );
+
+  const chatsWithStatus = userChats.map(chat => {
+    const other = chat.participants.find(
+      (p: any) => p._id.toString() !== userId,
+    ) as any;
+
+    const lastMsg =
+      chat.lastMessage &&
+      typeof chat.lastMessage === 'object' &&
+      'content' in chat.lastMessage
+        ? {
+            _id: (chat.lastMessage as any)._id,
+            content: (chat.lastMessage as any).content,
+            type: (chat.lastMessage as any).type,
+            createdAt: (chat.lastMessage as any).createdAt,
+            sender: (chat.lastMessage as any).sender
+              ? {
+                  _id: (chat.lastMessage as any).sender._id,
+                  fullName: (chat.lastMessage as any).sender.fullName || '',
+                  email: (chat.lastMessage as any).sender.email,
+                  profileUrl:
+                    (chat.lastMessage as any).sender.profileUrl || '',
+                }
+              : null,
+          }
+        : null;
+
+    return {
+      chatId: chat._id,
+      otherUser: {
+        _id: other?._id,
+        fullName: other?.fullName || '',
+        email: other?.email,
+        profileUrl: other?.profileUrl || '',
+        lastLoginAt: other?.lastLoginAt,
+        isOnline: onlineUsers.has(other?._id.toString()),
+      },
+      lastMessage: lastMsg,
+      unreadCount: unread.get(String(chat._id)) || 0,
+      lastMessageAt: chat.lastMessageAt || null,
+    };
+  });
+  return chatsWithStatus;
+};
+
 // Helper to emit chat list
 const emitChatListToUser = async (
   io: Server,
   userId: string,
 ): Promise<void> => {
   try {
-    const userChats = await Chat.find({
-      participants: userId,
-      deletedBy: { $ne: userId },
-      isActive: true,
-    })
-      .populate('participants', 'email fullName profileUrl lastLoginAt')
-      .populate({
-        path: 'lastMessage',
-        select: 'content type createdAt sender',
-        populate: {
-          path: 'sender',
-          select: 'fullName email profileUrl',
-        },
-      })
-      .sort({ lastMessageAt: -1 })
-      .lean();
-
-    const chatsWithStatus = userChats.map(chat => {
-      const other = chat.participants.find(
-        (p: any) => p._id.toString() !== userId,
-      ) as any;
-
-      const lastMsg =
-        chat.lastMessage &&
-        typeof chat.lastMessage === 'object' &&
-        'content' in chat.lastMessage
-          ? {
-              _id: (chat.lastMessage as any)._id,
-              content: (chat.lastMessage as any).content,
-              type: (chat.lastMessage as any).type,
-              createdAt: (chat.lastMessage as any).createdAt,
-              sender: (chat.lastMessage as any).sender
-                ? {
-                    _id: (chat.lastMessage as any).sender._id,
-                    fullName: (chat.lastMessage as any).sender.fullName || '',
-                    email: (chat.lastMessage as any).sender.email,
-                    profileUrl:
-                      (chat.lastMessage as any).sender.profileUrl || '',
-                  }
-                : null,
-            }
-          : null;
-
-      return {
-        chatId: chat._id,
-        otherUser: {
-          _id: other?._id,
-          fullName: other?.fullName || '',
-          email: other?.email,
-          profileUrl: other?.profileUrl || '',
-          lastLoginAt: other?.lastLoginAt,
-          isOnline: onlineUsers.has(other?._id.toString()),
-        },
-        lastMessage: lastMsg,
-        unreadCount: chat.unreadCount?.[userId] || 0,
-        lastMessageAt: chat.lastMessageAt || null,
-      };
-    });
-
+    const chatsWithStatus = await buildChatList(userId);
     const socketId = onlineUsers.get(userId);
 
     if (socketId) {

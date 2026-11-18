@@ -2,7 +2,7 @@
 
 Base URL: `/api/v1/restaurant`. Auth header: `Authorization: Bearer <accessToken>`.
 
-A restaurant listing has **seat types** (`VIP` and/or `Normal`, 1 or 2 of them, each type once), each with a price per seat and a seat count, plus **time slots** inside the opening hours. The card price is the **cheapest seat** (`per_seat`). A platform-wide **service fee** (set by Admin) is added to each booking.
+A restaurant listing has **seat types** (`VIP` and/or `Normal`, 1 or 2 of them, each type once), each with a price per seat and a seat count, plus **time slots** inside the opening hours. The card price is the **cheapest seat** (`per_seat`). A platform-wide **service fee** (set by Admin) is added to each booking. The service fee is **platform money**: the provider is paid on the seats only (minus the commission), the platform keeps the fee. A refund returns it to the customer pro rata (e.g. a 90 % refund returns 90 % of it).
 
 Envelope: `{ success, message, data, meta? }`. Error: `{ success:false, message, errors? }`.
 

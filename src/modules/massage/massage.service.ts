@@ -24,7 +24,7 @@ import {
   SubCategory,
 } from './../common/listing.helpers';
 import { Massage } from './massage.model';
-import { MASSAGE_CATEGORY, USER_UPLOADS_FOLDER } from './massage.constant';
+import { DEFAULT_CAPACITY, MASSAGE_CATEGORY, USER_UPLOADS_FOLDER } from './massage.constant';
 import { formatDuration, parseDurationMinutes } from './massage.utils';
 import { openWindowMinutes } from './../booking/booking.rules';
 
@@ -35,6 +35,9 @@ import { openWindowMinutes } from './../booking/booking.rules';
 type DurationInput = { id?: string; duration: string; minutes: number; amount: number };
 
 const round2 = (n: number) => Math.round(n * 100) / 100;
+
+/** stored capacity, 1 on listings saved before it existed */
+const capacityOf = (doc: any) => Math.max(1, Math.floor(Number(doc?.capacity) || DEFAULT_CAPACITY));
 
 /** priceByDuration -> [{id, duration, minutes, price}], shortest first */
 const toDurations = (doc: any) =>
@@ -57,7 +60,8 @@ const startingPrice = (doc: any) => {
     .map((p: any) => Number(p?.amount))
     .filter((n: number) => Number.isFinite(n) && n > 0);
   const amount = prices.length ? Math.min(...prices) : Number(doc?.amount) || 0;
-  return { amount: round2(amount), unit: 'per_session' };
+  // the booking charges this price for each guest (price x personCount)
+  return { amount: round2(amount), unit: 'per_person' };
 };
 
 const toCard = (doc: any, subCategories: Map<string, SubCategory>) => ({
@@ -79,6 +83,8 @@ const toDetail = (doc: any, subCategories: Map<string, SubCategory>) => ({
   openTime: doc.openTime,
   closeTime: doc.closeTime,
   durations: toDurations(doc),
+  // guests that can be booked at the same time (therapists)
+  capacity: capacityOf(doc),
   benefits: doc.benefits,
   recommendations: doc.ourRecommendations,
   createdAt: doc.createdAt,
@@ -206,6 +212,7 @@ const create = async (user: JwtPayload, body: any, file?: Express.Multer.File) =
       'serviceArea',
       'benefits',
       'ourRecommendations',
+      'capacity',
     ]),
     priceByDuration: mergeDurations([], durations),
     amount: body.amount ?? cheapest(durations),
@@ -227,6 +234,7 @@ const UPDATABLE = [
   'amount',
   'benefits',
   'ourRecommendations',
+  'capacity',
 ];
 
 const update = async (

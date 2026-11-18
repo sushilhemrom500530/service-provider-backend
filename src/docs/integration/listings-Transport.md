@@ -33,7 +33,7 @@ Error envelope: `{ "success": false, "message": "...", "errors"?: [{ "field", "m
   "isActive": true
 }
 ```
-`price.amount` is charged once per booking.
+`price.amount` is the **all-inclusive** trip price, charged once per booking. There is no separate insurance or maintenance fee: providers include those costs in the price.
 
 **Detail** = card fields plus:
 ```json
@@ -43,12 +43,10 @@ Error envelope: `{ "success": false, "message": "...", "errors"?: [{ "field", "m
   "mileage": "15 km/l",
   "power": "190 hp",
   "extraChargePerHour": 25,
-  "insuranceFee": 0,
-  "maintenanceFee": 10,
   "createdAt": "2026-11-16T10:00:00.000Z"
 }
 ```
-`seats`, `extraChargePerHour`, `insuranceFee`, `maintenanceFee` may be `null` on very old listings.
+`seats` and `extraChargePerHour` may be `null` on very old listings.
 
 ## GET `/` — browse
 Query (all optional): `search` (title), `category` (sub-category name or id), `serviceArea`, `minPrice`, `maxPrice`, `sort` = `price_asc | price_desc | rating | newest` (default newest), `page` (default 1), `limit` (default 10, max 50).
@@ -91,16 +89,14 @@ Query: `page`, `limit`. Newest first.
 | `mileage` (old: `milage`) | string | yes | e.g. `"15 km/l"` |
 | `power` | string | no | e.g. `"190 hp"` |
 | `extraChargePerHour` (old: `extraChargePerHours`) | number | yes | ≥ 0, late-return rate |
-| `insuranceFee` | number | yes | ≥ 0 |
-| `maintenanceFee` (old: `maintainCharge`) | number | yes | ≥ 0 |
 | `description` | string | no | |
 
-The owner is always the caller (any `owner` field is ignored). No defaults are invented for the fees.
+The owner is always the caller (any `owner` field is ignored). `insuranceFee` / `maintenanceFee` / `maintainCharge` no longer exist (17 Nov 2026). Older app versions that still send them get no error; the values are ignored and never stored. Stop sending them.
 ```
 curl -X POST $BASE/api/v1/transport -H "Authorization: Bearer $T" \
   -F file=@van.png -F category=665a... -F title="Mercedes V-Class" -F serviceArea=Courchevel \
   -F amount=120 -F seats=7 -F mileage="15 km/l" -F power="190 hp" \
-  -F extraChargePerHour=25 -F insuranceFee=0 -F maintenanceFee=10 -F description="Airport transfer"
+  -F extraChargePerHour=25 -F description="Airport transfer"
 ```
 `201` → `{ "success": true, "message": "Transport created.", "data": { /* detail */ } }`
 Errors: 400 validation (message like `"seats: seats must be at least 1"`, plus `errors[]`), 400 missing thumbnail, 400 category not a Transport sub-category, 401, 403 not a Transport provider.

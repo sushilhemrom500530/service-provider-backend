@@ -14,19 +14,17 @@ import { Types } from 'mongoose';
 import { StatusCodes } from 'http-status-codes';
 import { JwtPayload } from 'jsonwebtoken';
 import AppError from '../../errors/AppErro';
-import { config } from '../../config';
 import { Booking } from './booking.model';
 import { Payment } from '../payment/payment.model';
 import { TransactionStatus } from '../payment/payment.interface';
 import { WalletTransactionType } from '../wallet/wallet.interface';
-import { changeBalance, getAdminUserId, payProvider } from '../wallet/ledger';
+import { changeBalance, getAdminUserId } from '../wallet/ledger';
 import { notify, emitBookingUpdated } from '../notification/notify';
 import { User } from '../user/user.model';
-import { OPEN_STATUSES } from './booking.rules';
-import { listingOfBooking, refundBookingPayment } from './booking.lifecycle';
+import { OPEN_STATUSES, computeSchedule, formatBookingWhen, formatMoney } from './booking.rules';
+import { listingOfBooking, payBookingShare, recordRefund, refundBookingPayment, settleCancellation } from './booking.lifecycle';
 
 const round2 = (n: number) => Math.round((Number(n) || 0) * 100) / 100;
-const CUR = () => config.stripe.currency.toUpperCase();
 
 const notifyAdmins = async (title: string, description: string, booking: any, event: string) => {
   const admins = await User.find({ role: 'Admin' }).select('_id').lean();
@@ -59,8 +57,9 @@ const accountRefund = async (booking: any, amount: number, by: 'admin' | 'system
     if (set.bookingStatus === 'Cancelled') {
       const kept = round2(total - refundedAfter);
       if (kept > 0 && listing?.owner) {
-        const split = await payProvider(listing.owner, kept, booking.user);
-        Object.assign(set, { providerPayout: 'paid', platformFee: split.fee, providerEarning: split.net });
+        // the service fee in what is kept stays with the platform
+        await payBookingShare(booking, listing, kept);
+        set.providerPayout = 'paid';
       } else set.providerPayout = 'reversed';
     }
     // completed + held (e.g. dispute): release later pays total − refundAmount
@@ -83,15 +82,20 @@ const accountRefund = async (booking: any, amount: number, by: 'admin' | 'system
 
   await Booking.updateOne({ _id: booking._id }, { $set: set });
 
+  const when = formatBookingWhen(booking);
+  const on = when ? ` on ${when}` : '';
+  const startAt = computeSchedule(booking).startAt ?? null;
   await notify(booking.user, {
     title: 'Refund issued',
-    description: `${refundedNow} ${CUR()} has been refunded to your card.${reason ? ` ${reason}` : ''}`,
+    description: `${formatMoney(refundedNow)} has been refunded to your card for ${listing?.title || 'your booking'}${on}.${reason ? ` ${reason}` : ''}`,
+    data: { startAt, refunded: refundedNow },
     booking,
     event: 'booking.refunded',
   });
   await notify(listing?.owner, {
     title: 'Booking refunded',
-    description: `${refundedNow} ${CUR()} of a booking for ${listing?.title || 'your listing'} was refunded to the customer.${reason ? ` Reason: ${reason}` : ''}`,
+    description: `${formatMoney(refundedNow)} of a booking for ${listing?.title || 'your listing'}${on} was refunded to the customer.${reason ? ` Reason: ${reason}` : ''}`,
+    data: { startAt, refunded: refundedNow },
     booking,
     event: 'booking.refunded',
   });
@@ -132,26 +136,22 @@ const bookingOfIntent = async (paymentIntentId: unknown) => {
 
 /** refund.created made OUTSIDE the app (Stripe dashboard): account for it */
 export const onExternalRefund = async (refund: any) => {
-  if (refund?.metadata?.source === 'app') return { handled: false };
   const { payment, booking } = await bookingOfIntent(refund?.payment_intent);
   if (!payment || !booking || payment.purpose === 'late_fee') return { handled: false };
   const amount = round2((Number(refund.amount) || 0) / 100);
   if (amount <= 0) return { handled: false };
 
-  const refundedAmount = round2(Math.min(round2(payment.amount), round2(payment.refundedAmount) + amount));
-  await Payment.updateOne(
-    { _id: payment._id },
-    {
-      $set: {
-        refundedAmount,
-        refundedAt: new Date(),
-        status:
-          refundedAmount >= round2(payment.amount)
-            ? TransactionStatus.REFUNDED
-            : TransactionStatus.PARTIALLY_REFUNDED,
-      },
-    },
-  );
+  if (refund?.metadata?.source === 'app') {
+    // made by the app: normally already counted. If the server stopped right
+    // after Stripe answered, count it now and finish the cancellation.
+    if (!refund?.id) return { handled: false };
+    const counted = await recordRefund(payment._id, refund.id, amount);
+    if (booking.pendingRefund) await settleCancellation(booking._id).catch(() => null);
+    return { handled: counted };
+  }
+  // Stripe resends webhooks: count each dashboard refund once (by refund id)
+  const refundId = refund?.id || `re-external-${payment._id}-${Date.now()}`;
+  if (!(await recordRefund(payment._id, refundId, amount))) return { handled: false };
   await accountRefund(booking, amount, 'system', 'Refunded by support.');
   return { handled: true };
 };
@@ -190,7 +190,7 @@ export const onDisputeOpened = async (dispute: any) => {
     booking,
     event: 'booking.disputed',
   });
-  await notifyAdmins('Card dispute opened', `Booking ${booking._id}: ${dispute.reason || 'dispute'} (${set.dispute.amount} ${CUR()}). Answer it in Stripe.`, booking, 'booking.disputed');
+  await notifyAdmins('Card dispute opened', `Booking ${booking._id}: ${dispute.reason || 'dispute'} (${formatMoney(set.dispute.amount)}). Answer it in Stripe.`, booking, 'booking.disputed');
   return { handled: true };
 };
 

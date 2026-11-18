@@ -1,6 +1,7 @@
 import mongoose, { Schema, Model } from 'mongoose';
 import { IMassage } from './massage.interface';
 import { reviewSchema, refundSchema } from './../common/common.schema';
+import { MAX_CAPACITY } from './massage.constant';
 
 const priceByDurationSchema = new Schema({
   duration: { type: String, required: true, trim: true },
@@ -21,6 +22,9 @@ const massageSchema = new Schema<IMassage>(
     amount: { type: Number, required: true, min: 0 },
     benefits: { type: String, required: true },
     ourRecommendations: { type: String, required: true },
+    // guests that can be treated at the same time (number of therapists /
+    // tables). A time is full once the overlapping bookings' guests reach it.
+    capacity: { type: Number, default: 1, min: 1, max: MAX_CAPACITY },
 
     averageRating: { type: Number, default: 0, min: 0, max: 5 },
     reviewCount: { type: Number, default: 0 },

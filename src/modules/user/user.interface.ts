@@ -42,6 +42,7 @@ export interface IUser extends Document {
   isAgreedTermsConditions: boolean;
   isModified(path?: keyof IUser | string): boolean;
   isDeleted: boolean;
+  deletedAt?: Date;
   isResetPassword?: boolean;
   banExpiresAt?: Date;
   createdAt?: Date;

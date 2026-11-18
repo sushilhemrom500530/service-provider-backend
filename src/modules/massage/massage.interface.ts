@@ -26,6 +26,8 @@ export interface IMassage extends Document {
   amount: number;
   benefits: string;
   ourRecommendations: string;
+  /** guests treated at the same time (therapists); default 1 */
+  capacity?: number;
   averageRating?: number;
   reviewCount?: number;
   reviews?: IReview[];

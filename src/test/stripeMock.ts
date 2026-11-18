@@ -15,7 +15,17 @@ type FakeIntent = {
 };
 
 const intents = new Map<string, FakeIntent>();
-const refunds: { id: string; payment_intent: string; amount?: number }[] = [];
+type FakeRefund = {
+  id: string;
+  payment_intent: string;
+  amount?: number; // as requested (undefined = full)
+  charged: number; // what Stripe actually refunded (minor units)
+  status: string;
+  metadata: Record<string, string>;
+};
+const refunds: FakeRefund[] = [];
+const idempotency = new Map<string, FakeRefund>();
+let failNextRefund: any = null;
 let counter = 0;
 
 export const stripeMock = {
@@ -48,16 +58,38 @@ export const stripeMock = {
     }),
   },
   refunds: {
-    create: jest.fn(async (params: any) => {
+    create: jest.fn(async (params: any, opts?: { idempotencyKey?: string }) => {
+      // same idempotency key = the same refund (like Stripe)
+      const key = opts?.idempotencyKey;
+      if (key && idempotency.has(key)) {
+        const r = idempotency.get(key)!;
+        return { ...r, amount: r.charged };
+      }
+      if (failNextRefund) {
+        const err = failNextRefund;
+        failNextRefund = null;
+        throw err;
+      }
       counter += 1;
-      const refund = {
+      const intent = intents.get(params.payment_intent);
+      const done = refunds.filter(r => r.payment_intent === params.payment_intent).reduce((t, r) => t + r.charged, 0);
+      const refund: FakeRefund = {
         id: `re_test_${counter}`,
         payment_intent: params.payment_intent,
         amount: params.amount,
+        charged: params.amount ?? Math.max(0, (intent?.amount ?? 0) - done),
+        status: 'succeeded',
+        metadata: { ...(params.metadata || {}) },
       };
       refunds.push(refund);
-      return { ...refund, status: 'succeeded' };
+      if (key) idempotency.set(key, refund);
+      return { ...refund, amount: refund.charged };
     }),
+    list: jest.fn(async (params: any) => ({
+      data: refunds
+        .filter(r => r.payment_intent === params?.payment_intent)
+        .map(r => ({ ...r, amount: r.charged })),
+    })),
   },
   webhooks: {
     constructEvent: jest.fn((body: any) =>
@@ -78,9 +110,16 @@ export const payIntent = (id: string) => {
 export const getIntent = (id: string) => intents.get(id);
 export const getRefunds = () => [...refunds];
 
+/** Make the next refunds.create throw this error (e.g. Stripe refuses / unreachable) */
+export const failNextRefundWith = (error: any) => {
+  failNextRefund = error;
+};
+
 export const resetStripeMock = () => {
   intents.clear();
   refunds.length = 0;
+  idempotency.clear();
+  failNextRefund = null;
   stripeMock.paymentIntents.create.mockClear();
   stripeMock.paymentIntents.retrieve.mockClear();
   stripeMock.refunds.create.mockClear();

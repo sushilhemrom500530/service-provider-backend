@@ -7,8 +7,13 @@ import { ITransport } from './transport.interface';
  * `amount`, `extraChargePerHours`, `personCount`, `milage`). The API maps
  * them to clean names in transport.service.ts.
  *
- * No invented price defaults: insuranceFee, maintainCharge and
- * extraChargePerHours are required on create (0 allowed).
+ * No invented price defaults: extraChargePerHours is required on create
+ * (0 allowed).
+ *
+ * Pricing: `amount` is the one all-inclusive trip price. There is no separate
+ * insurance or maintenance fee (decided 17 Nov 2026): providers include those
+ * costs in the price. The old `insuranceFee` / `maintainCharge` fields were
+ * removed (scripts/removeTransportFees.ts clears them from stored listings).
  */
 const transportSchema = new Schema<ITransport>(
   {
@@ -24,9 +29,6 @@ const transportSchema = new Schema<ITransport>(
     power: { type: String, trim: true },
     // API name: extraChargePerHour
     extraChargePerHours: { type: Number, required: true, min: 0 },
-    insuranceFee: { type: Number, required: true, min: 0 },
-    // API name: maintenanceFee
-    maintainCharge: { type: Number, required: true, min: 0 },
     serviceArea: { type: String, required: true, trim: true },
     // price of one trip (the booking charges it once per booking)
     amount: { type: Number, required: true, min: 0 },

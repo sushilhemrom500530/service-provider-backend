@@ -1,3 +1,4 @@
+import { acceptListingDetailShape } from '../common/listing.helpers';
 import { NextFunction, Request, Response, Router } from 'express';
 import auth from '../../middlewares/auth';
 import fileUploadHandler from './../../shared/fileUploadHandler';
@@ -38,6 +39,7 @@ router.get('/my-all', owners, MassageController.myListings);
 const create = [
   auth('Provider'),
   ...thumbnailUpload,
+  acceptListingDetailShape,
   validateRequest(MassageValidations.createMassage),
   MassageController.create,
 ];
@@ -48,6 +50,7 @@ router.post('/create', ...create);
 const update = [
   owners,
   ...thumbnailUpload,
+  acceptListingDetailShape,
   validateRequest(MassageValidations.updateMassage),
   MassageController.update,
 ];

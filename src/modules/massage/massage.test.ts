@@ -117,7 +117,7 @@ describe('create', () => {
       expect.objectContaining({ duration: '60 min', minutes: 60, price: 80 }),
       expect.objectContaining({ duration: '90 min', minutes: 90, price: 120 }),
     ]);
-    expect(d.price).toEqual({ amount: 80, unit: 'per_session' });
+    expect(d.price).toEqual({ amount: 80, unit: 'per_person' });
     expect(d.rating).toEqual({ average: 0, count: 0 });
     const doc: any = await Massage.findById(d.id).lean();
     expect(String(doc.owner)).toBe(provider.id);
@@ -212,7 +212,7 @@ describe('browse', () => {
 
     const search = await api().get(BASE).query({ search: 'thai', sort: 'price_asc' });
     expect(search.body.data.map((c: any) => c.title)).toEqual(['Cheap Thai', 'Pricey Thai']);
-    expect(search.body.data[0].price).toEqual({ amount: 40, unit: 'per_session' });
+    expect(search.body.data[0].price).toEqual({ amount: 40, unit: 'per_person' });
 
     const range = await api().get(BASE).query({ minPrice: 60, maxPrice: 100 });
     expect(range.body.data.map((c: any) => c.title)).toEqual(['Sports one']);
@@ -277,7 +277,7 @@ describe('detail', () => {
         benefits: 'b',
         recommendations: 'r',
         description: '',
-        price: { amount: 40, unit: 'per_session' },
+        price: { amount: 40, unit: 'per_person' },
       }),
     );
     // old stored duration text is returned in the one format "<n> min"
@@ -428,8 +428,9 @@ describe('reviews', () => {
 
     const list = await api().get(`${BASE}/${doc._id}/reviews`);
     expect(list.status).toBe(200);
-    expect(list.body.data.reviews).toHaveLength(1);
-    expect(list.body.data.reviews[0].user.id).toBe(customer.id);
+    expect(list.body.data).toHaveLength(1);
+    expect(list.body.rating).toMatchObject({ count: 1 });
+    expect(list.body.data[0].user.id).toBe(customer.id);
     expect(list.body.meta.total).toBe(1);
 
     const card = (await api().get(BASE)).body.data[0];

@@ -5,7 +5,8 @@ import { IReview, IRefund } from './../common/common.interface';
  * Stored Transport listing. Some stored names are legacy (kept because the
  * booking module reads them); the API uses clean names:
  *   personCount -> seats, milage -> mileage,
- *   extraChargePerHours -> extraChargePerHour, maintainCharge -> maintenanceFee
+ *   extraChargePerHours -> extraChargePerHour
+ * `amount` is the all-inclusive trip price (no insurance / maintenance fee).
  */
 export interface ITransport extends Document {
   category: Types.ObjectId;
@@ -16,8 +17,6 @@ export interface ITransport extends Document {
   milage: string;
   power?: string;
   extraChargePerHours: number;
-  insuranceFee: number;
-  maintainCharge: number;
   serviceArea: string;
   amount: number;
   description?: string;
